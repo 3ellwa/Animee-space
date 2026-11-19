@@ -88,7 +88,7 @@ export class Player {
     if (data.embedUrl) {
       this.video.hidden = true;
       this.iframe.hidden = false;
-      this.embedOrigin = 'https://megaplay.buzz';
+      this.embedOrigin = data.embedOrigin || new URL(data.embedUrl).origin;
       this.iframe.src = data.embedUrl;
       if (this.quality) this.quality.disabled = true;
       this.msg('');
