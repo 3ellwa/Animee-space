@@ -15,7 +15,7 @@ async function catalogPage(ctx,page){
  const cache=globalThis.caches?.default;
  const key=new Request(new URL('/__anikoto_cache/recent/'+page,ctx.request.url).toString(),{method:'GET'});
  if(cache){const hit=await cache.match(key).catch(()=>null);if(hit){try{return await hit.json();}catch{}}}
- const result=await anikoto.getRecentAnime({page,perPage:50});
+ const result=await anikoto.getRecentAnime({page,perPage:20});
  if(cache){const response=new Response(JSON.stringify(result),{headers:{'Content-Type':'application/json','Cache-Control':'public, max-age=900'}});const put=cache.put(key,response).catch(()=>{});ctx.waitUntil?ctx.waitUntil(put):await put;}
  return result;
 }
@@ -33,7 +33,7 @@ function hasNext(meta,page,rows){
  if(typeof explicit==='boolean')return explicit;
  const last=pageCount(meta);
  if(last)return page<last;
- return rows.length>=50;
+ return rows.length>=20;
 }
 async function searchCatalog(ctx,query,genre){
  const firstPage=await catalogPage(ctx,1);
