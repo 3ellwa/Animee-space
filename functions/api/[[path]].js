@@ -5,7 +5,7 @@ import { handleAccount } from '../_lib/account.js';
 const json=(data,status=200,ttl=0)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':ttl?'public, max-age='+ttl:'no-store'}});
 async function cached(ctx,ttl,fn){
  const cache=globalThis.caches?.default;
- const key=new Request(new URL(ctx.request.url).toString(),{method:'GET'});
+ const cacheUrl=new URL(ctx.request.url);cacheUrl.searchParams.set('__cachev','4');const key=new Request(cacheUrl.toString(),{method:'GET'});
  if(cache){const hit=await cache.match(key).catch(()=>null);if(hit)return hit;}
  const response=json(await fn(),200,ttl);
  if(cache){const put=cache.put(key,response.clone()).catch(()=>{});ctx.waitUntil?ctx.waitUntil(put):await put;}
