@@ -584,7 +584,7 @@ function setupSearch() {
     clearTimeout(timer);
     const q = input.value.trim();
     const my = ++seq;
-    if (q.length < 2) { box.hidden = true; return; }
+    if (q.length < 3) { box.hidden = true; return; }
     timer = setTimeout(async () => {
       try {
         const d = await api('/search?q=' + encodeURIComponent(q));
