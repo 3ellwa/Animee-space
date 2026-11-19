@@ -11,5 +11,5 @@ PROVIDER = "anikoto"
 [[d1_databases]]
 binding = "DB"
 database_name = "animee-space"
-database_id = "PASTE-YOUR-DATABASE-ID-HERE"
+database_id = "bc75323b-aa43-466d-aa3e-929f48dd5f16"
 migrations_dir = "migrations"
