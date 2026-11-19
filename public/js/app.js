@@ -69,8 +69,8 @@ async function route() {
     switch (parts[0]) {
       case undefined: return await viewHome(alive);
       case 'search': return await viewSearch(query, alive);
-      case 'anime': return await viewAnime(Number(parts[1]), alive);
-      case 'watch': return await viewWatch(Number(parts[1]), query, alive);
+      case 'anime': return await viewAnime(parts[1], alive);
+      case 'watch': return await viewWatch(parts[1], query, alive);
       case 'watchlist': return viewWatchlist(query);
       case 'schedule': return await viewSchedule(query, alive);
       case 'account': return viewAccount(query);
@@ -94,7 +94,7 @@ async function viewHome(alive) {
     section('Latest updates', grid(d.recent), '<a href="#/search">Browse catalog ›</a>');
   app.querySelectorAll('.cont .x').forEach(b => b.onclick = e => {
     e.preventDefault();
-    store.removeProgress(Number(b.dataset.id));
+    store.removeProgress(b.dataset.id);
     b.closest('.cont').remove();
   });
 }
@@ -466,7 +466,7 @@ async function viewWatch(id, query, alive) {
 // ---------- watchlist ----------
 function viewWatchlist(query) {
   document.title = 'Watchlist · animee space';
-  const ids = Object.keys(store.getList()).map(Number);
+  const ids = Object.keys(store.getList());
   store.ensureMeta(ids).then((changed) => { if (changed && parseHash().parts[0] === 'watchlist') route(); });
   const list = Object.values(store.getList()).filter((e) => e.title).sort((x, y) => y.updated - x.updated);
   const tab = query.get('tab') || 'all';
