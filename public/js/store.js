@@ -224,7 +224,7 @@ export const sync = {
       adopt(row);
     }
     // anything only this browser has gets uploaded
-    for (const id of Object.keys(lib)) if (!server.has(String(id))) dirty.add(Number(id));
+    for (const id of Object.keys(lib)) if (!server.has(String(id))) dirty.add(String(id));
     if (!read('settingsDirty', false)) applyPrefs(data.prefs);
     saveLib();
     this.lastSync = Date.now();
