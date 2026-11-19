@@ -181,7 +181,7 @@ export async function getAnime(rawId) {
     const anime = normalizeAnime(payload?.data || payload);
     if (!anime.id) anime.id = id;
     const rating = anime.rating.toLowerCase();
-    if (rating.includes('r+') || rating.includes('rx') || rating.includes('hentai') || rating.includes('erotica')) {
+    if (rating.includes('r+') || rating.includes('rx') || rating.includes('hentai') || rating.includes('erotica') || anime.genres.some(genre => ['ecchi', 'hentai', 'erotica'].includes(genre.toLowerCase()))) {
       throw fail(404, 'This title is not available in Animee.');
     }
     return anime;
