@@ -86,45 +86,14 @@ async function route() {
 
 // ---------- home ----------
 async function viewHome(alive) {
-  const [d] = await Promise.all([api('/home'), store.ensureMeta(store.continueList().map((p) => p.animeId))]);
+  const d = await api('/home');
   if (!alive()) return;
-  const cont = store.continueList().filter((p) => p.title);
-  const s = d.seasonInfo;
-
-  app.innerHTML = `
-    ${spotlight(d.spotlight)}
-    ${cont.length ? section('Continue watching', `<div class="row">${cont.map(contCard).join('')}</div>`) : ''}
-    <div class="home-grid">
-      <div>
-        ${section('Trending now', grid(d.trending.slice(0, 12)), '<a href="#/search?sort=TRENDING_DESC">View more ›</a>')}
-        ${section(`${SEASON[s.season]} ${s.year}`, grid(d.season.slice(0, 12)), `<a href="#/search?season=${s.season}&year=${s.year}">View more ›</a>`)}
-        ${section('Top airing', grid(d.airing.slice(0, 12)), '<a href="#/search?status=RELEASING">View more ›</a>')}
-        ${section('All-time popular', grid(d.popular.slice(0, 12)), '<a href="#/search?sort=POPULARITY_DESC">View more ›</a>')}
-      </div>
-      <aside>${section('Top 10', top10(d.top))}</aside>
-    </div>`;
-
-  // continue-watching remove buttons
-  app.querySelectorAll('.cont .x').forEach((b) => b.onclick = (e) => {
-    e.preventDefault();
-    store.removeProgress(Number(b.dataset.id));
-    b.closest('.cont').remove();
+  const cont = store.continueList().filter(p => p.title);
+  app.innerHTML = (cont.length ? section('Continue watching', '<div class="row">' + cont.map(contCard).join('') + '</div>') : '') +
+    section('Recently added', grid(d.trending), '<a href="#/search">Browse catalog ›</a>');
+  app.querySelectorAll('.cont .x').forEach(b => b.onclick = e => {
+    e.preventDefault(); store.removeProgress(Number(b.dataset.id)); b.closest('.cont').remove();
   });
-
-  // spotlight rotation
-  const slides = [...app.querySelectorAll('.slide')];
-  const dots = [...app.querySelectorAll('.dots button')];
-  if (slides.length > 1) {
-    let i = 0;
-    const show = (n) => {
-      i = (n + slides.length) % slides.length;
-      slides.forEach((el, k) => el.classList.toggle('on', k === i));
-      dots.forEach((el, k) => el.classList.toggle('on', k === i));
-    };
-    let timer = setInterval(() => show(i + 1), 7000);
-    dots.forEach((dot, k) => dot.onclick = () => { show(k); clearInterval(timer); timer = setInterval(() => show(i + 1), 7000); });
-    onCleanup(() => clearInterval(timer));
-  }
 }
 
 function spotlight(list) {
@@ -178,47 +147,20 @@ function top10(list) {
 
 // ---------- search / browse ----------
 async function viewSearch(q, alive) {
-  const opt = (list, val, label = (x) => x) => list.map((x) => `<option value="${esc(x)}"${x === val ? ' selected' : ''}>${esc(label(x))}</option>`).join('');
-  const thisYear = new Date().getFullYear() + 1;
-  const years = Array.from({ length: thisYear - 1969 }, (_, i) => String(thisYear - i));
-
-  app.innerHTML = `
-    <h1 class="page-title">${q.get('q') ? `Results for “${esc(q.get('q'))}”` : 'Browse anime'}</h1>
-    <form class="filters" id="filters">
-      <input class="input q" name="q" placeholder="Title…" value="${esc(q.get('q') || '')}">
-      <select name="genre"><option value="">Any genre</option>${opt(GENRES, q.get('genre'))}</select>
-      <select name="year"><option value="">Any year</option>${opt(years, q.get('year'))}</select>
-      <select name="season"><option value="">Any season</option>${opt(Object.keys(SEASON), q.get('season'), (k) => SEASON[k])}</select>
-      <select name="format"><option value="">Any format</option>${opt(['TV', 'TV_SHORT', 'MOVIE', 'SPECIAL', 'OVA', 'ONA'], q.get('format'), (k) => FORMAT[k])}</select>
-      <select name="status"><option value="">Any status</option>${opt(['RELEASING', 'FINISHED', 'NOT_YET_RELEASED'], q.get('status'), (k) => STATUS[k])}</select>
-      <select name="sort">
-        <option value="">${q.get('q') ? 'Best match' : 'Most popular'}</option>
-        ${opt(['POPULARITY_DESC', 'TRENDING_DESC', 'SCORE_DESC', 'START_DATE_DESC', 'TITLE_ROMAJI'], q.get('sort'), (k) => ({ POPULARITY_DESC: 'Popularity', TRENDING_DESC: 'Trending', SCORE_DESC: 'Score', START_DATE_DESC: 'Newest', TITLE_ROMAJI: 'A–Z' }[k]))}
-      </select>
-    </form>
-    <div id="results">${loader()}</div>`;
-
+  const opt = (list, val) => list.map(x => '<option value="' + esc(x) + '"' + (x === val ? ' selected' : '') + '>' + esc(x) + '</option>').join('');
+  app.innerHTML = '<h1 class="page-title">' + (q.get('q') ? 'Results for “' + esc(q.get('q')) + '”' : 'Browse anime') + '</h1>' +
+    '<form class="filters" id="filters"><input class="input q" name="q" placeholder="Title…" value="' + esc(q.get('q') || '') + '">' +
+    '<select name="genre"><option value="">Any genre</option>' + opt(GENRES, q.get('genre')) + '</select></form><div id="results">' + loader() + '</div>';
   const form = document.getElementById('filters');
-  const go = () => {
-    const p = new URLSearchParams();
-    for (const [k, v] of new FormData(form)) if (String(v).trim()) p.set(k, String(v).trim());
-    location.hash = '#/search' + (p.toString() ? '?' + p : '');
-  };
-  form.onsubmit = (e) => { e.preventDefault(); go(); };
-  form.querySelectorAll('select').forEach((s) => s.onchange = go);
-
-  const params = new URLSearchParams(q);
-  const d = await api('/search?' + params);
+  const go = () => { const p = new URLSearchParams(); for (const [k,v] of new FormData(form)) if (String(v).trim()) p.set(k,String(v).trim()); location.hash = '#/search' + (p.toString() ? '?' + p : ''); };
+  form.onsubmit = e => { e.preventDefault(); go(); };
+  form.querySelector('select').onchange = go;
+  const d = await api('/search?' + new URLSearchParams(q));
   if (!alive()) return;
   const page = d.pageInfo.currentPage;
-  const pageLink = (n) => { const p = new URLSearchParams(q); p.set('page', n); return '#/search?' + p; };
-  document.getElementById('results').innerHTML = `
-    <div class="section">${d.results.length ? grid(d.results) : '<div class="empty"><h2>No results</h2><p>Try a different title or fewer filters.</p></div>'}</div>
-    ${d.results.length ? `<div class="pager">
-      ${page > 1 ? `<a class="btn sm" href="${pageLink(page - 1)}">‹ Prev</a>` : ''}
-      <span>Page ${page}${d.pageInfo.lastPage ? ` of ${d.pageInfo.lastPage}` : ''}</span>
-      ${d.pageInfo.hasNextPage ? `<a class="btn sm" href="${pageLink(page + 1)}">Next ›</a>` : ''}
-    </div>` : ''}`;
+  const p = new URLSearchParams(q); p.set('page', page + 1);
+  document.getElementById('results').innerHTML = '<div class="section">' + (d.results.length ? grid(d.results) : '<div class="empty"><h2>No results on this page</h2><p>Try another title or browse the next page.</p></div>') + '</div>' +
+    '<div class="pager"><a class="btn sm" href="#/search?' + p + '">Next page ›</a><span>Page ' + page + '</span></div>';
 }
 
 // ---------- anime details ----------
@@ -594,31 +536,8 @@ function viewAccount(query) {
 }
 
 // ---------- schedule ----------
-async function viewSchedule(query, alive) {
-  document.title = 'Schedule · animee space';
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const days = Array.from({ length: 7 }, (_, i) => new Date(today.getTime() + i * 86400000));
-  const sel = Math.min(Math.max(Number(query.get('d')) || 0, 0), 6);
-  const day = days[sel];
-  const start = Math.floor(day.getTime() / 1000);
-  const end = start + 86400;
-
-  app.innerHTML = `
-    <h1 class="page-title">Airing schedule</h1>
-    <div class="tabs">${days.map((d, i) => `<a class="tab${i === sel ? ' on' : ''}" href="#/schedule?d=${i}">
-      ${i === 0 ? 'Today' : d.toLocaleDateString(undefined, { weekday: 'short' })} <small>${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</small></a>`).join('')}</div>
-    <div id="sched">${loader()}</div>`;
-
-  const d = await api(`/schedule?start=${start}&end=${end}`);
-  if (!alive()) return;
-  const now = Date.now() / 1000;
-  document.getElementById('sched').innerHTML = d.items.length ? `<div class="sched">${d.items.map((s) => `
-    <a href="#/anime/${s.anime.id}" class="${s.airingAt < now ? 'past' : ''}">
-      <span class="time">${new Date(s.airingAt * 1000).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}</span>
-      <img src="${esc(s.anime.cover)}" alt="" loading="lazy">
-      <span class="t">${esc(s.anime.title)}</span>
-      <span class="e">EP ${s.episode}</span>
-    </a>`).join('')}</div>` : '<div class="empty">Nothing airing this day.</div>';
+async function viewSchedule() {
+  app.innerHTML = '<div class="empty"><h2>Schedule unavailable</h2><p>The Anikoto API currently documents recent anime and series/episode data, but no airing-schedule endpoint.</p><a class="btn" href="#/">Back home</a></div>';
 }
 
 function viewNotFound() {
