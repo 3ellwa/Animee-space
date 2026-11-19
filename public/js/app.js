@@ -91,7 +91,7 @@ async function viewHome(alive) {
   const cont = store.continueList().filter(p => p.title);
   app.innerHTML =
     (cont.length ? section('Continue watching', '<div class="row">' + cont.map(contCard).join('') + '</div>') : '') +
-    section('Latest updates', grid(d.recent), '<a href="#/search">Browse catalog ›</a>');
+    section('Trending now', grid(d.recent), '<a href="#/search">Browse catalog ›</a>');
   app.querySelectorAll('.cont .x').forEach(b => b.onclick = e => {
     e.preventDefault();
     store.removeProgress(b.dataset.id);
@@ -311,8 +311,7 @@ async function viewWatch(id, query, alive) {
           <div id="player"></div>
           <div class="pl-bar">
             <label><input type="checkbox" id="opt-autoplay" ${settings.autoplay ? 'checked' : ''}> Auto next</label>
-            <label><input type="checkbox" id="opt-autoskip" ${settings.autoskip ? 'checked' : ''}> Auto skip intro</label>
-            <label>Quality <select id="opt-quality"><option value="-1">Auto</option></select></label>
+            <span class="card-meta player-hint">Pause, seek and quality controls are inside the player.</span>
             <span class="spacer"></span>
             <button class="btn sm" id="prev-ep">‹ Prev</button>
             <button class="btn sm" id="next-ep">Next ›</button>
@@ -377,11 +376,9 @@ async function viewWatch(id, query, alive) {
       }
     },
   });
-  player.bindQuality($('opt-quality'));
   onCleanup(() => player.destroy());
 
   $('opt-autoplay').onchange = (e) => store.setSetting('autoplay', e.target.checked);
-  $('opt-autoskip').onchange = (e) => store.setSetting('autoskip', e.target.checked);
   $('prev-ep').onclick = () => idx() > 0 && goTo(episodes[idx() - 1]);
   $('next-ep').onclick = () => idx() < episodes.length - 1 && goTo(episodes[idx() + 1]);
 
@@ -586,19 +583,20 @@ function setupSearch() {
   input.oninput = () => {
     clearTimeout(timer);
     const q = input.value.trim();
+    const my = ++seq;
     if (q.length < 2) { box.hidden = true; return; }
     timer = setTimeout(async () => {
-      const my = ++seq;
       try {
         const d = await api('/search?q=' + encodeURIComponent(q));
         if (my !== seq) return;
-        box.innerHTML = d.results.slice(0, 5).map((a) => `
+        const results = Array.isArray(d.results) ? d.results : [];
+        box.innerHTML = (results.length ? results.slice(0, 5).map((a) => `
           <a href="#/anime/${a.id}"><img src="${esc(a.cover)}" alt="">
-            <div><div class="s-title">${esc(a.title)}</div><div class="s-meta">${[FORMAT[a.format], a.year, STATUS[a.status]].filter(Boolean).join(' · ')}</div></div></a>`).join('') +
+            <div><div class="s-title">${esc(a.title)}</div><div class="s-meta">${[FORMAT[a.format], a.year, STATUS[a.status]].filter(Boolean).join(' · ')}</div></div></a>`).join('') : '<div class="s-empty">No matches found.</div>') +
           `<a class="s-all" href="#/search?q=${encodeURIComponent(q)}">View all results ›</a>`;
         box.hidden = false;
-      } catch { box.hidden = true; }
-    }, 300);
+      } catch { if (my === seq) box.hidden = true; }
+    }, 450);
   };
   box.onclick = () => { box.hidden = true; input.value = ''; };
   document.addEventListener('click', (e) => { if (!form.contains(e.target)) box.hidden = true; });
