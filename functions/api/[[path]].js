@@ -96,7 +96,7 @@ export async function onRequest(ctx){
    const language=url.searchParams.get('category')==='dub'?'dub':'sub';
    return {episodeId:b,...await anikoto.getSources(validId(animeId),episodeRef,language)};
   });
-  if(a==='batch'&&!b)return json({results:[]});
+  if(a==='batch'&&!b)return await cached(ctx,300,async()=>{const ids=[...new Set((url.searchParams.get('ids')||'').split(',').filter(x=>/^[a-zA-Z0-9_-]{1,180}$/.test(x)))].slice(0,8);const results=await Promise.all(ids.map(async id=>{try{return (await anikoto.getSeries(id)).anime;}catch{return null;}}));return {results:results.filter(Boolean)};});
   if(a==='schedule')return json({items:[],unsupported:true});
   return json({error:'Not found'},404);
  }catch(error){
