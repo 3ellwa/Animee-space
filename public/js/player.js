@@ -21,15 +21,15 @@ export class Player {
       <div class="player">
         <video playsinline controls preload="metadata"></video>
         <iframe class="embed-frame" title="Anime episode player" allow="autoplay; fullscreen; picture-in-picture; encrypted-media" allowfullscreen webkitallowfullscreen mozallowfullscreen referrerpolicy="strict-origin-when-cross-origin" hidden></iframe>
-        <button class="pl-btn fullscreen" type="button" aria-label="Fullscreen player" hidden>⛶ Fullscreen</button>
         <button class="pl-btn skip" type="button" hidden>Skip intro ⏭</button>
         <button class="pl-btn next" type="button" hidden>Next episode ▶</button>
         <div class="pl-msg" hidden></div>
-      </div>`;
+      </div>
+      <button class="btn sm player-fullscreen" type="button" aria-label="Fullscreen player" hidden>⛶ Fullscreen</button>`;
     this.video = root.querySelector('video');
     this.iframe = root.querySelector('iframe');
     this.skipBtn = root.querySelector('.skip');
-    this.fullscreenBtn = root.querySelector('.fullscreen');
+    this.fullscreenBtn = root.querySelector('.player-fullscreen');
     this.nextBtn = root.querySelector('.next');
     this.msgEl = root.querySelector('.pl-msg');
     this.quality = null; // <select> set via bindQuality()
