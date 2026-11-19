@@ -27,11 +27,11 @@ export async function request(path) {
 }
 export async function getRecentAnime({page=1,perPage=30}={}) {
   const d=await request('/recent-anime?'+new URLSearchParams({page:String(page),per_page:String(perPage)}));
-  const rows=Array.isArray(d.anime)?d.anime:Array.isArray(d.results)?d.results:Array.isArray(d.data)?d.data:Array.isArray(d)?d:[];
+  const rows=Array.isArray(d.anime)?d.anime:Array.isArray(d.results)?d.results:Array.isArray(d.data)?d.data:Array.isArray(d.data?.anime)?d.data.anime:Array.isArray(d.items)?d.items:Array.isArray(d.results?.data)?d.results.data:Array.isArray(d)?d:[];
   return {results:rows.map(normalizeAnime).filter(Boolean),pagination:d.pagination||d.meta||{page,perPage}};
 }
 export async function getSeries(id) {
-  if(!/^\\d+$/.test(String(id))) throw fail(400,'Invalid Anikoto series id');
+  if(!/^\d+$/.test(String(id))) throw fail(400,'Invalid Anikoto series id');
   const d=await request('/series/'+encodeURIComponent(id));
   const anime=normalizeAnime(d?.anime||d);
   if(!anime) throw fail(404,'Anime not found in Anikoto');
