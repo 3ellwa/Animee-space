@@ -1,5 +1,7 @@
 name = "animee-space"
 pages_build_output_dir = "public"
+
+# SESSION_SECRET is configured as an encrypted Cloudflare Pages environment variable.
 compatibility_date = "2025-11-01"
 
 [vars]
