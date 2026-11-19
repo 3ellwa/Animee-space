@@ -20,7 +20,8 @@ export class Player {
     root.innerHTML = `
       <div class="player">
         <video playsinline controls preload="metadata"></video>
-        <iframe class="embed-frame" title="Anime episode player" allow="autoplay; fullscreen; picture-in-picture; encrypted-media" allowfullscreen referrerpolicy="strict-origin-when-cross-origin" hidden></iframe>
+        <iframe class="embed-frame" title="Anime episode player" allow="autoplay; fullscreen; picture-in-picture; encrypted-media" allowfullscreen webkitallowfullscreen mozallowfullscreen referrerpolicy="strict-origin-when-cross-origin" hidden></iframe>
+        <button class="pl-btn fullscreen" type="button" aria-label="Fullscreen player" hidden>⛶ Fullscreen</button>
         <button class="pl-btn skip" type="button" hidden>Skip intro ⏭</button>
         <button class="pl-btn next" type="button" hidden>Next episode ▶</button>
         <div class="pl-msg" hidden></div>
@@ -28,11 +29,13 @@ export class Player {
     this.video = root.querySelector('video');
     this.iframe = root.querySelector('iframe');
     this.skipBtn = root.querySelector('.skip');
+    this.fullscreenBtn = root.querySelector('.fullscreen');
     this.nextBtn = root.querySelector('.next');
     this.msgEl = root.querySelector('.pl-msg');
     this.quality = null; // <select> set via bindQuality()
 
     this.skipBtn.onclick = () => this.skipIntro();
+    this.fullscreenBtn.onclick = () => this.enterFullscreen();
     this.nextBtn.onclick = () => this.opts.onNext?.();
 
     this.onTime = () => this.tick();
@@ -68,6 +71,7 @@ export class Player {
     v.removeAttribute('src');
     v.load();
     this.skipBtn.hidden = true;
+    this.fullscreenBtn.hidden = true;
     this.nextBtn.hidden = true;
     this.retries = 0;
     this.msg('');
@@ -88,6 +92,7 @@ export class Player {
     if (data.embedUrl) {
       this.video.hidden = true;
       this.iframe.hidden = false;
+      this.fullscreenBtn.hidden = false;
       this.embedOrigin = data.embedOrigin || new URL(data.embedUrl).origin;
       this.iframe.src = data.embedUrl;
       if (this.quality) this.quality.disabled = true;
@@ -141,6 +146,16 @@ export class Player {
       v.addEventListener('error', () => this.msg('This stream failed to load. Try another server.'), { once: true });
     } else {
       this.msg('Your browser can’t play this stream.');
+    }
+  }
+
+  async enterFullscreen() {
+    const target = this.iframe.hidden ? this.video : this.iframe;
+    try {
+      if (target.requestFullscreen) await target.requestFullscreen();
+      else await this.root.querySelector('.player').requestFullscreen();
+    } catch {
+      this.msg('Fullscreen was blocked by the browser. Use the embedded player controls if available.');
     }
   }
 
