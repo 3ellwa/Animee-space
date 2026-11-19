@@ -29,18 +29,18 @@ const MEDIA_FIELDS = `
   trailer { id site }
 `;
 const stripHtml = value => String(value || '')
-  .replace(/<br\\s*\\/?\\s*>/gi, ' ')
+  .replace(/<br\s*\/?\s*>/gi, ' ')
   .replace(/<[^>]*>/g, ' ')
   .replace(/&nbsp;/gi, ' ')
   .replace(/&amp;/gi, '&')
   .replace(/&#39;/g, "'")
   .replace(/&quot;/g, '"')
-  .replace(/\\s+/g, ' ')
+  .replace(/\s+/g, ' ')
   .trim();
 const first = (...values) => values.find(value => value !== undefined && value !== null && value !== '');
 const validId = value => {
   const id = String(value ?? '').trim();
-  if (!/^\\d{1,12}$/.test(id)) throw fail(400, 'Invalid AniList anime ID');
+  if (!/^\d{1,12}$/.test(id)) throw fail(400, 'Invalid AniList anime ID');
   return id;
 };
 function normalizeAnime(raw) {
