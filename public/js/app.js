@@ -23,7 +23,7 @@ const loader = () => '<div class="loader"></div>';
 const onCleanup = (fn) => cleanups.push(fn);
 
 function epsLabel(a) {
-  const have = a.availableEpisodes;
+  const have = Number(a.availableEpisodes ?? a.episodes) || 0;
   if (a.status === 'RELEASING' && a.episodes) return `${have}/${a.episodes}`;
   return have || a.episodes || '?';
 }
@@ -89,10 +89,13 @@ async function viewHome(alive) {
   const d = await api('/home');
   if (!alive()) return;
   const cont = store.continueList().filter(p => p.title);
-  app.innerHTML = (cont.length ? section('Continue watching', '<div class="row">' + cont.map(contCard).join('') + '</div>') : '') +
-    section('Recently added', grid(d.trending), '<a href="#/search">Browse catalog ›</a>');
+  app.innerHTML =
+    (cont.length ? section('Continue watching', '<div class="row">' + cont.map(contCard).join('') + '</div>') : '') +
+    section('Latest updates', grid(d.recent), '<a href="#/search">Browse catalog ›</a>');
   app.querySelectorAll('.cont .x').forEach(b => b.onclick = e => {
-    e.preventDefault(); store.removeProgress(Number(b.dataset.id)); b.closest('.cont').remove();
+    e.preventDefault();
+    store.removeProgress(Number(b.dataset.id));
+    b.closest('.cont').remove();
   });
 }
 
@@ -147,20 +150,41 @@ function top10(list) {
 
 // ---------- search / browse ----------
 async function viewSearch(q, alive) {
-  const opt = (list, val) => list.map(x => '<option value="' + esc(x) + '"' + (x === val ? ' selected' : '') + '>' + esc(x) + '</option>').join('');
-  app.innerHTML = '<h1 class="page-title">' + (q.get('q') ? 'Results for “' + esc(q.get('q')) + '”' : 'Browse anime') + '</h1>' +
-    '<form class="filters" id="filters"><input class="input q" name="q" placeholder="Title…" value="' + esc(q.get('q') || '') + '">' +
-    '<select name="genre"><option value="">Any genre</option>' + opt(GENRES, q.get('genre')) + '</select></form><div id="results">' + loader() + '</div>';
+  const selectedGenre = q.get('genre') || '';
+  const options = GENRES.map(g => '<option value="' + esc(g) + '"' + (g === selectedGenre ? ' selected' : '') + '>' + esc(g) + '</option>').join('');
+  app.innerHTML = `
+    <h1 class="page-title">${q.get('q') ? 'Search results' : 'Browse anime'}</h1>
+    <form class="filters" id="filters">
+      <input class="input q" name="q" placeholder="Search titles…" value="${esc(q.get('q') || '')}">
+      <select name="genre"><option value="">All genres</option>${options}</select>
+      <button class="btn primary" type="submit">Search</button>
+    </form>
+    <div id="results">${loader()}</div>`;
   const form = document.getElementById('filters');
-  const go = () => { const p = new URLSearchParams(); for (const [k,v] of new FormData(form)) if (String(v).trim()) p.set(k,String(v).trim()); location.hash = '#/search' + (p.toString() ? '?' + p : ''); };
-  form.onsubmit = e => { e.preventDefault(); go(); };
-  form.querySelector('select').onchange = go;
-  const d = await api('/search?' + new URLSearchParams(q));
+  form.onsubmit = e => {
+    e.preventDefault();
+    const params = new URLSearchParams();
+    for (const [key, value] of new FormData(form)) if (String(value).trim()) params.set(key, String(value).trim());
+    location.hash = '#/search' + (params.toString() ? '?' + params.toString() : '');
+  };
+  const params = new URLSearchParams(q);
+  const d = await api('/search?' + params.toString());
   if (!alive()) return;
-  const page = d.pageInfo.currentPage;
-  const p = new URLSearchParams(q); p.set('page', page + 1);
-  document.getElementById('results').innerHTML = '<div class="section">' + (d.results.length ? grid(d.results) : '<div class="empty"><h2>No results on this page</h2><p>Try another title or browse the next page.</p></div>') + '</div>' +
-    '<div class="pager"><a class="btn sm" href="#/search?' + p + '">Next page ›</a><span>Page ' + page + '</span></div>';
+  const info = d.pageInfo || { currentPage: 1, hasNextPage: false };
+  const page = info.currentPage || 1;
+  const pageLink = n => {
+    const p = new URLSearchParams(q);
+    p.set('page', String(n));
+    return '#/search?' + p.toString();
+  };
+  const pager = (info.hasNextPage || page > 1) ? `
+    <div class="pager">
+      ${page > 1 ? '<a class="btn sm" href="' + pageLink(page - 1) + '">‹ Previous</a>' : ''}
+      <span>Page ${page}${info.lastPage ? ' of ' + info.lastPage : ''}</span>
+      ${info.hasNextPage ? '<a class="btn sm" href="' + pageLink(page + 1) + '">Next ›</a>' : ''}
+    </div>` : '';
+  document.getElementById('results').innerHTML =
+    '<div class="section">' + (d.results?.length ? grid(d.results) : '<div class="empty"><h2>No matches found</h2><p>Try a different title or genre.</p></div>') + '</div>' + pager;
 }
 
 // ---------- anime details ----------
