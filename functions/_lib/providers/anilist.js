@@ -61,7 +61,7 @@ function normalizeAnime(raw) {
     episodes,
     availableEpisodes: episodes,
     duration: Number(a.duration) || null,
-    score: Number(a.averageScore) ? Number(a.averageScore) / 10 : null,
+    score: Number(a.averageScore) || null,
     popularity: Number(a.popularity) || null,
     season: a.season || null,
     year: Number(a.seasonYear || a.startDate?.year) || null,
