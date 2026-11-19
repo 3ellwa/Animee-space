@@ -24,7 +24,7 @@ const onCleanup = (fn) => cleanups.push(fn);
 
 function epsLabel(a) {
   const have = Number(a.availableEpisodes ?? a.episodes) || 0;
-  if (a.status === 'RELEASING' && a.episodes) return `${have}/${a.episodes}`;
+  
   return have || a.episodes || '?';
 }
 
