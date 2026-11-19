@@ -64,8 +64,8 @@ const int = (v, min, max) => {
 };
 
 function cleanRow(r) {
-  const a = Number(r?.a);
-  if (!Number.isInteger(a) || a <= 0 || a > 10_000_000) return null;
+  const a = String(r?.a ?? '').trim();
+  if (!/^[a-zA-Z0-9_-]{1,180}$/.test(a)) return null;
   const w = typeof r.w === 'string' && r.w.length <= MAX_BITSET_CHARS && /^[A-Za-z0-9+/]*={0,2}$/.test(r.w) ? r.w : null;
   return {
     a,
@@ -74,7 +74,7 @@ function cleanRow(r) {
     t: int(r.t, 0, 86400),
     d: int(r.d, 0, 86400),
     w: w ? bitsEncode(bitsDecode(w)) : null,
-    u: int(r.u, 0, now() + 60), // no timestamps from the future
+    u: int(r.u, 0, now() + 60),
   };
 }
 
