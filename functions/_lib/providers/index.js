@@ -1,9 +1,9 @@
-import * as anikoto from './anikoto.js';
+import * as anilist from './anilist.js';
 
-const PROVIDERS = { anikoto };
+const PROVIDERS = { anilist };
 
 export function getProvider(env = {}) {
-  const key = String(env.PROVIDER || 'anikoto').toLowerCase();
+  const key = String(env.PROVIDER || 'anilist').toLowerCase();
   const provider = PROVIDERS[key];
   if (!provider) throw Object.assign(new Error(`Unknown provider "${key}"`), { status: 500 });
   return provider;
