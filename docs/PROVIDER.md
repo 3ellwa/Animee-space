@@ -1,27 +1,25 @@
-# Anikoto + MegaPlay integration
+# Animee catalogue and playback provider
 
-The active provider is `anikoto`, configured in `wrangler.toml`. It uses the documented public endpoints:
+## Tenrai catalogue
 
-- `https://anikotoapi.site/recent-anime?page=1&per_page=20`
-- `https://anikotoapi.site/series/{id}`
-- `https://megaplay.buzz/stream/s-2/{episode_embed_id}/{language}`
-- `https://megaplay.buzz/stream/mal/{mal_id}/{episode_number}/{language}`
-- `https://megaplay.buzz/stream/ani/{anilist_id}/{episode_number}/{language}`
+Animee uses the Tenrai v1 REST API at `https://api.tenrai.org/v1`. Tenrai follows the Jikan v4 response schema and provides catalogue search, anime details, and paginated episode records.
 
-The Pages Function proxies the Anikoto catalog endpoints to avoid making browser clients depend directly on the catalog host. MegaPlay playback URLs are returned as iframe URLs, not as direct media sources, because direct embed-link access is disabled by the service.
+Strict safe-for-work filtering is enabled using `sfw-strict=true` on catalogue requests. Mature-rated or Ecchi/Hentai/Erotica details are rejected server-side as well. The provider is called server-side, not directly from browser JavaScript. Worker Cache API responses reduce duplicate upstream calls.
 
-## Catalog API proxy
+Primary endpoints:
+- `GET /seasons/now?limit=24&sfw-strict=true`
+- `GET /anime?q=Naruto&limit=24&page=1&sfw-strict=true`
+- `GET /anime/{mal_id}/full?sfw-strict=true`
+- `GET /anime/{mal_id}/episodes?page=1&limit=25&sfw-strict=true`
 
-- `GET /api/anikoto/recent-anime?page=1&per_page=20`
-- `GET /api/anikoto/series/:id`
-- `GET /api/anikoto/embed/:episode_embed_id/:language`
+The public API documentation currently lists a limit of 120 requests per minute and 4 requests per second. Search uses one catalogue request per submitted query, with a short autocomplete delay and response caching.
 
-The series response is passed through unchanged so its original fields, including each `episode_embed_id`, remain available to the frontend.
+## MegaPlay playback
 
-## Player events
+For an anime's MAL ID and episode number, Animee builds:
+- `https://megaplay.buzz/stream/mal/{mal-id}/{episode-number}/sub`
+- `https://megaplay.buzz/stream/mal/{mal-id}/{episode-number}/dub`
 
-The MegaPlay iframe sends `postMessage` events. The player validates both `event.origin` (`https://megaplay.buzz`) and `event.source` (the active iframe) before using them. `time` and `watching-log` events update watch progress; `complete` marks an episode watched and runs auto-next; `error` displays a playback message.
+The player uses an iframe. The provider owns its playback controls; Animee cannot directly control seeking, quality, or subtitles across the cross-origin boundary. MegaPlay documents `time`, `complete`, `error`, and `watching-log` postMessage events, which Animee validates by origin and iframe source before saving progress.
 
-## Playback limitations
-
-The MegaPlay player owns its internal controls. The surrounding app cannot reliably control seeking, quality, subtitles, or intro skipping through the documented API. The app therefore disables its HLS quality selector while an embed is active and relies on MegaPlay's own controls. Resume position is stored from events, but the provided documentation does not define a seek command to restore that position inside the iframe.
+MegaPlay warns that not every title is mapped through MAL or AniList IDs yet. A search result can therefore exist without a working embed.
