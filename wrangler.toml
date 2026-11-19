@@ -1,15 +1,10 @@
 name = "animee-space"
-pages_build_output_dir = "public"
-
-# SESSION_SECRET is configured as an encrypted Cloudflare Pages environment variable.
+main = "worker.js"
 compatibility_date = "2025-11-01"
 
 [vars]
 PROVIDER = "anikoto"
 
-# Accounts + synced history. Create it once with:
-#   npx wrangler d1 create animee-space
-# then paste the database_id it prints below.
 [[d1_databases]]
 binding = "DB"
 database_name = "animee-space"
