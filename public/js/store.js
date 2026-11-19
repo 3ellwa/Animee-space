@@ -98,7 +98,7 @@ export function markWatched(id, number) {
 // ---------- missing titles/posters (e.g. history synced from another device) ----------
 const metaTried = new Set(); // ask AniList once per id per page load, even if it has no result
 export async function ensureMeta(ids) {
-  const missing = ids.filter((id) => lib[id] && !lib[id].m?.title && !metaTried.has(id)).slice(0, 50);
+  const missing = ids.filter((id) => lib[id] && !lib[id].m?.title && !metaTried.has(id)).slice(0, 10);
   if (!missing.length) return false;
   missing.forEach((id) => metaTried.add(id));
   try {
