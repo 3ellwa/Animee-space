@@ -23,7 +23,7 @@ function countEpisodes(value){
  return Number(value)||0;
 }
 export function normalizeAnime(raw){
- const a=raw?.anime??raw??{};
+ const a=raw?.anime?{...raw,...raw.anime}:(raw||{});
  const id=first(a.id,a.anime_id,a.animeId,a.series_id,a.seriesId,a.slug,a.url);
  const title=first(asText(a.title),asText(a.name),asText(a.english_title),asText(a.japanese_title),asText(a.jname),asText(a.slug),'Untitled');
  const episodes=countEpisodes(first(a.episodes_count,a.total_episodes,a.episode_count,a.episodes,a.episodeCount,0));
@@ -61,7 +61,7 @@ export async function getSeries(rawId){
  const pending=(async()=>{
   const payload=await request('/series/'+encodeURIComponent(id));
   const data=unwrap(payload);
-  const animeRaw=data?.anime??data?.series??data?.meta??data;
+  const animeRaw=data?.anime?{...data,...data.anime}:(data?.series??data?.meta??data);
   const anime=normalizeAnime(animeRaw);
   if(!anime?.id)anime.id=id;
   if(!anime.title||anime.title==='Untitled')anime.title=String(first(data?.title,animeRaw?.name,id));
