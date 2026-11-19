@@ -107,7 +107,7 @@ export async function onRequest(ctx) {
       return await cached(ctx, 300, async () => {
         const ids = [...new Set((url.searchParams.get('ids') || '')
           .split(',')
-          .filter(id => /^\\d{1,12}$/.test(id)))].slice(0, 8);
+          .filter(id => /^\d{1,12}$/.test(id)))].slice(0, 8);
         const results = await Promise.all(ids.map(async id => {
           try { return await anilist.getAnime(id); }
           catch { return null; }
