@@ -3,7 +3,7 @@ const API = 'https://anikotoapi.site';
 const EMBED = 'https://megaplay.buzz';
 const fail = (status, message) => Object.assign(new Error(message), { status });
 const first = (...v) => v.find(x => x !== undefined && x !== null && x !== '');
-const clean = v => typeof v === 'string' ? v.replace(/<br\\s*\\/?\\s*>/gi,'\\n').replace(/<[^>]*>/g,'').trim() : '';
+const clean = v => typeof v === 'string' ? v.replace(/<br\s*\/?\s*>/gi, '\n').replace(/<[^>]*>/g, '').trim() : '';
 function genresOf(a) {
   const t=a?.terms_by_type;
   const rows=Array.isArray(t?.genre)?t.genre:Array.isArray(a?.genres)?a.genres:Array.isArray(a?.genre)?a.genre:[];
