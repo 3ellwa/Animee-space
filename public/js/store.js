@@ -35,7 +35,7 @@ const saveLib = () => { write('lib', lib); write('dirty', [...dirty]); };
 
 const metaOf = (a) => ({ title: a.title, cover: a.cover, format: a.format, episodes: a.episodes ?? null, year: a.year ?? null, score: a.score ?? null });
 function entry(id) {
-  return lib[id] || (lib[id] = { a: Number(id), s: 0, ep: 0, t: 0, d: 0, w: [], u: 0, m: null });
+  return lib[id] || (lib[id] = { a: String(id), s: 0, ep: 0, t: 0, d: 0, w: [], u: 0, m: null });
 }
 function touch(e) {
   e.u = now();
@@ -96,7 +96,7 @@ export function markWatched(id, number) {
 }
 
 // ---------- missing titles/posters (e.g. history synced from another device) ----------
-const metaTried = new Set(); // ask AniList once per id per page load, even if it has no result
+const metaTried = new Set(); // ask Anikoto once per id per page load, even if it has no result
 export async function ensureMeta(ids) {
   const missing = ids.filter((id) => lib[id] && !lib[id].m?.title && !metaTried.has(id)).slice(0, 10);
   if (!missing.length) return false;
@@ -109,7 +109,7 @@ export async function ensureMeta(ids) {
     return filled;
   } catch { return false; }
 }
-export const libraryIds = () => Object.keys(lib).map(Number);
+export const libraryIds = () => Object.keys(lib);
 
 // ---------- settings ----------
 let settings = { autoplay: true, autoskip: false, category: 'sub', ...read('settings', {}) };
@@ -224,7 +224,7 @@ export const sync = {
       adopt(row);
     }
     // anything only this browser has gets uploaded
-    for (const id of Object.keys(lib)) if (!server.has(Number(id))) dirty.add(Number(id));
+    for (const id of Object.keys(lib)) if (!server.has(String(id))) dirty.add(Number(id));
     if (!read('settingsDirty', false)) applyPrefs(data.prefs);
     saveLib();
     this.lastSync = Date.now();
