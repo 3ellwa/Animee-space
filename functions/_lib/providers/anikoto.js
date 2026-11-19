@@ -68,7 +68,7 @@ export async function getSeries(rawId){
   const rawEpisodes=Array.isArray(data?.episodes)?data.episodes:Array.isArray(data?.data?.episodes)?data.data.episodes:[];
   const episodes=rawEpisodes.map((e,i)=>{
    const embed=e?.embed_url??e?.embedUrl??{};
-   const embedId=String(first(e?.episode_embed_id,e?.embed_id,e?.stream_id,e?.id,''));
+   const embedId=String(first(e?.episode_embed_id,e?.embed_id,e?.stream_id,''));
    const number=Number(first(e?.number,e?.episode,e?.episode_number,e?.episode_no,i+1))||i+1;
    const sub=first(embed?.sub,typeof embed==='string'?embed:null,e?.sub_url);
    const dub=first(embed?.dub,e?.dub_url);
@@ -82,7 +82,7 @@ export async function getSeries(rawId){
    };
    return {id:id+':'+(episodeEmbedId||number),number,title:String(first(e?.title,e?.name,'Episode '+number)),isFiller:false,
     embedId:episodeEmbedId,embedSub:safeUrl(sub),embedDub:safeUrl(dub),
-    hasSub:!!(safeUrl(sub)||episodeEmbedId),hasDub:!!(safeUrl(dub)||episodeEmbedId)};
+    hasSub:!!(safeUrl(sub)||episodeEmbedId),hasDub:!!safeUrl(dub)};
   }).sort((a,b)=>a.number-b.number);
   anime.episodes=episodes.length;
   anime.availableEpisodes=episodes.length;
