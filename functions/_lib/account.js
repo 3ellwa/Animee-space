@@ -122,7 +122,7 @@ async function login(request, env) {
 async function pull(env, user) {
   const { results } = await env.DB.prepare('SELECT anime_id AS a, s, ep, t, d, w, u FROM library WHERE user_id = ?')
     .bind(user.id).all();
-  return { rows: results, prefs: user.prefs, now: now() };
+  return { rows: results.map(r => ({ ...r, a: String(r.a) })), prefs: user.prefs, now: now() };
 }
 
 async function push(request, env, user) {
@@ -143,7 +143,7 @@ async function push(request, env, user) {
     const { results } = await env.DB.prepare(
       `SELECT anime_id AS a, s, ep, t, d, w, u FROM library WHERE user_id = ? AND anime_id IN (${chunk.map(() => '?').join(',')})`,
     ).bind(user.id, ...chunk).all();
-    for (const r of results) existing.set(r.a, r);
+    for (const r of results) existing.set(String(r.a), { ...r, a: String(r.a) });
   }
 
   const newCount = ids.filter((id) => !existing.has(id)).length;
