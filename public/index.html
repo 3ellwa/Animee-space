@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#0d0b14">
+  <title>animee space</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://s4.anilist.co">
+  <link rel="stylesheet" href="/css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.js" defer></script>
+  <script type="module" src="/js/app.js"></script>
+</head>
+<body>
+  <header class="nav">
+    <div class="nav-inner">
+      <a class="logo" href="#/">animee<span> space</span></a>
+      <nav class="nav-links" id="nav-links">
+        <a href="#/" data-nav="home">Home</a>
+        <a href="#/search" data-nav="search">Browse</a>
+        <a href="#/schedule" data-nav="schedule">Schedule</a>
+        <a href="#/watchlist" data-nav="watchlist">Watchlist</a>
+        <a href="#/account" data-nav="account" id="nav-account">Sign in</a>
+      </nav>
+      <form class="nav-search" id="nav-search" role="search">
+        <input type="search" name="q" placeholder="Search anime…" autocomplete="off" aria-label="Search anime">
+        <div class="suggest" id="suggest" hidden></div>
+      </form>
+      <button class="menu-btn" id="menu-btn" aria-label="Menu">☰</button>
+    </div>
+  </header>
+
+  <main id="app" class="container"></main>
+
+  <footer class="footer">
+    <div class="container">
+      <a class="logo small" href="#/">animee<span> space</span></a>
+      <p>Anime info from <a href="https://anilist.co" target="_blank" rel="noopener">AniList</a>.</p>
+    </div>
+  </footer>
+</body>
+</html>
