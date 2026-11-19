@@ -11,11 +11,11 @@ async function cached(ctx,ttl,fn){
  if(cache){const put=cache.put(key,response.clone()).catch(()=>{});ctx.waitUntil?ctx.waitUntil(put):await put;}
  return response;
 }
-async function catalogPage(ctx,page){
+async function catalogPage(ctx,page,perPage=20){
  const cache=globalThis.caches?.default;
- const key=new Request(new URL('/__anikoto_cache/recent/'+page,ctx.request.url).toString(),{method:'GET'});
+ const key=new Request(new URL('/__anikoto_cache/recent/'+perPage+'/'+page,ctx.request.url).toString(),{method:'GET'});
  if(cache){const hit=await cache.match(key).catch(()=>null);if(hit){try{return await hit.json();}catch{}}}
- const result=await anikoto.getRecentAnime({page,perPage:20});
+ const result=await anikoto.getRecentAnime({page,perPage});
  if(cache){const response=new Response(JSON.stringify(result),{headers:{'Content-Type':'application/json','Cache-Control':'public, max-age=900'}});const put=cache.put(key,response).catch(()=>{});ctx.waitUntil?ctx.waitUntil(put):await put;}
  return result;
 }
@@ -28,24 +28,30 @@ function pageCount(meta){
  const total=Number(meta?.total_pages??meta?.totalPages??meta?.last_page??meta?.lastPage??meta?.pages);
  return Number.isFinite(total)&&total>0?total:null;
 }
-function hasNext(meta,page,rows){
+function hasNext(meta,page,rows,perPage=20){
  const explicit=meta?.has_next??meta?.hasNext??meta?.has_next_page??meta?.hasNextPage;
  if(typeof explicit==='boolean')return explicit;
  const last=pageCount(meta);
  if(last)return page<last;
- return rows.length>=20;
+ return rows.length>=perPage;
 }
 async function searchCatalog(ctx,query,genre){
- const firstPage=await catalogPage(ctx,1);
+ const perPage=100;
+ const firstPage=await catalogPage(ctx,1,perPage);
  const meta=firstPage.pagination||{};
  const pageTotal=pageCount(meta);
- const pages=Math.max(1,Math.min(pageTotal||10,10));
+ const pages=Math.max(1,Math.min(pageTotal||50,50));
  const all=[...firstPage.results];
- for(let p=2;p<=pages;p++){
-  const next=await catalogPage(ctx,p);
-  if(!next.results.length)break;
-  all.push(...next.results);
-  if(!hasNext(next.pagination||{},p,next.results))break;
+ let stop=!hasNext(meta,1,firstPage.results,perPage);
+ const batchSize=8;
+ for(let start=2;start<=pages&&!stop;start+=batchSize){
+  const pageNumbers=Array.from({length:Math.min(batchSize,pages-start+1)},(_,i)=>start+i);
+  const batch=await Promise.all(pageNumbers.map(page=>catalogPage(ctx,page,perPage)));
+  for(let i=0;i<batch.length;i++){
+   const next=batch[i];
+   all.push(...next.results);
+   if(!hasNext(next.pagination||{},pageNumbers[i],next.results,perPage)){stop=true;break;}
+  }
  }
  const seen=new Set();
  const catalog=all.filter(a=>{const key=String(a.id);if(seen.has(key))return false;seen.add(key);return true;});
