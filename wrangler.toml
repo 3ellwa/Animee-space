@@ -3,7 +3,7 @@ main = "worker.js"
 compatibility_date = "2025-11-01"
 
 [vars]
-PROVIDER = "anikoto"
+PROVIDER = "anilist"
 
 [[d1_databases]]
 binding = "DB"
