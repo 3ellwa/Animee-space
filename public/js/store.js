@@ -214,7 +214,7 @@ export const sync = {
     if (res.status === 401) return this.signedOut();
     if (!res.ok) return;
     const data = await res.json();
-    const server = new Map(data.rows.map((r) => [r.a, r]));
+    const server = new Map(data.rows.map((r) => [String(r.a), r]));
     for (const row of data.rows) {
       const local = lib[row.a];
       if (local) {
