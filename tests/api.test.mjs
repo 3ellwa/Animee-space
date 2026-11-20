@@ -32,15 +32,31 @@ const animeRow = (id, title) => ({
 const detailPayload = id => ({ data: animeRow(Number(id), 'Sample Anime') });
 
 test('home reads the SFW-filtered seasonal catalogue', async () => {
-  globalThis.fetch = async url => {
+  globalThis.fetch = async (url, init) => {
+    if (String(url) === 'https://graphql.anilist.co') {
+      assert.deepEqual(JSON.parse(init.body).variables.ids, [1, 2]);
+      return Response.json({ data: { Page: { media: [{ idMal: 1, bannerImage: 'https://s4.anilist.co/banner/1.jpg' }, { idMal: 2, bannerImage: null }] } } });
+    }
     assert.match(String(url), /\/seasons\/now/);
     assert.match(String(url), /sfw-strict=true/);
-    return Response.json({ data: [animeRow(1, 'Seasonal Sample')], pagination: { current_page: 1, last_visible_page: 1, has_next_page: false } });
+    return Response.json({ data: [animeRow(1, 'Seasonal Sample'), animeRow(2, 'No Banner')], pagination: { current_page: 1, last_visible_page: 1, has_next_page: false } });
   };
   const response = await onRequest(context('home'));
   const body = await response.json();
   assert.equal(response.status, 200);
   assert.equal(body.recent[0].title, 'Seasonal Sample');
+  assert.equal(body.recent[0].backdrop, 'https://s4.anilist.co/banner/1.jpg', 'spotlight gets AniList banner art');
+  assert.equal(body.recent[1].backdrop, undefined, 'shows without a banner fall back to the cover');
+});
+
+test('home still works when AniList is unreachable', async () => {
+  globalThis.fetch = async url => {
+    if (String(url) === 'https://graphql.anilist.co') throw new TypeError('network down');
+    return Response.json({ data: [animeRow(901, 'Offline Banner')], pagination: {} });
+  };
+  const body = await (await onRequest(context('home?x=offline'))).json();
+  assert.equal(body.recent[0].title, 'Offline Banner');
+  assert.equal(body.recent[0].backdrop, undefined);
 });
 
 test('search uses the full Tenrai catalogue endpoint, not a recent-feed crawler', async () => {

@@ -84,35 +84,58 @@ function nextBroadcast(b) {
 }
 const localTime = (ms) => new Date(ms).toLocaleString(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' });
 
-// A section with tab buttons; each tab's content is loaded the first time it is opened.
-function tabbedSection(id, title, tabs, more = '') {
-  return `<section class="section" id="${id}">
-    <div class="section-head"><h2>${title}</h2>${more}</div>
-    <div class="tabs" role="tablist">${tabs.map(([key, label], i) =>
-      `<button class="tab${i ? '' : ' on'}" role="tab" aria-selected="${!i}" data-tab="${key}">${label}</button>`).join('')}</div>
-    <div class="tab-body">${loader()}</div>
+// A shelf: one horizontal row of posters with arrow buttons. Its list loads the first time the
+// row comes near the screen, so the home page doesn't ask for every list at once.
+function shelf(id, title, sub, more = '') {
+  return `<section class="section shelf" id="${id}">
+    <div class="section-head">
+      <div class="shelf-title"><h2>${title}</h2>${sub ? `<p class="shelf-sub">${sub}</p>` : ''}</div>
+      <div class="shelf-nav">${more}<button class="arrow" data-dir="-1" aria-label="Scroll left" disabled>‹</button><button class="arrow" data-dir="1" aria-label="Scroll right">›</button></div>
+    </div>
+    <div class="shelf-track">${loader()}</div>
   </section>`;
 }
-function bindTabs(id, render, alive) {
+const shelfCards = (list) => list.map(card).join('');
+// Top 10 as a shelf: a big outlined rank number leaning on each poster.
+const rankCards = (list) => list.map((a, i) => `<a class="rank-card" href="#/anime/${a.id}" title="${esc(T(a))}">
+    <span class="rank-num">${i + 1}</span>
+    <span class="poster"><img loading="lazy" src="${esc(a.cover)}" alt="${esc(T(a))} poster"></span>
+    <span class="rank-title">${esc(T(a))}</span>
+  </a>`).join('');
+function bindShelf(id, load, alive) {
   const root = document.getElementById(id);
   if (!root) return;
-  const body = root.querySelector('.tab-body');
-  let seq = 0;
-  const open = async (key) => {
-    const my = ++seq;
-    root.querySelectorAll('.tab').forEach((t) => { const on = t.dataset.tab === key; t.classList.toggle('on', on); t.setAttribute('aria-selected', on); });
-    body.innerHTML = loader();
+  const track = root.querySelector('.shelf-track');
+  const arrows = [...root.querySelectorAll('.arrow')];
+  const sync = () => {
+    const max = track.scrollWidth - track.clientWidth - 2;
+    arrows[0].disabled = track.scrollLeft <= 2;
+    arrows[1].disabled = track.scrollLeft >= max;
+    root.classList.toggle('at-start', track.scrollLeft <= 2);
+    root.classList.toggle('at-end', track.scrollLeft >= max);
+  };
+  arrows.forEach((b) => b.onclick = () => track.scrollBy({ left: Number(b.dataset.dir) * track.clientWidth * 0.85, behavior: 'smooth' }));
+  track.addEventListener('scroll', sync, { passive: true });
+  let started = false;
+  const start = async () => {
+    if (started) return;
+    started = true;
     try {
-      const html = await render(key);
-      if (alive() && my === seq) body.innerHTML = html;
+      const html = await load();
+      if (!alive()) return;
+      if (!html) { root.remove(); return; }
+      track.innerHTML = html;
+      track.scrollLeft = 0;
+      sync();
     } catch (err) {
-      if (alive() && my === seq) body.innerHTML = `<div class="empty"><p>${esc(err.message)}</p></div>`;
+      if (alive()) track.innerHTML = `<div class="empty"><p>${esc(err.message)}</p></div>`;
     }
   };
-  root.querySelector('.tabs').onclick = (e) => { const t = e.target.closest('.tab'); if (t) open(t.dataset.tab); };
-  open(root.querySelector('.tab').dataset.tab);
+  if (!('IntersectionObserver' in window)) return start();
+  const io = new IntersectionObserver((entries) => { if (entries.some((e) => e.isIntersecting)) { io.disconnect(); start(); } }, { rootMargin: '600px 0px' });
+  io.observe(root);
+  onCleanup(() => io.disconnect());
 }
-const ranked = (list, name) => top10(list.slice(0, 10)) + (name ? `<p class="more-link"><a href="#/top/${name}">Full list ›</a></p>` : '');
 const grid = (list) => (list?.length ? `<div class="grid">${list.map(card).join('')}</div>` : '<div class="empty">Nothing here yet.</div>');
 const section = (title, body, more = '') => `<section class="section"><div class="section-head"><h2>${title}</h2>${more}</div>${body}</section>`;
 
@@ -180,11 +203,13 @@ async function viewHome(alive) {
     `<nav class="quick" aria-label="Shortcuts">${quick.map(([label, href]) => `<a class="chip" href="${href}">${label}</a>`).join('')}</nav>` +
     (cont.length ? section('Continue watching', '<div class="row">' + cont.map(contCard).join('') + '</div>') : '') +
     '<div id="picked"></div>' +
-    `<div class="home-cols">
-      <div>${tabbedSection('fresh', 'Fresh picks', [['season', 'This season'], ['upcoming', 'Coming soon'], ['completed', 'Just completed']], '<a href="#/search">Browse catalog ›</a>')}</div>
-      <aside>${section('Top 10 this season', top10(unstarted(season).slice(0, 10)))}</aside>
-    </div>` +
-    tabbedSection('charts', 'Charts', [['airing', 'Top airing'], ['popular', 'Most popular'], ['favorite', 'Most favourited']]) +
+    shelf('shelf-top', 'Top 10 this season', 'what everyone is watching right now') +
+    shelf('shelf-airing', 'Airing now', 'new episodes every week', '<a href="#/top/airing">See all ›</a>') +
+    shelf('shelf-season', 'New this season', 'fresh starts worth a first episode', '<a href="#/top/season">See all ›</a>') +
+    shelf('shelf-upcoming', 'Coming soon', 'mark your calendar', '<a href="#/top/upcoming">See all ›</a>') +
+    shelf('shelf-completed', 'Just completed', 'finished, so you can binge it all', '<a href="#/top/completed">See all ›</a>') +
+    shelf('shelf-popular', 'Most popular', 'the ones everybody has seen', '<a href="#/top/popular">See all ›</a>') +
+    shelf('shelf-favorite', 'Fan favourites', 'crowd pleasers that never get old', '<a href="#/top/favorite">See all ›</a>') +
     '<section class="section" id="home-genres"></section>';
 
   app.querySelectorAll('.cont .x').forEach(b => b.onclick = e => {
@@ -194,15 +219,22 @@ async function viewHome(alive) {
   });
   bindSpotlight();
   checkNewEpisodes(cont, alive);
-  bindTabs('fresh', async (key) => grid(unstarted(key === 'season' ? season : (await api(`/list/${key}`)).results).slice(0, 18)), alive);
-  bindTabs('charts', async (key) => ranked(unstarted((await api(`/list/${key}`)).results), key), alive);
+  bindShelf('shelf-top', async () => rankCards(unstarted(season).slice(0, 10)), alive);
+  for (const name of ['airing', 'season', 'upcoming', 'completed', 'popular', 'favorite']) {
+    bindShelf(`shelf-${name}`, async () => {
+      const list = unstarted((await api(`/list/${name}`)).results || []).slice(0, 20);
+      return list.length ? shelfCards(list) : '';
+    }, alive);
+  }
 
   // Recommendations based on the most recently watched or listed show.
   const recent = [...store.continueList(), ...Object.values(store.getList()).sort((x, y) => y.updated - x.updated)
     .map((e) => ({ animeId: e.id, title: e.title }))].find((e) => e.title);
   if (recent) api(`/anime/${recent.animeId}/extras`).then((x) => {
     if (!alive() || !x.recommendations?.length) return;
-    document.getElementById('picked').innerHTML = section(`Because you watched ${esc(recent.title)}`, grid(unstarted(x.recommendations).slice(0, 6)));
+    const picked = document.getElementById('picked');
+    picked.innerHTML = shelf('shelf-picked', `Because you watched ${esc(recent.title)}`, 'picked from what you watched');
+    bindShelf('shelf-picked', async () => shelfCards(unstarted(x.recommendations).slice(0, 12)), alive);
   }).catch(() => {});
 
   api('/genres').then(({ genres }) => {
@@ -249,15 +281,17 @@ function bindSpotlight() {
   onCleanup(() => clearInterval(timer));
 }
 
-// Spotlight art is the show's own cover: a blurred backdrop plus the sharp poster. Trailer
-// thumbnails were wider but often carried a streaming service's logo or a "Trailer" caption.
+// Spotlight art: AniList's wide banner when the show has one (sharp, no other service's logo),
+// otherwise the cover as a blurred backdrop with the sharp poster beside it.
 function spotlight(list) {
   if (!list?.length) return '';
   return `<section class="spotlight" aria-label="Spotlight">
     ${list.map((a, i) => `
-      <div class="slide${i === 0 ? ' on' : ''}">
-        <div class="slide-bg" style="background-image:url('${esc(a.cover)}')"></div>
-        <img class="slide-poster" src="${esc(a.cover)}" alt="" ${i ? 'loading="lazy"' : ''}>
+      <div class="slide${i === 0 ? ' on' : ''}${a.backdrop ? ' has-art' : ''}">
+        ${a.backdrop
+          ? `<img class="slide-art" src="${esc(a.backdrop)}" alt="" ${i ? 'loading="lazy"' : 'fetchpriority="high"'}>`
+          : `<div class="slide-bg" style="background-image:url('${esc(a.cover)}')"></div>
+        <img class="slide-poster" src="${esc(a.cover)}" alt="" ${i ? 'loading="lazy"' : ''}>`}
         <div class="slide-info">
           <div class="rank"><span>#${i + 1}</span> spotlight</div>
           <h2>${esc(T(a))}</h2>

@@ -13,7 +13,7 @@ Animee.space is a Cloudflare Worker application. It serves the frontend and API 
 
 ## Features
 
-- Home page with spotlight, shortcuts, Top 10, this season / coming soon / just completed, charts, "Because you watched", and genres
+- Home page with a spotlight (wide AniList banner art), shortcuts, and horizontal rows: Because you watched, Top 10, airing now, this season, coming soon, just completed, most popular, fan favourites, plus genres
 - Searchable catalogue with close-match fallback for typos ("frerien" finds Frieren)
 - Browse filters: type, status, season, year, score, age rating, up to 5 genres, and sort order; shortcuts like `#/tv`, `#/movies`, `#/airing`
 - Ranked lists (`#/top/airing`, `popular`, `favorite`, `upcoming`, `season`, `completed`), weekly airing schedule with local times, and random title
