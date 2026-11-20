@@ -1,3 +1,11 @@
+## Search engines and quieter browsing
+
+- Real page addresses: `/anime/52991/frieren-beyond-journey-s-end`, `/watch/52991?ep=2`, `/top/popular` instead of `#/…`. Old `#/` links still work and are converted on load; address bars settle on each show's canonical slug.
+- The Worker fills in each page's title, description, canonical link, Open Graph and Twitter tags, and JSON-LD (WebSite search box, TVSeries or Movie, breadcrumbs) before sending the page, plus plain-HTML show details for crawlers that don't run scripts.
+- `/sitemap.xml` (fixed pages, ranked lists and a few hundred popular, airing and seasonal shows), `/robots.txt` that allows crawling, a 1200x630 share image (`/og.png`), and an IndexNow key for Bing and Yandex.
+- Unknown addresses and missing shows return a real 404. Watchlist, settings, account and random pages are `noindex`; API responses carry `X-Robots-Tag: noindex`.
+- Harem, Reverse Harem and Magical Sex Shift shows stay out of browsing (home rows, spotlight, lists, schedule, random, genre chips, sitemap) but still appear in title searches and when one of those genres is picked directly.
+
 ## Home rows and sharp spotlight
 
 - Spotlight uses each show's wide banner from AniList's free public API (by MAL ID), so the hero is sharp instead of a blurred cover. The visitor's browser asks AniList directly (AniList refuses requests from Cloudflare's servers) and remembers the answers for three days. Shows without a banner, or AniList being down, keep the cover art.

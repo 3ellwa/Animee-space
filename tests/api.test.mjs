@@ -557,3 +557,20 @@ test('an exact search does not trigger the close-match lookup', async () => {
   await onRequest(context('search?q=one%20piece&page=1&type=&nocache=' + Date.now()));
   assert.deepEqual(queries, ['one piece']);
 });
+
+test('harem-type shows stay out of browsing but remain searchable', async () => {
+  const harem = { ...animeRow(701, 'Harem Show'), themes: [{ name: 'Harem' }] };
+  const plain = animeRow(702, 'Plain Show');
+  globalThis.fetch = async () => Response.json({ data: [harem, plain], pagination: {} });
+  const list = await (await onRequest(context('list/popular?t=hide'))).json();
+  assert.deepEqual(list.results.map(a => a.title), ['Plain Show']);
+  const browse = await (await onRequest(context('search?type=tv&t=hide'))).json();
+  assert.deepEqual(browse.results.map(a => a.title), ['Plain Show']);
+  const searched = await (await onRequest(context('search?q=harem&t=hide'))).json();
+  assert.ok(searched.results.some(a => a.title === 'Harem Show'), 'a title search still finds it');
+  const picked = await (await onRequest(context('search?genres=Harem&t=hide'))).json();
+  assert.ok(picked.results.some(a => a.title === 'Harem Show'), 'picking the genre directly still finds it');
+  const genres = await (await onRequest(context('genres'))).json();
+  assert.ok(!genres.genres.includes('Harem') && !genres.genres.includes('Magical Sex Shift'));
+  assert.ok(genres.genres.includes('Action'));
+});

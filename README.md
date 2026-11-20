@@ -66,6 +66,12 @@ Example configuration (replace the example host with an embed URL pattern you ar
 
 Configure optional custom providers in Cloudflare Worker Settings → Variables and Secrets, or in the Wrangler `[vars]` section for local testing. Provider embed URLs must be HTTPS. The project does not ship guessed Ryu, Volt, Warp, or Ayame URL patterns: only add a provider when you have a documented, permitted embed URL contract.
 
+## Search engines
+
+Pages use real paths (`/anime/:id/:slug`, `/watch/:id?ep=N`, `/top/:list`). `worker.js` serves `index.html` for them with page-specific head tags from `functions/_lib/seo.js` (title, description, canonical, Open Graph, JSON-LD), and answers `/robots.txt` and `/sitemap.xml`. Unknown paths return 404. Rendered pages are edge-cached for an hour.
+
+To index faster on Bing and Yandex, submit URLs through IndexNow using the key file in `public/` (a `<key>.txt` file whose content is the key). Google needs the site added in Google Search Console with the sitemap `https://animee.space/sitemap.xml`.
+
 ## Local development
 
 ```bash

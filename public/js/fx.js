@@ -20,7 +20,7 @@ function onScroll() {
 }
 addEventListener('scroll', onScroll, { passive: true });
 addEventListener('resize', onScroll, { passive: true });
-addEventListener('hashchange', () => setTimeout(onScroll, 50));
+addEventListener('animee:navigate', () => setTimeout(onScroll, 50));
 onScroll();
 
 // ---------- cursor glow on cards ----------
@@ -59,7 +59,7 @@ const links = document.getElementById('nav-links');
 if (menuBtn && links) {
   const sync = () => menuBtn.setAttribute('aria-expanded', String(links.classList.contains('open')));
   new MutationObserver(sync).observe(links, { attributes: true, attributeFilter: ['class'] });
-  addEventListener('hashchange', () => links.classList.remove('open'));
+  addEventListener('animee:navigate', () => links.classList.remove('open'));
 }
 
 // ---------- idle whisper ----------
@@ -72,7 +72,7 @@ function arm() {
   clearTimeout(idleTimer);
   whisper?.classList.remove('on');
   idleTimer = setTimeout(() => {
-    if (document.visibilityState !== 'visible' || location.hash.startsWith('#/watch')) return arm();
+    if (document.visibilityState !== 'visible' || location.pathname.startsWith('/watch')) return arm();
     if (document.fullscreenElement) return arm();
     whisper?.classList.add('on');
   }, IDLE_MS);

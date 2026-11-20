@@ -54,7 +54,7 @@ function epsLabel(a) {
 }
 
 function card(a) {
-  return `<a class="card" href="#/anime/${a.id}" title="${esc(T(a))}">
+  return `<a class="card" href="${animeHref(a)}" title="${esc(T(a))}">
     <div class="poster" style="--c:${esc(a.color || '#1e1a2b')}">
       <img loading="lazy" src="${esc(a.cover)}" alt="${esc(T(a))} poster">
       ${a.score ? `<span class="badge score">★ ${score(a.score)}</span>` : ''}
@@ -97,7 +97,7 @@ function shelf(id, title, sub, more = '') {
 }
 const shelfCards = (list) => list.map(card).join('');
 // Top 10 as a shelf: a big outlined rank number leaning on each poster.
-const rankCards = (list) => list.map((a, i) => `<a class="rank-card" href="#/anime/${a.id}" title="${esc(T(a))}">
+const rankCards = (list) => list.map((a, i) => `<a class="rank-card" href="${animeHref(a)}" title="${esc(T(a))}">
     <span class="rank-num">${i + 1}</span>
     <span class="poster"><img loading="lazy" src="${esc(a.cover)}" alt="${esc(T(a))} poster"></span>
     <span class="rank-title">${esc(T(a))}</span>
@@ -140,10 +140,17 @@ const grid = (list) => (list?.length ? `<div class="grid">${list.map(card).join(
 const section = (title, body, more = '') => `<section class="section"><div class="section-head"><h2>${title}</h2>${more}</div>${body}</section>`;
 
 // ---------- router ----------
+// Real paths (/anime/52991/frieren-…), so every page can be indexed and shared. Links inside the
+// site are handled here without a full reload; old #/ links are converted once on load.
 function parseHash() {
-  const raw = location.hash.slice(1) || '/';
-  const [path, qs = ''] = raw.split('?');
-  return { parts: path.split('/').filter(Boolean), query: new URLSearchParams(qs) };
+  return { parts: location.pathname.split('/').filter(Boolean).map(decodeURIComponent), query: new URLSearchParams(location.search) };
+}
+const slugify = (t) => String(t || '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80);
+// The English title makes the slug, so a show keeps one address whatever the title setting.
+const animeHref = (a) => `/anime/${a.id}${a.title ? '/' + slugify(a.title) : ''}`;
+function go(url, { replace = false } = {}) {
+  history[replace ? 'replaceState' : 'pushState'](null, '', url);
+  route();
 }
 
 function setActiveNav(key) {
@@ -158,10 +165,12 @@ async function route() {
   const alive = () => token === navToken;
   const { parts, query } = parseHash();
   setActiveNav(parts[0] || 'home');
+  document.title = 'animee space';
+  window.dispatchEvent(new Event('animee:navigate'));
   window.scrollTo(0, 0);
   app.innerHTML = loader();
 
-  if (SHORTCUTS[parts[0]]) return location.replace('#/search?' + SHORTCUTS[parts[0]]);
+  if (SHORTCUTS[parts[0]]) return go('/search?' + SHORTCUTS[parts[0]], { replace: true });
 
   try {
     switch (parts[0]) {
@@ -184,7 +193,7 @@ async function route() {
     // 4xx answers (bad link, missing title) won't fix themselves, so only offer a retry for the rest.
     const lasting = err.status >= 400 && err.status < 500;
     app.innerHTML = `<div class="error" data-kao="${lasting ? '(._.)' : '(x_x)'}"><h2>${lasting ? 'Nothing here' : "Couldn't load this page"}</h2><p>${esc(err.message)}</p>
-      ${lasting ? '<a class="btn primary" href="#/">Go home</a>' : '<button class="btn primary" id="retry">Try again</button>'}</div>`;
+      ${lasting ? '<a class="btn primary" href="/">Go home</a>' : '<button class="btn primary" id="retry">Try again</button>'}</div>`;
     document.getElementById('retry')?.addEventListener('click', route);
   }
 }
@@ -195,8 +204,8 @@ async function viewHome(alive) {
   if (!alive()) return;
   const season = d.recent || [];
   const cont = store.getSettings().showContinue ? store.continueList().filter(p => p.title) : [];
-  const quick = [['TV series', '#/tv'], ['Movies', '#/movies'], ['Airing now', '#/airing'], ['Coming soon', '#/upcoming'],
-    ['Schedule', '#/schedule'], ['Help me pick', '#/pick'], ['A-Z', '#/az'], ['All filters', '#/search'], ['Random', '#/random']];
+  const quick = [['TV series', '/tv'], ['Movies', '/movies'], ['Airing now', '/airing'], ['Coming soon', '/upcoming'],
+    ['Schedule', '/schedule'], ['Help me pick', '/pick'], ['A-Z', '/az'], ['All filters', '/search'], ['Random', '/random']];
   app.innerHTML =
     '<h1 class="sr-only">animee space: watch anime</h1>' +
     spotlight(season.filter((x) => !store.notInterestedIds().has(String(x.id))).slice(0, 8)) +
@@ -204,12 +213,12 @@ async function viewHome(alive) {
     (cont.length ? section('Continue watching', '<div class="row">' + cont.map(contCard).join('') + '</div>') : '') +
     '<div id="picked"></div>' +
     shelf('shelf-top', 'Top 10 this season', 'what everyone is watching right now') +
-    shelf('shelf-airing', 'Airing now', 'new episodes every week', '<a href="#/top/airing">See all ›</a>') +
-    shelf('shelf-season', 'New this season', 'fresh starts worth a first episode', '<a href="#/top/season">See all ›</a>') +
-    shelf('shelf-upcoming', 'Coming soon', 'mark your calendar', '<a href="#/top/upcoming">See all ›</a>') +
-    shelf('shelf-completed', 'Just completed', 'finished, so you can binge it all', '<a href="#/top/completed">See all ›</a>') +
-    shelf('shelf-popular', 'Most popular', 'the ones everybody has seen', '<a href="#/top/popular">See all ›</a>') +
-    shelf('shelf-favorite', 'Fan favourites', 'crowd pleasers that never get old', '<a href="#/top/favorite">See all ›</a>') +
+    shelf('shelf-airing', 'Airing now', 'new episodes every week', '<a href="/top/airing">See all ›</a>') +
+    shelf('shelf-season', 'New this season', 'fresh starts worth a first episode', '<a href="/top/season">See all ›</a>') +
+    shelf('shelf-upcoming', 'Coming soon', 'mark your calendar', '<a href="/top/upcoming">See all ›</a>') +
+    shelf('shelf-completed', 'Just completed', 'finished, so you can binge it all', '<a href="/top/completed">See all ›</a>') +
+    shelf('shelf-popular', 'Most popular', 'the ones everybody has seen', '<a href="/top/popular">See all ›</a>') +
+    shelf('shelf-favorite', 'Fan favourites', 'crowd pleasers that never get old', '<a href="/top/favorite">See all ›</a>') +
     '<section class="section" id="home-genres"></section>';
 
   app.querySelectorAll('.cont .x').forEach(b => b.onclick = e => {
@@ -239,8 +248,8 @@ async function viewHome(alive) {
 
   api('/genres').then(({ genres }) => {
     if (!alive()) return;
-    document.getElementById('home-genres').innerHTML = `<div class="section-head"><h2>Browse by genre</h2><a href="#/search">All filters ›</a></div>
-      <div class="chips">${genres.map((g) => `<a class="chip" href="#/search?genres=${encodeURIComponent(g)}&order=score">${esc(g)}</a>`).join('')}</div>`;
+    document.getElementById('home-genres').innerHTML = `<div class="section-head"><h2>Browse by genre</h2><a href="/search">All filters ›</a></div>
+      <div class="chips">${genres.map((g) => `<a class="chip" href="/search?genres=${encodeURIComponent(g)}&order=score">${esc(g)}</a>`).join('')}</div>`;
   }).catch(() => {});
 }
 
@@ -251,9 +260,9 @@ function checkNewEpisodes(cont, alive) {
     const next = p.ep + 1;
     api(`/anime/${p.animeId}/available?ep=${next}`).then((d) => {
       if (!alive() || !(d.sub || d.dub)) return;
-      const cardEl = app.querySelector(`.cont[href^="#/watch/${p.animeId}?"]`);
+      const cardEl = app.querySelector(`.cont[href^="/watch/${p.animeId}?"]`);
       if (!cardEl) return;
-      cardEl.href = `#/watch/${p.animeId}?ep=${next}`;
+      cardEl.href = `/watch/${p.animeId}?ep=${next}`;
       const badge = cardEl.querySelector('.new-ep');
       badge.textContent = `Episode ${next} is out`;
       badge.hidden = false;
@@ -351,8 +360,8 @@ function spotlight(list) {
           </div>
           <p>${esc(a.description)}</p>
           <div class="actions">
-            <a class="btn primary" href="#/watch/${a.id}">▶ Watch now</a>
-            <a class="btn" href="#/anime/${a.id}">Details ›</a>
+            <a class="btn primary" href="/watch/${a.id}">▶ Watch now</a>
+            <a class="btn" href="${animeHref(a)}">Details ›</a>
           </div>
         </div>
       </div>`).join('')}
@@ -362,7 +371,7 @@ function spotlight(list) {
 
 function contCard(p) {
   const pct = p.duration ? Math.min(100, (p.time / p.duration) * 100) : 0;
-  return `<a class="cont" href="#/watch/${p.animeId}?ep=${p.ep}">
+  return `<a class="cont" href="/watch/${p.animeId}?ep=${p.ep}">
     <img src="${esc(p.cover)}" alt="${esc(p.title)} poster" loading="lazy">
     <div style="min-width:0;flex:1">
       <div class="c-title">${esc(p.title)}</div>
@@ -376,7 +385,7 @@ function contCard(p) {
 
 function top10(list) {
   return `<div class="top10">${(list || []).map((a, i) => `
-    <a href="#/anime/${a.id}">
+    <a href="${animeHref(a)}">
       <span class="num">${String(i + 1).padStart(2, '0')}</span>
       <img src="${esc(a.cover)}" alt="${esc(T(a))} poster" loading="lazy">
       <div><div class="t">${esc(T(a))}</div><div class="m">${[FORMAT[a.format], a.score ? `★ ${score(a.score)}` : ''].filter(Boolean).join(' · ')}</div></div>
@@ -424,7 +433,7 @@ async function viewSearch(q, alive) {
         <summary>Genres <small class="card-meta">${picked.length ? esc(picked.join(', ')) : `pick up to ${MAX_GENRES}`}</small></summary>
         <div class="chips">${genres.map((g) => `<label class="chip check"><input type="checkbox" name="genres" value="${esc(g)}"${picked.includes(g) ? ' checked' : ''}> ${esc(g)}</label>`).join('')}</div>
       </details>
-      ${[...q.keys()].some((k) => k !== 'page') ? '<a class="link-btn" href="#/search">Clear all filters</a>' : ''}
+      ${[...q.keys()].some((k) => k !== 'page') ? '<a class="link-btn" href="/search">Clear all filters</a>' : ''}
     </form>
     <div id="results">${loader()}</div>`;
 
@@ -438,7 +447,7 @@ async function viewSearch(q, alive) {
       if (key === 'genres') chosen.push(v); else params.set(key, v);
     }
     if (chosen.length) params.set('genres', chosen.join(','));
-    location.hash = '#/search' + (params.toString() ? '?' + params.toString() : '');
+    go('/search' + (params.toString() ? '?' + params.toString() : ''));
   };
   form.onsubmit = (e) => { e.preventDefault(); submit(); };
   form.querySelectorAll('select').forEach((s) => s.onchange = submit);
@@ -457,7 +466,7 @@ async function viewSearch(q, alive) {
   const pageLink = n => {
     const p = new URLSearchParams(q);
     p.set('page', String(n));
-    return '#/search?' + p.toString();
+    return '/search?' + p.toString();
   };
   const pager = (info.hasNextPage || page > 1) ? `
     <div class="pager">
@@ -477,14 +486,14 @@ async function viewList(name, alive) {
   document.title = `${LIST_TITLES[name]} · animee space`;
   const others = Object.keys(LIST_TITLES).filter((k) => k !== name);
   app.innerHTML = `<h1 class="page-title">${LIST_TITLES[name]}</h1>
-    <div class="tabs">${[name, ...others].map((k) => `<a class="tab${k === name ? ' on' : ''}" href="#/top/${k}">${LIST_TITLES[k]}</a>`).join('')}</div>
+    <div class="tabs">${[name, ...others].map((k) => `<a class="tab${k === name ? ' on' : ''}" href="/top/${k}">${LIST_TITLES[k]}</a>`).join('')}</div>
     ${top10(d.results)}`;
 }
 
 // ---------- random ----------
 async function viewRandom(alive) {
   const { id } = await api('/random', { fresh: true });
-  if (alive()) location.replace(`#/anime/${id}?from=random`);
+  if (alive()) go(`/anime/${id}?from=random`, { replace: true });
 }
 
 // ---------- anime details ----------
@@ -492,7 +501,7 @@ function bindShare(a) {
   const btn = document.getElementById('share');
   if (!btn) return;
   btn.onclick = async () => {
-    const url = `${location.origin}/#/anime/${a.id}`;
+    const url = `${location.origin}${animeHref(a)}`;
     if (navigator.share) return navigator.share({ title: a.title, url }).catch(() => {});
     try { await navigator.clipboard.writeText(url); btn.textContent = 'Link copied'; } catch { prompt('Copy this link', url); }
   };
@@ -508,7 +517,7 @@ function loadSeasons(a, alive, slotId, linkTo = 'anime', onLoaded) {
       <p class="card-meta">${seasons.length} parts in watching order</p>
       <div class="season-row">${seasons.map((s, i) => {
         const here = s.id === String(a.id);
-        return `<a class="season${here ? ' here' : ''}" href="#/${linkTo}/${s.id}"${here ? ' aria-current="page"' : ''}>
+        return `<a class="season${here ? ' here' : ''}" href="/${linkTo}/${s.id}"${here ? ' aria-current="page"' : ''}>
           <img src="${esc(s.cover)}" alt="${esc(T(s))} poster" loading="lazy">
           <span class="season-info">
             <small>${i + 1}. ${[FORMAT[s.format] || s.format, s.year].filter(Boolean).join(', ')}</small>
@@ -597,6 +606,8 @@ async function viewAnime(id, alive, query = new URLSearchParams()) {
   const a = await api(`/anime/${id}`);
   if (!alive()) return;
   document.title = `${a.title} · animee space`;
+  // Old or slug-less links settle on the show's one canonical address.
+  if (location.pathname !== animeHref(a)) history.replaceState(null, '', animeHref(a) + location.search);
   const prog = store.getProgress(a.id);
   const canWatch = a.availableEpisodes > 0;
 
@@ -615,16 +626,16 @@ async function viewAnime(id, alive, query = new URLSearchParams()) {
             <span class="chip">${epsLabel(a)} eps</span>
             ${a.duration ? `<span class="chip">${a.duration} min</span>` : ''}
             ${canWatch ? '<span class="chip avail" id="avail-chip" hidden></span>' : ''}
-            ${[...a.genres, ...(a.themes || [])].map((g) => `<a class="chip" href="#/search?genres=${encodeURIComponent(g)}">${esc(g)}</a>`).join('')}
+            ${[...a.genres, ...(a.themes || [])].map((g) => `<a class="chip" href="/search?genres=${encodeURIComponent(g)}">${esc(g)}</a>`).join('')}
           </div>
           <div class="actions">
             ${canWatch
-              ? `<a class="btn primary" href="#/watch/${a.id}${prog ? `?ep=${prog.ep}` : ''}">▶ ${prog ? `Continue EP ${prog.ep}` : 'Watch now'}</a>`
+              ? `<a class="btn primary" href="/watch/${a.id}${prog ? `?ep=${prog.ep}` : ''}">▶ ${prog ? `Continue EP ${prog.ep}` : 'Watch now'}</a>`
               : '<span class="btn" aria-disabled="true">Not released yet</span>'}
             ${listSelect(a)}
             ${listButtons(a)}
             <button class="btn" id="share" type="button">Share</button>
-            ${query.get('from') === 'random' ? '<a class="btn" href="#/random">🎲 Another random</a>' : ''}
+            ${query.get('from') === 'random' ? '<a class="btn" href="/random">🎲 Another random</a>' : ''}
           </div>
           ${a.status === 'RELEASING' && nextBroadcast(a.broadcast) ? `<p class="card-meta" style="margin-top:12px">Next episode ${localTime(nextBroadcast(a.broadcast))}, in ${fmtCountdown(Math.round((nextBroadcast(a.broadcast) - Date.now()) / 1000))}</p>` : ''}
         </div>
@@ -648,7 +659,7 @@ async function viewAnime(id, alive, query = new URLSearchParams()) {
           <div class="info-box">
             <div><b>Aired</b><span>${fmtDate(a.startDate)} – ${a.status === 'RELEASING' ? 'now' : fmtDate(a.endDate)}</span></div>
             ${a.season ? `<div><b>Season</b><span>${SEASON[a.season]} ${a.year || ''}</span></div>` : ''}
-            ${a.studios.length ? `<div><b>Studio</b><span>${(a.studioLinks?.length ? a.studioLinks.map((st) => `<a href="#/search?studio=${st.id}&studioName=${encodeURIComponent(st.name)}">${esc(st.name)}</a>`) : a.studios.map(esc)).join(', ')}</span></div>` : ''}
+            ${a.studios.length ? `<div><b>Studio</b><span>${(a.studioLinks?.length ? a.studioLinks.map((st) => `<a href="/search?studio=${st.id}&studioName=${encodeURIComponent(st.name)}">${esc(st.name)}</a>`) : a.studios.map(esc)).join(', ')}</span></div>` : ''}
             ${a.source ? `<div><b>Source</b><span>${esc(a.source.replace(/_/g, ' ').toLowerCase())}</span></div>` : ''}
             ${a.popularity ? `<div><b>Members</b><span>${a.popularity.toLocaleString()}</span></div>` : ''}
             ${a.synonyms.length ? `<div><b>Also</b><span>${esc(a.synonyms.slice(0, 3).join(', '))}</span></div>` : ''}
@@ -699,7 +710,7 @@ async function viewWatch(id, query, alive) {
 
   if (!episodes.length) {
     app.innerHTML = `<div class="empty"><h2>No episodes yet</h2><p>${esc(T(a))} hasn't released any episodes.</p>
-      <a class="btn" href="#/anime/${a.id}">Back to details</a></div>`;
+      <a class="btn" href="${animeHref(a)}">Back to details</a></div>`;
     return;
   }
 
@@ -719,7 +730,7 @@ async function viewWatch(id, query, alive) {
   const recapCount = episodes.filter((e) => e.isRecap).length;
 
   app.innerHTML = `
-    <div class="crumbs"><a href="#/">Home</a> › <a href="#/anime/${a.id}">${esc(T(a))}</a> › <span id="crumb-ep"></span></div>
+    <div class="crumbs"><a href="/">Home</a> › <a href="${animeHref(a)}">${esc(T(a))}</a> › <span id="crumb-ep"></span></div>
     <div class="watch-grid">
       <div>
         <div class="player-wrap">
@@ -743,7 +754,7 @@ async function viewWatch(id, query, alive) {
           <div style="display:flex;gap:18px;align-items:flex-start">
             <img src="${esc(a.cover)}" alt="" style="width:110px;border-radius:10px">
             <div>
-              <h2 style="margin:0 0 6px"><a href="#/anime/${a.id}">${esc(T(a))}</a></h2>
+              <h2 style="margin:0 0 6px"><a href="${animeHref(a)}">${esc(T(a))}</a></h2>
               <div class="chips" style="margin:6px 0 10px">
                 ${a.score ? `<span class="chip">★ ${score(a.score)}</span>` : ''}
                 ${a.format ? `<span class="chip">${FORMAT[a.format]}</span>` : ''}
@@ -898,7 +909,7 @@ async function viewWatch(id, query, alive) {
     if (!ep) return;
     current = ep;
     range = Math.floor(idx() / CHUNK);
-    history.replaceState(null, '', `#/watch/${a.id}?ep=${ep.number}`);
+    history.replaceState(null, '', `/watch/${a.id}?ep=${ep.number}`);
     $('crumb-ep').textContent = `Episode ${ep.number}`;
     $('now-ep').textContent = `Episode ${ep.number}${ep.isFiller ? ' (filler)' : ''}`;
     $('prev-ep').disabled = idx() === 0;
@@ -948,18 +959,18 @@ function viewWatchlist(query) {
   const favCount = list.filter((e) => e.favourite).length;
   const opened = store.getHistory();
   const tabs = `<div class="tabs">
-      <a class="tab${tab === 'all' ? ' on' : ''}" href="#/watchlist">All <small>${list.filter(inAll).length}</small></a>
-      ${store.LIST_STATUSES.map(([k, l]) => `<a class="tab${tab === k ? ' on' : ''}" href="#/watchlist?tab=${k}">${l} <small>${count(k)}</small></a>`).join('')}
-      <a class="tab${tab === 'favourites' ? ' on' : ''}" href="#/watchlist?tab=favourites">♥ Favourites <small>${favCount}</small></a>
-      <a class="tab${tab === 'history' ? ' on' : ''}" href="#/watchlist?tab=history">History <small>${opened.length}</small></a>
+      <a class="tab${tab === 'all' ? ' on' : ''}" href="/watchlist">All <small>${list.filter(inAll).length}</small></a>
+      ${store.LIST_STATUSES.map(([k, l]) => `<a class="tab${tab === k ? ' on' : ''}" href="/watchlist?tab=${k}">${l} <small>${count(k)}</small></a>`).join('')}
+      <a class="tab${tab === 'favourites' ? ' on' : ''}" href="/watchlist?tab=favourites">♥ Favourites <small>${favCount}</small></a>
+      <a class="tab${tab === 'history' ? ' on' : ''}" href="/watchlist?tab=history">History <small>${opened.length}</small></a>
     </div>`;
-  const signInNote = !store.currentUser() ? '<p class="card-meta" style="text-align:center;margin-top:24px"><a href="#/account" style="color:var(--accent)">Sign in</a> to sync your list across devices.</p>' : '';
+  const signInNote = !store.currentUser() ? '<p class="card-meta" style="text-align:center;margin-top:24px"><a href="/account" style="color:var(--accent)">Sign in</a> to sync your list across devices.</p>' : '';
 
   if (tab === 'history') {
     app.innerHTML = `<h1 class="page-title">My watchlist</h1>${tabs}
       <p class="card-meta">Every episode you opened in this browser, newest first. History stays on this device.</p>
       ${opened.length ? `<div class="sched">${opened.map((h) => `
-        <a class="sched-row" href="#/watch/${h.animeId}?ep=${h.ep}">
+        <a class="sched-row" href="/watch/${h.animeId}?ep=${h.ep}">
           <img src="${esc(h.cover)}" alt="${esc(h.title)} poster" loading="lazy">
           <span class="sched-info"><span class="t">${esc(h.title)}</span>
             <span class="card-meta">Episode ${h.ep} · ${new Date(h.at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</span></span>
@@ -998,7 +1009,7 @@ function viewWatchlist(query) {
     ${shown.length ? `<p class="card-meta">${shown.length.toLocaleString()} show${shown.length === 1 ? '' : 's'}</p>${grid(shown.slice(0, LIST_PAGE).map(asCard))}
       ${shown.length > LIST_PAGE ? '<div class="pager"><button class="btn" id="list-more" type="button">Show more</button></div>' : ''}`
       : list.length ? '<div class="empty"><p>Nothing on your list matches.</p></div>'
-      : `<div class="empty"><h2>Nothing here yet</h2><p>Add anime from any details page, or bring your list from AniList or MyAnimeList in <a href="#/settings" style="color:var(--accent)">Settings</a>.</p><a class="btn" href="#/search">Browse anime</a></div>`}
+      : `<div class="empty"><h2>Nothing here yet</h2><p>Add anime from any details page, or bring your list from AniList or MyAnimeList in <a href="/settings" style="color:var(--accent)">Settings</a>.</p><a class="btn" href="/search">Browse anime</a></div>`}
     ${signInNote}`;
 
   let showing = LIST_PAGE;
@@ -1014,7 +1025,7 @@ function viewWatchlist(query) {
     const p = new URLSearchParams();
     if (tab !== 'all') p.set('tab', tab);
     for (const [k, v] of new FormData(form)) if (String(v).trim() && !(k === 'sort' && v === 'recent')) p.set(k, String(v).trim());
-    history.replaceState(null, '', '#/watchlist' + (p.toString() ? '?' + p : ''));
+    history.replaceState(null, '', '/watchlist' + (p.toString() ? '?' + p : ''));
     route();
   };
   form.onsubmit = (e) => { e.preventDefault(); apply(); };
@@ -1058,7 +1069,7 @@ function viewAccount(query) {
     };
     const out = (everywhere) => async () => {
       await store.logout({ everywhere, clearLocal: document.getElementById('clear-local').checked });
-      location.hash = '#/';
+      go('/');
     };
     document.getElementById('logout').onclick = out(false);
     document.getElementById('logout-all').onclick = out(true);
@@ -1069,15 +1080,15 @@ function viewAccount(query) {
   app.innerHTML = `
     <div class="auth-box">
       <div class="tabs" style="margin-top:0">
-        <a class="tab${mode === 'login' ? ' on' : ''}" href="#/account">Sign in</a>
-        <a class="tab${mode === 'register' ? ' on' : ''}" href="#/account?mode=register">Create account</a>
+        <a class="tab${mode === 'login' ? ' on' : ''}" href="/account">Sign in</a>
+        <a class="tab${mode === 'register' ? ' on' : ''}" href="/account?mode=register">Create account</a>
       </div>
       <form id="auth-form" class="auth-form">
         <label>Username<input class="input" name="username" autocomplete="username" required minlength="3" maxlength="20" pattern="[A-Za-z0-9_]+"></label>
         <label>Password<input class="input" name="password" type="password" autocomplete="${mode === 'login' ? 'current-password' : 'new-password'}" required minlength="8" maxlength="128"></label>
         <div class="auth-err" id="auth-err" hidden></div>
         <button class="btn primary" type="submit">${mode === 'login' ? 'Sign in' : 'Create account'}</button>
-        <p class="card-meta">${mode === 'login' ? 'No account yet? <a href="#/account?mode=register" style="color:var(--accent)">Create one</a>' : 'No email needed. Anything you already watched in this browser gets added to your account.'}</p>
+        <p class="card-meta">${mode === 'login' ? 'No account yet? <a href="/account?mode=register" style="color:var(--accent)">Create one</a>' : 'No email needed. Anything you already watched in this browser gets added to your account.'}</p>
       </form>
     </div>`;
 
@@ -1091,7 +1102,7 @@ function viewAccount(query) {
     try {
       const { username, password } = Object.fromEntries(new FormData(form));
       await (mode === 'login' ? store.login(username, password) : store.register(username, password));
-      location.hash = '#/';
+      go('/');
     } catch (ex) {
       err.textContent = ex.message;
       err.hidden = false;
@@ -1103,7 +1114,7 @@ function viewAccount(query) {
 // ---------- schedule ----------
 const WEEK = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 function schedRow(a, note) {
-  return `<a class="sched-row" href="#/anime/${a.id}">
+  return `<a class="sched-row" href="${animeHref(a)}">
     <span class="sched-time"><b>${esc(a.broadcast?.time || '?')}</b><small>JST</small></span>
     <img src="${esc(a.cover)}" alt="${esc(T(a))} poster" loading="lazy">
     <span class="sched-info"><span class="t">${esc(T(a))}</span>
@@ -1124,7 +1135,7 @@ async function viewSchedule(query, alive) {
     return `${name} <small>${date}</small>`;
   };
   const weekday = WEEK[(dayOf(offset).getUTCDay() + 6) % 7];
-  const link = (o, m = mine) => `#/schedule?d=${o}${m ? '&mine=1' : ''}`;
+  const link = (o, m = mine) => `/schedule?d=${o}${m ? '&mine=1' : ''}`;
   const myIds = new Set(store.libraryIds());
 
   app.innerHTML = `<h1 class="page-title">Airing schedule</h1>
@@ -1176,8 +1187,8 @@ async function viewAZ(query, alive) {
   app.innerHTML = `<h1 class="page-title">${letter ? `Anime starting with ${letter}` : 'Anime A-Z'}</h1>
     <p class="card-meta">Know the name but not the spelling? Jump to its first letter.</p>
     <nav class="az-bar" aria-label="Letters">
-      <a class="chip${letter ? '' : ' on'}" href="#/az">All</a>
-      ${LETTERS.map((l) => `<a class="chip${l === letter ? ' on' : ''}" href="#/az?letter=${l}">${l}</a>`).join('')}
+      <a class="chip${letter ? '' : ' on'}" href="/az">All</a>
+      ${LETTERS.map((l) => `<a class="chip${l === letter ? ' on' : ''}" href="/az?letter=${l}">${l}</a>`).join('')}
     </nav>
     <div id="az-results">${loader()}</div>`;
   const params = new URLSearchParams({ order: 'title', page: String(page) });
@@ -1185,7 +1196,7 @@ async function viewAZ(query, alive) {
   const d = await api('/search?' + params);
   if (!alive()) return;
   const info = d.pageInfo || {};
-  const pageLink = (n) => `#/az?${letter ? `letter=${letter}&` : ''}page=${n}`;
+  const pageLink = (n) => `/az?${letter ? `letter=${letter}&` : ''}page=${n}`;
   document.getElementById('az-results').innerHTML =
     (info.total ? `<p class="card-meta">${info.total.toLocaleString()} titles</p>` : '') +
     `<div class="section">${grid(d.results)}</div>` +
@@ -1309,7 +1320,7 @@ function viewSettings(alive) {
   const radio = (name, value, label, current) => `<label class="chip check"><input type="radio" name="${name}" value="${value}"${current === value ? ' checked' : ''}> ${label}</label>`;
   const toggle = (name, label, on) => `<label class="setting-toggle"><input type="checkbox" name="${name}"${on ? ' checked' : ''}> ${label}</label>`;
   app.innerHTML = `<h1 class="page-title">Settings</h1>
-    <p class="card-meta">Saved in this browser.${user ? ` Signed in as <b>${esc(user.name)}</b>: your list and playback choices also sync to your account.` : ' <a href="#/account" style="color:var(--accent)">Sign in</a> to sync your list across devices.'}</p>
+    <p class="card-meta">Saved in this browser.${user ? ` Signed in as <b>${esc(user.name)}</b>: your list and playback choices also sync to your account.` : ' <a href="/account" style="color:var(--accent)">Sign in</a> to sync your list across devices.'}</p>
     <form id="settings" class="settings">
       <section class="settings-group"><h2>Display</h2>
         <div class="setting"><span>Anime names in</span><div class="chips">${radio('titles', 'english', 'English', s.titles)}${radio('titles', 'japanese', 'Japanese', s.titles)}</div></div>
@@ -1480,7 +1491,7 @@ function parseMalExport(text) {
 }
 
 function viewNotFound() {
-  app.innerHTML = '<div class="empty lost" data-kao="-_-."><h2>404, this page wandered off</h2><p>The link is broken or the page never existed.</p><a class="btn primary" href="#/">Take me home</a></div>';
+  app.innerHTML = '<div class="empty lost" data-kao="-_-."><h2>404, this page wandered off</h2><p>The link is broken or the page never existed.</p><a class="btn primary" href="/">Take me home</a></div>';
 }
 
 // ---------- nav search with suggestions ----------
@@ -1496,7 +1507,7 @@ function setupSearch() {
     const q = input.value.trim();
     box.hidden = true;
     input.blur();
-    if (q) location.hash = '#/search?q=' + encodeURIComponent(q);
+    if (q) go('/search?q=' + encodeURIComponent(q));
   };
   input.oninput = () => {
     clearTimeout(timer);
@@ -1509,9 +1520,9 @@ function setupSearch() {
         if (my !== seq) return;
         const results = Array.isArray(d.results) ? d.results : [];
         box.innerHTML = (results.length ? results.slice(0, 5).map((a) => `
-          <a href="#/anime/${a.id}"><img src="${esc(a.cover)}" alt="">
+          <a href="${animeHref(a)}"><img src="${esc(a.cover)}" alt="">
             <div><div class="s-title">${esc(T(a))}</div><div class="s-meta">${[FORMAT[a.format], a.year, STATUS[a.status]].filter(Boolean).join(' · ')}</div></div></a>`).join('') : '<div class="s-empty">No matches found.</div>') +
-          `<a class="s-all" href="#/search?q=${encodeURIComponent(q)}">View all results ›</a>`;
+          `<a class="s-all" href="/search?q=${encodeURIComponent(q)}">View all results ›</a>`;
         box.hidden = false;
       } catch { if (my === seq) box.hidden = true; }
     }, 450);
@@ -1520,7 +1531,7 @@ function setupSearch() {
   box.onclick = () => { close(); input.value = ''; };
   document.addEventListener('click', (e) => { if (!form.contains(e.target)) close(); });
   // Any route change (a picked result, Back, a link elsewhere) closes the list.
-  window.addEventListener('hashchange', close);
+  window.addEventListener('animee:navigate', close);
   // Arrow keys move through the suggestions, Enter opens the highlighted one, Escape closes.
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') { close(); return; }
@@ -1549,7 +1560,20 @@ window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); inst
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 document.getElementById('menu-btn').onclick = () => document.getElementById('nav-links').classList.toggle('open');
 setupSearch();
-window.addEventListener('hashchange', () => { document.title = 'animee space'; route(); });
+// Old #/ links (shared before paths existed) become real paths.
+if (location.hash.startsWith('#/')) history.replaceState(null, '', location.hash.slice(1) || '/');
+window.addEventListener('popstate', route);
+document.addEventListener('click', (e) => {
+  if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  const a = e.target.closest('a[href]');
+  if (!a || a.target || a.hasAttribute('download') || a.origin !== location.origin) return;
+  const path = a.pathname;
+  if (path.startsWith('/api/') || /\.[a-z0-9]+$/i.test(path)) return;
+  if (a.getAttribute('href').startsWith('#')) return; // in-page anchors such as the skip link
+  e.preventDefault();
+  if (path + a.search === location.pathname + location.search) { window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
+  go(path + a.search + a.hash);
+});
 
 // account label in the nav + refresh list pages after the first sync
 const navAccount = document.getElementById('nav-account');

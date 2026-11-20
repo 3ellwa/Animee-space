@@ -17,7 +17,7 @@ const json = (data, status = 200, ttl = 0) => new Response(JSON.stringify(data),
 async function cached(ctx, ttl, fn) {
   const cache = globalThis.caches?.default;
   const url = new URL(ctx.request.url);
-  url.searchParams.set('__cachev', '14');
+  url.searchParams.set('__cachev', '15');
   const key = new Request(url.toString(), { method: 'GET' });
   if (cache) {
     const hit = await cache.match(key).catch(() => null);
@@ -83,7 +83,8 @@ export async function onRequest(ctx) {
     if (a === 'schedule' && !b) return await cached(ctx, 1800, async () => tenrai.getSchedule(url.searchParams.get('day')));
     if (a === 'random' && !b) return json(await tenrai.getRandom());
     if (a === 'import' && b === 'anilist' && !c) return json(await importAniList(url.searchParams.get('user')));
-    if (a === 'genres' && !b) return json({ genres: tenrai.GENRES.map(([name]) => name) }, 200, 86400);
+    // Hidden themes stay searchable (?genres=Harem works) but get no chip of their own.
+    if (a === 'genres' && !b) return json({ genres: tenrai.GENRES.map(([name]) => name).filter(name => !tenrai.BROWSE_HIDDEN.includes(name)) }, 200, 86400);
     // How many episodes MegaPlay can play in sub and dub (checked against the listed count).
     if (a === 'anime' && b && c === 'availability') return await cached(ctx, 3600, async () => {
       const { total } = await tenrai.getEpisodes(validId(b));

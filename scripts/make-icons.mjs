@@ -11,14 +11,14 @@ const chunk = (type, data) => {
   out.writeUInt32BE(crc(Buffer.concat([Buffer.from(type, 'ascii'), data])), 8 + data.length);
   return out;
 };
-function png(size, pixel) {
-  const raw = Buffer.alloc(size * (size * 4 + 1));
-  for (let y = 0; y < size; y++) {
-    raw[y * (size * 4 + 1)] = 0;
-    for (let x = 0; x < size; x++) raw.set(pixel(x, y), y * (size * 4 + 1) + 1 + x * 4);
+function png(w, h, pixel) {
+  const raw = Buffer.alloc(h * (w * 4 + 1));
+  for (let y = 0; y < h; y++) {
+    raw[y * (w * 4 + 1)] = 0;
+    for (let x = 0; x < w; x++) raw.set(pixel(x, y), y * (w * 4 + 1) + 1 + x * 4);
   }
   const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(size, 0); ihdr.writeUInt32BE(size, 4); ihdr[8] = 8; ihdr[9] = 6;
+  ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = 6;
   return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', deflateSync(raw, { level: 9 })), chunk('IEND', Buffer.alloc(0))]);
 }
 
@@ -43,7 +43,7 @@ function inFace(u, v) {
 function icon(size, { maskable = false } = {}) {
   const scale = maskable ? 0.8 : 1; // maskable icons keep the logo inside the safe zone
   const box = size * scale, offset = (size - box) / 2, S = 4; // 4x4 samples per pixel for smooth edges
-  return png(size, (x, y) => {
+  return png(size, size, (x, y) => {
     let r = 0, g = 0, b = 0, a = 0;
     for (let sy = 0; sy < S; sy++) for (let sx = 0; sx < S; sx++) {
       const u = ((x + (sx + 0.5) / S) - offset) / box * 64, v = ((y + (sy + 0.5) / S) - offset) / box * 64;
@@ -56,6 +56,29 @@ function icon(size, { maskable = false } = {}) {
     return cover ? [Math.round(r / cover), Math.round(g / cover), Math.round(b / cover), Math.round(a / n)] : [0, 0, 0, 0];
   });
 }
+// Share image (1200x630) for link previews: the mark, large, glowing on ink.
+function ogImage() {
+  const W = 1200, H = 630, box = 300, left = (W - box) / 2, top = (H - box) / 2, S = 3;
+  return png(W, H, (x, y) => {
+    let r = 0, g = 0, b = 0;
+    for (let sy = 0; sy < S; sy++) for (let sx = 0; sx < S; sx++) {
+      const px = x + (sx + 0.5) / S, py = y + (sy + 0.5) / S;
+      const u = (px - left) / box * 64, v = (py - top) / box * 64;
+      let col;
+      if (inRoundedSquare(u, v)) col = inFace(u, v) ? INK : LIME;
+      else {
+        // Ink with a soft lime glow around the mark.
+        const d = Math.hypot(px - W / 2, py - H / 2);
+        const glow = Math.max(0, 1 - d / 420) ** 2 * 0.32;
+        col = INK.map((c, i) => c + (LIME[i] - c) * glow);
+      }
+      r += col[0]; g += col[1]; b += col[2];
+    }
+    const n = S * S;
+    return [Math.round(r / n), Math.round(g / n), Math.round(b / n), 255];
+  });
+}
+writeFileSync('public/og.png', ogImage());
 writeFileSync('public/icons/icon-192.png', icon(192));
 writeFileSync('public/icons/icon-512.png', icon(512));
 writeFileSync('public/icons/icon-maskable-512.png', icon(512, { maskable: true }));

@@ -24,6 +24,11 @@ export const GENRES = [
   ['Workplace', 48], ['Josei', 43], ['Kids', 15], ['Seinen', 42], ['Shoujo', 25], ['Shounen', 27],
 ];
 const GENRE_IDS = Object.fromEntries(GENRES);
+// Fan-service-heavy themes. Their shows stay out of browsing (home, lists, schedule, random, genre
+// chips) but still appear when someone searches by title or picks one of these genres directly.
+export const BROWSE_HIDDEN = ['Harem', 'Reverse Harem', 'Magical Sex Shift'];
+export const isBrowseHidden = anime => [...(anime?.genres || []), ...(anime?.themes || [])].some(name => BROWSE_HIDDEN.includes(name));
+const browsable = list => list.filter(anime => !isBrowseHidden(anime));
 // Older links used "Thriller"; MAL calls that genre Suspense.
 GENRE_IDS.Thriller = 41;
 
@@ -214,7 +219,7 @@ export async function request(path, retried = false) {
 
 export async function getSeasonalAnime() {
   const payload = await request('/seasons/now?limit=24&sfw-strict=true');
-  return { results: listData(payload).map(normalizeAnime).filter(anime => anime.id), pagination: pageInfo(payload, 1) };
+  return { results: browsable(listData(payload).map(normalizeAnime).filter(anime => anime.id)), pagination: pageInfo(payload, 1) };
 }
 
 // Keeps only known filter values, so nothing unexpected reaches Tenrai.
@@ -342,6 +347,12 @@ function ratingKey(rating) {
 
 export async function searchAnime(input = {}) {
   const filters = cleanFilters(input);
+  const result = await searchCatalogue(filters);
+  // Browsing (no title typed) leaves out the hidden themes unless one was picked on purpose.
+  const browsing = !filters.query && !filters.genres.some(name => BROWSE_HIDDEN.includes(name));
+  return browsing ? { ...result, results: browsable(result.results) } : result;
+}
+async function searchCatalogue(filters) {
   const { query, page } = filters;
   if (filters.year) return seasonalBrowse(filters);
   const params = new URLSearchParams({ limit: '24', page: String(page), 'sfw-strict': 'true' });
@@ -397,7 +408,7 @@ export async function getList(name, limit = 24) {
   const size = Math.min(25, Math.max(1, Number(limit) || 24));
   const base = LISTS[name];
   const payload = await request(base + (base.endsWith('?') ? '' : '&') + 'limit=' + size + '&sfw-strict=true');
-  return { name, results: listData(payload).map(normalizeAnime).filter(anime => anime.id) };
+  return { name, results: browsable(listData(payload).map(normalizeAnime).filter(anime => anime.id)) };
 }
 
 export async function getSchedule(rawDay) {
@@ -412,7 +423,7 @@ export async function getSchedule(rawDay) {
     }
     if (!payload?.pagination?.has_next_page) break;
   }
-  return { day, results };
+  return { day, results: browsable(results) };
 }
 
 export async function getRandom() {
@@ -420,7 +431,7 @@ export async function getRandom() {
     const payload = await request('/random/anime?sfw-strict=true');
     const anime = normalizeAnime(payload?.data || payload);
     const rating = anime.rating.toLowerCase();
-    if (anime.id && !rating.includes('r+') && !rating.includes('rx')) return { id: anime.id, title: anime.title };
+    if (anime.id && !rating.includes('r+') && !rating.includes('rx') && !isBrowseHidden(anime)) return { id: anime.id, title: anime.title };
   }
   throw fail(502, 'Could not pick a random title. Try again.');
 }
