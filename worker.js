@@ -74,6 +74,8 @@ export default {
     const respond = (res) => (request.method === "HEAD" ? new Response(null, res) : res);
     if (url.pathname === "/robots.txt") return respond(new Response(seo.robots(), { headers: { "Content-Type": TYPES[".txt"], "Cache-Control": "public, max-age=3600" } }));
     if (url.pathname === "/sitemap.xml") return respond(await sitemap(url, ctx));
+    // Browsers and crawlers ask for /favicon.ico on their own; answer with the PNG mark.
+    if (url.pathname === "/favicon.ico") return respond(file("/icons/icon-192.png"));
     const key = url.pathname === "/" ? "/index.html" : url.pathname;
     if (key !== "/index.html" && key in ASSETS) return respond(file(key));
     if (/\.[a-z0-9]+$/i.test(key) && key !== "/index.html") return new Response("Not found", { status: 404, headers: { "X-Robots-Tag": "noindex" } });

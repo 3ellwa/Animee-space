@@ -270,65 +270,93 @@ function checkNewEpisodes(cont, alive) {
   }
 }
 
-// Wide banner art from AniList's public API, fetched by the browser (AniList refuses requests
-// from Cloudflare's servers, but allows browsers). Answers, including "no banner", are kept for
-// three days so returning visitors don't ask again. Any failure just leaves the cover art.
-const BANNER_KEY = 'animee-space:banners';
-const BANNER_TTL = 3 * 86400e3;
+// Wide spotlight art, fetched by the browser. Kitsu has the sharpest wide art (its original files
+// run up to 3072px wide at about 3:1, close to the spotlight's shape); AniList's 1900x400 banners
+// fill the gaps. Both allow browser requests. Answers, including "no art", are kept for three
+// days. Any failure just leaves the cover art.
+const ART_KEY = 'animee-space:art';
+const ART_TTL = 3 * 86400e3;
+const KITSU = 'https://kitsu.app/api/edge/mappings?filter[externalSite]=myanimelist/anime&include=item&fields[anime]=coverImage&page[limit]=20&filter[externalId]=';
+// Kitsu's original upload when it's a JPEG (a few hundred KB, true aspect); its PNG originals can
+// be several MB, so those use the 3360x800 JPEG copy instead.
+function kitsuArt(cover) {
+  if (!cover) return null;
+  if (typeof cover.original === 'string' && /\.jpe?g(\?|$)/i.test(cover.original)) return cover.original;
+  return typeof cover.large === 'string' ? cover.large : null;
+}
+async function fromKitsu(ids) {
+  const r = await fetch(KITSU + ids.join(','), { headers: { Accept: 'application/vnd.api+json' } });
+  if (!r.ok) return {};
+  const d = await r.json();
+  const art = new Map((d.included || []).map((item) => [item.id, kitsuArt(item.attributes?.coverImage)]));
+  const found = {};
+  for (const m of d.data || []) {
+    const url = art.get(m.relationships?.item?.data?.id);
+    if (url && url.startsWith('https://')) found[m.attributes?.externalId] = url;
+  }
+  return found;
+}
+async function fromAniList(ids) {
+  const r = await fetch('https://graphql.anilist.co', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ query: 'query ($ids: [Int]) { Page(perPage: 50) { media(idMal_in: $ids, type: ANIME) { idMal bannerImage } } }', variables: { ids: ids.map(Number) } }),
+  });
+  if (!r.ok) return {};
+  const d = await r.json();
+  const found = {};
+  for (const m of d?.data?.Page?.media || []) {
+    if (typeof m?.bannerImage === 'string' && m.bannerImage.startsWith('https://') && !found[m.idMal]) found[m.idMal] = m.bannerImage;
+  }
+  return found;
+}
 async function loadBanners(ids) {
   let saved = {};
-  try { saved = JSON.parse(localStorage.getItem(BANNER_KEY) || '{}') || {}; } catch { saved = {}; }
+  try { saved = JSON.parse(localStorage.getItem(ART_KEY) || '{}') || {}; } catch { saved = {}; }
   const now = Date.now();
-  const missing = ids.filter((id) => !(saved[id] && saved[id].t > now - BANNER_TTL)).map(Number).filter(Boolean);
+  const missing = ids.filter((id) => /^\d+$/.test(id) && !(saved[id] && saved[id].t > now - ART_TTL));
   if (missing.length) {
-    try {
-      const r = await fetch('https://graphql.anilist.co', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ query: 'query ($ids: [Int]) { Page(perPage: 50) { media(idMal_in: $ids, type: ANIME) { idMal bannerImage } } }', variables: { ids: missing } }),
-      });
-      const d = r.ok ? await r.json() : null;
-      const found = {};
-      for (const m of d?.data?.Page?.media || []) {
-        if (typeof m?.bannerImage === 'string' && m.bannerImage.startsWith('https://') && !found[m.idMal]) found[m.idMal] = m.bannerImage;
-      }
-      if (d) for (const id of missing) saved[id] = { u: found[id] || null, t: now };
-      // Drop entries older than the TTL so the store stays small.
-      for (const [id, v] of Object.entries(saved)) if (!v || v.t < now - BANNER_TTL) delete saved[id];
-      try { localStorage.setItem(BANNER_KEY, JSON.stringify(saved)); } catch { /* storage full or blocked */ }
-    } catch { /* AniList unreachable: keep the cover art */ }
+    const kitsu = await fromKitsu(missing).catch(() => null);
+    const rest = missing.filter((id) => !kitsu?.[id]);
+    const anilist = rest.length ? await fromAniList(rest).catch(() => null) : {};
+    if (kitsu || anilist) for (const id of missing) saved[id] = { u: kitsu?.[id] || anilist?.[id] || null, t: now };
+    for (const [id, v] of Object.entries(saved)) if (!v || v.t < now - ART_TTL) delete saved[id];
+    try { localStorage.setItem(ART_KEY, JSON.stringify(saved)); } catch { /* storage full or blocked */ }
   }
   return Object.fromEntries(ids.map((id) => [id, saved[id]?.u || null]));
 }
-function applyBanners(root, alive) {
-  const slides = [...root.querySelectorAll('.slide[data-id]')];
-  loadBanners(slides.map((s) => s.dataset.id)).then((urls) => {
-    if (!alive()) return;
-    slides.forEach((slide, i) => {
-      const url = urls[slide.dataset.id];
-      if (!url) return;
-      const img = new Image();
-      img.className = 'slide-art';
-      img.alt = '';
-      if (i) img.loading = 'lazy';
-      img.onload = () => slide.classList.add('has-art');
-      img.src = url;
-      slide.prepend(img);
-    });
-  });
+// Phones show the sharp portrait cover instead: it fits a tall frame without cropping.
+const wideScreen = () => matchMedia('(min-width: 761px)').matches;
+// Art loads one slide at a time (the current one and the next), not all eight at once.
+function loadSlideArt(slide) {
+  const url = slide?.dataset.art;
+  if (!url || slide.querySelector('.slide-art') || !wideScreen()) return;
+  const img = new Image();
+  img.className = 'slide-art';
+  img.alt = '';
+  img.decoding = 'async';
+  img.onload = () => slide.classList.add('has-art');
+  img.src = url;
+  slide.prepend(img);
 }
 
 function bindSpotlight(alive) {
   const root = app.querySelector('.spotlight');
   if (!root) return;
-  applyBanners(root, alive);
   const slides = [...root.querySelectorAll('.slide')];
   const dots = [...root.querySelectorAll('.dots button')];
   let i = 0;
+  const warm = () => { loadSlideArt(slides[i]); loadSlideArt(slides[(i + 1) % slides.length]); };
+  loadBanners(slides.map((s) => s.dataset.id)).then((urls) => {
+    if (!alive()) return;
+    slides.forEach((s) => { if (urls[s.dataset.id]) s.dataset.art = urls[s.dataset.id]; });
+    warm();
+  });
   const show = (n) => {
     i = (n + slides.length) % slides.length;
     slides.forEach((s, k) => s.classList.toggle('on', k === i));
     dots.forEach((d, k) => { d.classList.toggle('on', k === i); d.setAttribute('aria-current', k === i); });
+    warm();
   };
   dots.forEach((d, k) => d.onclick = () => { show(k); restart(); });
   let timer = null;
@@ -340,7 +368,7 @@ function bindSpotlight(alive) {
 }
 
 // Spotlight art: the cover as a blurred backdrop with the sharp poster beside it, until the
-// show's wide AniList banner arrives (see loadBanners) and fades in over the top.
+// show's wide art arrives (see loadBanners) and fades in over the top.
 function spotlight(list) {
   if (!list?.length) return '';
   return `<section class="spotlight" aria-label="Spotlight">
