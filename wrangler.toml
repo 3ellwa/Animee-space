@@ -7,3 +7,6 @@ binding = "DB"
 database_name = "animee-space"
 database_id = "bc75323b-aa43-466d-aa3e-929f48dd5f16"
 migrations_dir = "migrations"
+
+[vars]
+ANIMEE_EMBED_PROVIDERS = "[]"

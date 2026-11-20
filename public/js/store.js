@@ -204,7 +204,7 @@ export const startedIds = () => new Set(Object.values(lib).filter((e) => e.ep ||
 // ---------- settings ----------
 // titles: 'english' or 'japanese' (romaji). showContinue / hideStarted control the home page.
 // Only autoplay, autoskip and category sync to an account; the rest stay in this browser.
-let settings = { autoplay: true, autoskip: false, category: 'sub', titles: 'english', showContinue: true, hideStarted: false, ...read('settings', {}) };
+let settings = { autoplay: true, autoskip: false, category: 'sub', provider: 'megaplay', titles: 'english', showContinue: true, hideStarted: false, ...read('settings', {}) };
 export const getSettings = () => ({ ...settings });
 export function setSetting(key, value) {
   settings = { ...settings, [key]: value };

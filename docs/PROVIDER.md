@@ -1,25 +1,43 @@
-# Animee catalogue and playback provider
+# Animee catalogue and playback providers
 
 ## Tenrai catalogue
 
 Animee uses the Tenrai v1 REST API at `https://api.tenrai.org/v1`. Tenrai follows the Jikan v4 response schema and provides catalogue search, anime details, and paginated episode records.
 
-Strict safe-for-work filtering is enabled using `sfw-strict=true` on catalogue requests. Mature-rated or Ecchi/Hentai/Erotica details are rejected server-side as well. The provider is called server-side, not directly from browser JavaScript. Worker Cache API responses reduce duplicate upstream calls.
+Strict safe-for-work filtering is enabled using `sfw-strict=true` on catalogue requests. Mature-rated or Ecchi/Hentai/Erotica details are rejected server-side as well. Playback adapters use the same SFW Tenrai details to identify a title before matching it against provider catalogues. The Worker Cache API and short in-memory caches reduce duplicate upstream calls.
 
-Primary endpoints:
-- `GET /seasons/now?limit=24&sfw-strict=true`
-- `GET /anime?q=Naruto&limit=24&page=1&sfw-strict=true`
-- `GET /anime/{mal_id}/full?sfw-strict=true`
-- `GET /anime/{mal_id}/episodes?page=1&limit=25&sfw-strict=true`
+## Built-in playback providers
 
-The public API documentation currently lists a limit of 120 requests per minute and 4 requests per second. Search uses one catalogue request per submitted query, with a short autocomplete delay and response caching.
+### MegaPlay
 
-## MegaPlay playback
+MegaPlay uses `https://megaplay.buzz/stream/mal/{mal-id}/{episode-number}/{sub|dub}`. Animee checks the actual episode page because MegaPlay can return HTTP 200 for its unavailable-episode page. Playback is hosted in the provider iframe, so provider-owned controls remain inside the iframe.
 
-For an anime's MAL ID and episode number, Animee builds:
-- `https://megaplay.buzz/stream/mal/{mal-id}/{episode-number}/sub`
-- `https://megaplay.buzz/stream/mal/{mal-id}/{episode-number}/dub`
+### AnimeParadise
 
-The player uses an iframe. The provider owns its playback controls; Animee cannot directly control seeking, quality, or subtitles across the cross-origin boundary. MegaPlay documents `time`, `complete`, `error`, and `watching-log` postMessage events, which Animee validates by origin and iframe source before saving progress.
+AnimeParadise is an independent sub-only provider. The adapter searches `https://api.animeparadise.moe`, fetches the title's episode list, then resolves its episode through the provider's `/ep/:uid` endpoint. It uses the provider's HLS endpoint at `https://stream.animeparadise.moe`.
 
-MegaPlay warns that not every title is mapped through MAL or AniList IDs yet. A search result can therefore exist without a working embed.
+The stream is delivered through `/api/stream-proxy`, which only accepts HTTPS requests to the AnimeParadise stream host and rewrites HLS playlist and key references back through that same restricted route. It does not proxy arbitrary URLs. Signed stream links may be short-lived or request-context dependent, so playback source responses and resolved AnimeParadise tokens are deliberately not cached across requests.
+
+### AniNeko
+
+AniNeko is a separate sub-only adapter using `https://anineko.to`. It searches the provider catalogue, compares returned titles with the SFW Tenrai title and synonyms, loads the matching show page, and resolves the requested episode's server buttons. When a page exposes a direct HLS or MP4 URL it returns that source; otherwise it uses the provider's embed in Animee's iframe player.
+
+### Providers intentionally not duplicated
+
+Anikoto is not listed as an independent playback provider because its current SDK adapter resolves the video through MegaPlay. Listing both would make one underlying source look like two independent fallbacks.
+
+## Automatic sequential fallback
+
+The watch page requests `server=auto`. The Worker tries the preferred provider first, then the remaining providers one at a time. It stops at the first provider that returns a usable embed or video source. If a provider fails to match the title, does not have the requested episode, or fails to resolve a source, the next provider is tried.
+
+Successful fallback results are cached in the Worker isolate for two minutes; failures are cached for 15 seconds. The API response also uses the Cloudflare Cache API. Isolate memory is temporary and is not shared globally, so cache hits are an optimization rather than persistent storage.
+
+The provider list describes adapters that Animee knows how to call, not guaranteed availability for every title or episode. Animee does not claim that every provider has a complete catalogue. Upstream sites can change their domains, markup, APIs, or availability without notice.
+
+The browser player includes hls.js v1.7.4 for HLS playback in browsers without native HLS support. The Worker CSP permits the pinned jsDelivr script and the HTTPS media/frame origins required by independent providers.
+
+## Custom embed providers
+
+Additional authorized HTTPS embed providers can be configured with the Worker variable `ANIMEE_EMBED_PROVIDERS`, a JSON array of objects containing a unique `id`, `name`, `embedUrlTemplate`, and `categories` (`sub`, `dub`, or both). Supported placeholders are `{malId}`, `{episode}`, and `{category}`. Only configure URL patterns you are authorized to use and have verified.
+
+No Anivexa instance, `ANIVEXA_API_URL`, separate Node service, or additional paid backend is required by the built-in integrations.

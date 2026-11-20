@@ -1,0 +1,158 @@
+// Built-in playback providers are resolved directly by this Worker. No external
+// aggregator URL or separate provider backend is required.
+import * as tenrai from './tenrai.js';
+import * as megaplay from './megaplay.js';
+import * as animeparadise from './animeparadise.js';
+import * as anineko from './anineko.js';
+
+const BUILTIN_ID = 'megaplay';
+const ID_RE = /^[a-z0-9][a-z0-9_-]{0,39}$/;
+const CATEGORIES = new Set(['sub', 'dub']);
+const BUILTIN_PROVIDERS = [
+  { id: 'megaplay', name: 'MegaPlay', categories: ['sub', 'dub'] },
+  { id: 'animeparadise', name: 'AnimeParadise', categories: ['sub'] },
+  { id: 'anineko', name: 'AniNeko', categories: ['sub'] },
+];
+
+const fail = (status, message) => Object.assign(new Error(message), { status });
+const episodeNumber = raw => {
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 1 || value > 2000) throw fail(400, 'Invalid episode number');
+  return value;
+};
+const validAnimeId = raw => {
+  const value = String(raw || '').trim();
+  if (!/^\d{1,12}$/.test(value)) throw fail(400, 'Invalid MAL anime ID');
+  return value;
+};
+
+function configuredProviders(env = {}) {
+  const raw = env.ANIMEE_EMBED_PROVIDERS;
+  if (!raw) return [];
+  let parsed;
+  try { parsed = typeof raw === 'string' ? JSON.parse(raw) : raw; }
+  catch { throw fail(500, 'ANIMEE_EMBED_PROVIDERS must contain valid JSON.'); }
+  if (!Array.isArray(parsed)) throw fail(500, 'ANIMEE_EMBED_PROVIDERS must be a JSON array.');
+
+  const seen = new Set(BUILTIN_PROVIDERS.map(provider => provider.id));
+  return parsed.map((item, index) => {
+    const id = String(item?.id || '').trim().toLowerCase();
+    const name = String(item?.name || '').trim().slice(0, 40);
+    const template = String(item?.embedUrlTemplate || '').trim();
+    const categories = Array.isArray(item?.categories)
+      ? [...new Set(item.categories.map(x => String(x).toLowerCase()).filter(x => CATEGORIES.has(x)))]
+      : ['sub', 'dub'];
+    if (!ID_RE.test(id) || seen.has(id)) throw fail(500, `Invalid or duplicate playback provider id at index ${index}.`);
+    if (!name || !template || !template.startsWith('https://') || !categories.length) {
+      throw fail(500, `Playback provider "${id}" needs a name, an HTTPS embedUrlTemplate, and at least one supported category.`);
+    }
+    const sample = template.replaceAll('{malId}', '123').replaceAll('{episode}', '1').replaceAll('{category}', 'sub');
+    let parsedUrl;
+    try { parsedUrl = new URL(sample); } catch { throw fail(500, `Invalid embed URL template for "${id}".`); }
+    if (parsedUrl.protocol !== 'https:' || parsedUrl.username || parsedUrl.password) {
+      throw fail(500, `Provider "${id}" must use a credential-free HTTPS URL.`);
+    }
+    seen.add(id);
+    return { id, name, template, categories };
+  });
+}
+
+export function getProviderList(env = {}) {
+  return [
+    ...BUILTIN_PROVIDERS.map(provider => ({ ...provider, configured: true })),
+    ...configuredProviders(env).map(({ id, name, categories }) => ({ id, name, categories, configured: true })),
+  ];
+}
+
+export async function getServers(rawId, rawEpisode, env = {}) {
+  const id = validAnimeId(rawId);
+  episodeNumber(rawEpisode);
+  return getProviderList(env).flatMap(provider => provider.categories.map(category => ({
+    id: provider.id,
+    provider: provider.id,
+    name: provider.name,
+    category,
+    available: true,
+  })));
+}
+
+const fallbackCache = new Map();
+const FALLBACK_CACHE_MS = 2 * 60 * 1000;
+const FALLBACK_FAILURE_MS = 15 * 1000;
+
+/** Resolve one provider at a time and stop on the first successful source. */
+export async function getFallbackSource(rawId, rawEpisode, rawPreferred, rawCategory, env = {}) {
+  const id = validAnimeId(rawId);
+  const episode = episodeNumber(rawEpisode);
+  const category = String(rawCategory || 'sub').toLowerCase();
+  if (!CATEGORIES.has(category)) throw fail(400, 'Invalid playback category.');
+  const preferred = String(rawPreferred || BUILTIN_ID).trim().toLowerCase();
+  const key = `${id}:${episode}:${category}:${preferred}`;
+  const hit = fallbackCache.get(key);
+  if (hit && hit.expires > Date.now()) {
+    if (hit.error) throw fail(hit.status || 502, hit.error);
+    return { ...hit.value, cached: true };
+  }
+  if (hit) fallbackCache.delete(key);
+
+  const candidates = (await getServers(id, episode, env)).filter(item => item.category === category);
+  candidates.sort((a, b) => Number(b.id === preferred) - Number(a.id === preferred));
+  const failures = [];
+
+  for (const candidate of candidates) {
+    try {
+      if (candidate.id === BUILTIN_ID && !(await megaplay.isAvailable(id, episode, category))) {
+        failures.push('MegaPlay: episode unavailable');
+        continue;
+      }
+      const source = await getSources(id, episode, candidate.id, category, env);
+      const playable = Boolean(source?.embedUrl || source?.sources?.some(item => item?.url));
+      if (!playable) throw fail(502, 'provider returned no playable source');
+      const result = {
+        ...source,
+        episodeId: `${id}:${episode}`,
+        provider: candidate.id,
+        providerName: candidate.name,
+        fallback: candidate.id !== preferred,
+      };
+      // Direct stream URLs from scraped providers can expire. Cache only stable
+      // iframe/template providers, not AnimeParadise or AniNeko resolutions.
+      if (candidate.id === BUILTIN_ID || !BUILTIN_PROVIDERS.some(provider => provider.id === candidate.id)) {
+        fallbackCache.set(key, { value: result, expires: Date.now() + FALLBACK_CACHE_MS });
+      }
+      return result;
+    } catch (error) {
+      failures.push(`${candidate.name}: ${error?.message || 'provider failed'}`);
+    }
+  }
+
+  const message = failures.length
+    ? `No playback provider could resolve this episode. ${failures.join(' | ').slice(0, 500)}`
+    : `No playback providers are available for ${category}.`;
+  fallbackCache.set(key, { error: message, status: 502, expires: Date.now() + FALLBACK_FAILURE_MS });
+  throw fail(502, message);
+}
+
+export async function getSources(rawId, rawEpisode, rawServer, rawCategory, env = {}) {
+  const id = validAnimeId(rawId);
+  const episode = episodeNumber(rawEpisode);
+  const server = String(rawServer || BUILTIN_ID).trim().toLowerCase();
+  const category = String(rawCategory || 'sub').toLowerCase();
+  if (!CATEGORIES.has(category)) throw fail(400, 'Invalid playback category.');
+
+  if (server === 'megaplay') return tenrai.getSources(id, episode, category);
+  if (server === 'animeparadise') return animeparadise.getSources(id, episode, category);
+  if (server === 'anineko') return anineko.getSources(id, episode, category);
+
+  const provider = configuredProviders(env).find(item => item.id === server);
+  if (!provider) throw fail(404, 'That playback server is not configured.');
+  if (!provider.categories.includes(category)) throw fail(404, `${provider.name} does not offer ${category}.`);
+  const embedUrl = provider.template
+    .replaceAll('{malId}', encodeURIComponent(id))
+    .replaceAll('{episode}', String(episode))
+    .replaceAll('{category}', category);
+  let parsed;
+  try { parsed = new URL(embedUrl); } catch { throw fail(500, `Invalid embed URL for ${provider.name}.`); }
+  if (parsed.protocol !== 'https:') throw fail(500, 'Playback embeds must use HTTPS.');
+  return { embedUrl: parsed.toString(), embedOrigin: parsed.origin, language: category, provider: provider.id, events: [] };
+}

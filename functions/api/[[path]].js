@@ -1,8 +1,10 @@
-// Tenrai catalogue API with MegaPlay embeds. User accounts remain on D1.
+// Tenrai catalogue API with direct multi-provider playback. User accounts remain on D1.
 import * as tenrai from '../_lib/providers/tenrai.js';
 import { handleAccount } from '../_lib/account.js';
 import { importAniList } from '../_lib/importers.js';
 import * as megaplay from '../_lib/providers/megaplay.js';
+import * as playback from '../_lib/providers/registry.js';
+import { proxyStream } from '../_lib/providers/stream-proxy.js';
 
 // Browsers keep API responses for at most 10 minutes, so a deploy reaches everyone quickly.
 // The edge cache below keeps its own, longer lifetime.
@@ -15,7 +17,7 @@ const json = (data, status = 200, ttl = 0) => new Response(JSON.stringify(data),
 async function cached(ctx, ttl, fn) {
   const cache = globalThis.caches?.default;
   const url = new URL(ctx.request.url);
-  url.searchParams.set('__cachev', '10');
+  url.searchParams.set('__cachev', '13');
   const key = new Request(url.toString(), { method: 'GET' });
   if (cache) {
     const hit = await cache.match(key).catch(() => null);
@@ -56,7 +58,14 @@ export async function onRequest(ctx) {
   if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405);
   try {
     const [a, b, c] = parts;
-    if (a === 'provider' && !b) return json({ name: 'tenrai', label: 'Tenrai / MegaPlay' });
+    if (a === 'stream-proxy' && !b) {
+      try { return await proxyStream(request); }
+      catch (error) { return json({ error: error?.message || 'Stream proxy failed.' }, error.status || 502); }
+    }
+    if (a === 'provider' && !b) return json({
+      catalogue: { id: 'tenrai', name: 'Tenrai' },
+      playback: playback.getProviderList(ctx.env || {}),
+    });
     if (a === 'home' && !b) return await cached(ctx, 600, async () => {
       const result = await tenrai.getSeasonalAnime();
       return { recent: result.results, pagination: result.pagination };
@@ -89,13 +98,27 @@ export async function onRequest(ctx) {
     if (a === 'anime' && b && c === 'episodes') return await cached(ctx, 1800, async () => tenrai.getEpisodes(validId(b)));
     if (a === 'episode' && b && c === 'servers') return await cached(ctx, 600, async () => {
       const reference = episodeRef(b);
-      return { episodeId: b, servers: await tenrai.getServers(reference.animeId, reference.episode) };
+      // Enforce the catalogue's strict SFW gate even when the API is called directly.
+      await tenrai.getAnime(reference.animeId);
+      return { episodeId: b, servers: await playback.getServers(reference.animeId, reference.episode, ctx.env || {}) };
     });
-    if (a === 'episode' && b && c === 'sources') return await cached(ctx, 600, async () => {
+    if (a === 'episode' && b && c === 'sources') {
+      // Do not edge-cache playback URLs: some providers issue short-lived,
+      // request-context-bound stream tokens that must be resolved per viewer.
       const reference = episodeRef(b);
+      // A direct playback URL must not bypass the strict SFW catalogue check.
+      await tenrai.getAnime(reference.animeId);
       const language = url.searchParams.get('category') === 'dub' ? 'dub' : 'sub';
-      return { episodeId: b, ...await tenrai.getSources(reference.animeId, reference.episode, language) };
-    });
+      const server = url.searchParams.get('server') || 'megaplay';
+      const preferred = url.searchParams.get('preferred') || 'megaplay';
+      if (server === 'auto') {
+        return json(await playback.getFallbackSource(reference.animeId, reference.episode, preferred, language, ctx.env || {}));
+      }
+      return json({
+        episodeId: b,
+        ...await playback.getSources(reference.animeId, reference.episode, server, language, ctx.env || {}),
+      });
+    }
     if (a === 'batch' && !b) return await cached(ctx, 600, async () => {
       const ids = [...new Set((url.searchParams.get('ids') || '').split(',').filter(id => /^\d{1,12}$/.test(id)))].slice(0, 6);
       const results = [];

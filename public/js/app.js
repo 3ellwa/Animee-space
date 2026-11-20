@@ -623,10 +623,9 @@ async function viewWatch(id, query, alive) {
   const watched = store.watchedSet(a.id);
   const wide = episodes.length <= 30 && episodes.some((e) => e.title && !/^Episode \d+$/.test(e.title));
   const CHUNK = 100;
-  // Episodes MegaPlay can actually play, per language. null until the check comes back.
-  let avail = null;
-  const availReady = api(`/anime/${a.id}/availability`).then((d) => { avail = d; return d; }).catch(() => null);
-  const playable = (e, cat) => !avail || e.number <= (cat ? avail[cat] : Math.max(avail.sub, avail.dub));
+  // Availability is determined by the configured providers for each episode.
+  // Do not disable an episode based on MegaPlay-only availability when other servers exist.
+  const playable = () => true;
   const fillerCount = episodes.filter((e) => e.isFiller).length;
   const recapCount = episodes.filter((e) => e.isRecap).length;
 
@@ -672,7 +671,7 @@ async function viewWatch(id, query, alive) {
       <aside>
         <div class="ep-box">
           <div class="ep-head">
-            <h3>Episodes <small class="card-meta">(${episodes.length})</small> <small class="card-meta" id="ep-avail"></small></h3>
+            <h3>Episodes <small class="card-meta">(${episodes.length})</small></h3>
             ${episodes.length > CHUNK ? `<select id="ep-range">${Array.from({ length: Math.ceil(episodes.length / CHUNK) }, (_, i) => {
               const from = i * CHUNK + 1, to = Math.min((i + 1) * CHUNK, episodes.length);
               return `<option value="${i}">${from}-${to}</option>`;
@@ -681,7 +680,6 @@ async function viewWatch(id, query, alive) {
           </div>
           <div class="ep-list${wide ? ' wide' : ''}" id="ep-list"></div>
           ${fillerCount || recapCount ? `<div class="ep-legend">Filler guide: <span class="lg filler">${fillerCount} filler</span>${recapCount ? ` · <span class="lg recap">${recapCount} recap</span>` : ''} · <span class="lg canon">${episodes.length - fillerCount - recapCount} story</span></div>` : ''}
-          <div class="ep-legend na-legend" id="na-legend" hidden>Greyed-out episodes aren't available to stream yet.</div>
         </div>
       </aside>
     </div>`;
@@ -718,16 +716,6 @@ async function viewWatch(id, query, alive) {
 
   $('opt-autoplay').onchange = (e) => store.setSetting('autoplay', e.target.checked);
   if ($('opt-skipfiller')) $('opt-skipfiller').onchange = (e) => store.setSetting('skipFiller', e.target.checked);
-  availReady.then((d) => {
-    if (!alive() || !d) return;
-    const listed = episodes.length;
-    $('ep-avail').textContent = d.sub === d.dub
-      ? `· ${d.sub === listed ? 'all' : d.sub} playable`
-      : `· sub ${d.sub} · dub ${d.dub} playable`;
-    $('na-legend').hidden = Math.max(d.sub, d.dub) >= listed;
-    renderEpisodes();
-    if (servers.length) renderServers();
-  });
   const applyWide = (on) => {
     app.querySelector('.watch-grid').classList.toggle('wide', on);
     $('wide-toggle').setAttribute('aria-pressed', on);
@@ -795,6 +783,7 @@ async function viewWatch(id, query, alive) {
     if (!b) return;
     server = { id: b.dataset.id, category: b.dataset.cat };
     store.setSetting('category', server.category);
+    store.setSetting('provider', server.id);
     renderServers();
     playSource(player.getCurrentTime());
   };
@@ -802,8 +791,14 @@ async function viewWatch(id, query, alive) {
   async function playSource(startAt) {
     const ep = current;
     try {
-      const src = await api(`/episode/${encodeURIComponent(ep.id)}/sources?server=${encodeURIComponent(server.id)}&category=${server.category}`, { fresh: true });
+      const src = await api(`/episode/${encodeURIComponent(ep.id)}/sources?server=auto&preferred=${encodeURIComponent(server.id)}&category=${server.category}`, { fresh: true });
       if (!alive() || ep !== current) return;
+      // Reflect the provider that actually resolved, not merely the first one tried.
+      if (src.provider) {
+        const resolved = servers.find((item) => item.id === src.provider && item.category === server.category);
+        if (resolved) server = { id: resolved.id, category: resolved.category };
+        renderServers();
+      }
       player.load(src, { startAt, meta: { ep: ep.number } });
     } catch (err) {
       if (alive()) player.msg(`Couldn't load the video: ${err.message}`);
@@ -825,19 +820,18 @@ async function viewWatch(id, query, alive) {
     player.reset();
     $('server-list').innerHTML = '<span class="card-meta">Loading servers…</span>';
     try {
-      // Wait briefly for the availability check, so an unplayable episode or language isn't loaded.
-      const [data] = await Promise.all([
-        api(`/episode/${encodeURIComponent(ep.id)}/servers`),
-        Promise.race([availReady, new Promise((resolve) => setTimeout(resolve, 3000))]),
-      ]);
+      const data = await api(`/episode/${encodeURIComponent(ep.id)}/servers`);
       if (!alive() || ep !== current) return;
       servers = data.servers;
-      const pref = store.getSettings().category;
-      const usable = servers.filter((x) => playable(ep, x.category));
-      const s = usable.find((x) => x.category === pref) || usable[0];
+      const prefs = store.getSettings();
+      const pref = prefs.category;
+      const preferredProvider = prefs.provider || 'megaplay';
+      const s = servers.find((x) => x.id === preferredProvider && x.category === pref)
+        || servers.find((x) => x.category === pref)
+        || servers[0];
       server = s ? { id: s.id, category: s.category } : null;
       renderServers();
-      if (!server) return player.msg(`Episode ${ep.number} isn't available to stream yet.`);
+      if (!server) return player.msg('No playback servers are configured for this episode.');
       if (s.category !== pref) $('now-ep').textContent += ` · ${pref} isn't out yet, playing ${s.category}`;
       const p = store.getProgress(a.id);
       await playSource(p && p.ep === ep.number ? p.time : 0);

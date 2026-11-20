@@ -1,4 +1,4 @@
-// MegaPlay iframe player. Native playback controls stay inside the provider iframe.
+// Provider playback supports native HLS/MP4 sources and third-party iframe players.
 export class Player {
   constructor(root, opts = {}) {
     this.root = root;

@@ -3,16 +3,17 @@ import { afterEach, test } from 'node:test';
 import { onRequest } from '../functions/api/[[path]].js';
 import { throttle } from '../functions/_lib/providers/tenrai.js';
 import { probeSettings } from '../functions/_lib/providers/megaplay.js';
+import { getProviderList, getServers, getSources, getFallbackSource } from '../functions/_lib/providers/registry.js';
 
 throttle.gapMs = 0;
 probeSettings.gapMs = 0;
 const originalFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = originalFetch; });
 
-function context(pathAndQuery) {
+function context(pathAndQuery, env = {}) {
   const request = new Request('https://animee.test/api/' + pathAndQuery);
   const parts = new URL(request.url).pathname.slice(5).split('/').filter(Boolean);
-  return { request, params: { path: parts } };
+  return { request, env, params: { path: parts } };
 }
 const animeRow = (id, title) => ({
   mal_id: id,
@@ -264,13 +265,242 @@ test('MAL details, episode references, and MegaPlay embeds share one stable ID',
   assert.equal(episodeData.episodes[1].number, 2);
   assert.equal(episodeData.episodes[1].isFiller, true);
   const servers = await onRequest(context('episode/20%3A2/servers'));
-  assert.deepEqual((await servers.json()).servers.map(server => server.category), ['sub', 'dub']);
+  assert.deepEqual((await servers.json()).servers.map(server => server.category), ['sub', 'dub', 'sub', 'sub']);
   const source = await onRequest(context('episode/20%3A2/sources?category=sub'));
   assert.equal((await source.json()).embedUrl, 'https://megaplay.buzz/stream/mal/20/2/sub');
+});
+
+
+test('playback registry returns real provider IDs and routes sources to the selected provider', async () => {
+  globalThis.fetch = async url => {
+    const target = new URL(String(url));
+    if (target.hostname === 'api.tenrai.org' && target.pathname.endsWith('/full')) return Response.json(detailPayload(4242));
+    throw new Error('Unexpected URL ' + target);
+  };
+  const env = {
+    ANIMEE_EMBED_PROVIDERS: JSON.stringify([
+      {
+        id: 'backup-one',
+        name: 'Backup One',
+        embedUrlTemplate: 'https://embed.example/watch/{malId}/{episode}?audio={category}',
+        categories: ['sub', 'dub'],
+      },
+      {
+        id: 'backup-two',
+        name: 'Backup Two',
+        embedUrlTemplate: 'https://player.example/{malId}/{episode}/{category}',
+        categories: ['sub'],
+      },
+    ]),
+  };
+  const servers = await (await onRequest(context('episode/4242%3A3/servers', env))).json();
+  assert.deepEqual(
+    servers.servers.map(s => [s.id, s.name, s.category]),
+    [
+      ['megaplay', 'MegaPlay', 'sub'],
+      ['megaplay', 'MegaPlay', 'dub'],
+      ['animeparadise', 'AnimeParadise', 'sub'],
+      ['anineko', 'AniNeko', 'sub'],
+      ['backup-one', 'Backup One', 'sub'],
+      ['backup-one', 'Backup One', 'dub'],
+      ['backup-two', 'Backup Two', 'sub'],
+    ],
+  );
+
+  const selected = await onRequest(context('episode/4242%3A3/sources?server=backup-two&category=sub', env));
+  const source = await selected.json();
+  assert.equal(source.embedUrl, 'https://player.example/4242/3/sub');
+  assert.equal(source.embedOrigin, 'https://player.example');
+  assert.equal(source.provider, 'backup-two');
+
+  const invalid = await onRequest(context('episode/4242%3A3/sources?server=not-configured&category=sub', env));
+  assert.equal(invalid.status, 404);
+});
+
+test('provider configuration rejects non-HTTPS embeds and duplicate IDs', async () => {
+  globalThis.fetch = async url => {
+    const target = new URL(String(url));
+    if (target.hostname === 'api.tenrai.org' && target.pathname.endsWith('/full')) return Response.json(detailPayload(4242));
+    throw new Error('Unexpected URL ' + target);
+  };
+  const insecure = context('episode/4242%3A1/servers', {
+    ANIMEE_EMBED_PROVIDERS: JSON.stringify([{ id: 'bad', name: 'Bad', embedUrlTemplate: 'http://bad.example/{malId}', categories: ['sub'] }]),
+  });
+  assert.equal((await onRequest(insecure)).status, 500);
+  const duplicate = context('episode/4242%3A1/servers', {
+    ANIMEE_EMBED_PROVIDERS: JSON.stringify([{ id: 'megaplay', name: 'Fake', embedUrlTemplate: 'https://fake.example/{malId}', categories: ['sub'] }]),
+  });
+  assert.equal((await onRequest(duplicate)).status, 500);
 });
 
 test('strict content filtering rejects directly requested mature ratings', async () => {
   globalThis.fetch = async () => Response.json({ data: { ...animeRow(99, 'Hidden Sample'), rating: 'R+ - Mild Nudity' } });
   const response = await onRequest(context('anime/99'));
   assert.equal(response.status, 404);
+});
+
+
+test('built-in playback providers require no optional backend configuration', async () => {
+  const providers = getProviderList({});
+  assert.deepEqual(providers.map(provider => provider.id), ['megaplay', 'animeparadise', 'anineko']);
+  const servers = await getServers('20', 1, {});
+  assert.deepEqual(servers.map(server => [server.id, server.category]), [
+    ['megaplay', 'sub'], ['megaplay', 'dub'], ['animeparadise', 'sub'], ['anineko', 'sub'],
+  ]);
+  assert.ok(!providers.some(provider => provider.id === 'anikoto'), 'Anikoto playback uses MegaPlay and is not counted as an independent source');
+});
+
+test('AnimeParadise resolves episode sources through its own REST API', async () => {
+  const { getSources: getAnimeParadiseSources } = await import('../functions/_lib/providers/animeparadise.js');
+  globalThis.fetch = async url => {
+    const target = new URL(String(url));
+    if (target.hostname === 'api.tenrai.org' && target.pathname.endsWith('/full')) return Response.json(detailPayload(62001));
+    if (target.hostname === 'api.animeparadise.moe' && target.pathname === '/search') {
+      assert.equal(target.searchParams.get('q'), 'Sample Anime');
+      return Response.json({ data: [{ _id: 'ap-show', title: 'Sample Anime', year: 2020 }] });
+    }
+    if (target.hostname === 'api.animeparadise.moe' && target.pathname === '/anime/ap-show/episode') {
+      return Response.json({ data: [{ uid: 'ap-episode-1', number: '1', title: 'Episode 1' }] });
+    }
+    if (target.hostname === 'api.animeparadise.moe' && target.pathname === '/ep/ap-episode-1') {
+      assert.equal(target.searchParams.get('origin'), 'ap-show');
+      return Response.json({ data: { episode: { streamLink: 'signed-stream-token', subData: [{ url: 'https://subs.example/en.vtt', label: 'English', lang: 'en' }] } } });
+    }
+    throw new Error('Unexpected URL ' + target);
+  };
+  const result = await getAnimeParadiseSources('62001', 1, 'sub');
+  assert.equal(result.language, 'sub');
+  assert.match(result.sources[0].url, /^\/api\/stream-proxy\?provider=animeparadise&url=/);
+  assert.equal(result.tracks[0].lang, 'en');
+});
+
+test('AniNeko resolves the matching title, requested episode, and embed', async () => {
+  const { getSources: getAniNekoSources } = await import('../functions/_lib/providers/anineko.js');
+  const calls = [];
+  globalThis.fetch = async url => {
+    const target = new URL(String(url));
+    calls.push(target.toString());
+    if (target.hostname === 'api.tenrai.org' && target.pathname.endsWith('/full')) return Response.json(detailPayload(62002));
+    if (target.hostname === 'anineko.to' && target.pathname === '/browser') {
+      return new Response('<article class="nv-anime-card"><h3 class="nv-anime-title"><a href="/watch/sample-anime" title="Sample Anime">Sample Anime</a></h3></article>');
+    }
+    if (target.hostname === 'anineko.to' && target.pathname === '/watch/sample-anime') {
+      return new Response('<article class="nv-info-episode-item"><a class="nv-info-episode-main" href="/watch/sample-anime/ep-1"><strong>1</strong><span>Episode One</span></a></article>');
+    }
+    if (target.hostname === 'anineko.to' && target.pathname === '/watch/sample-anime/ep-1') {
+      return new Response('<button class="nv-server-btn" data-video="https://embed.example/watch/abc">Server</button>');
+    }
+    if (target.hostname === 'embed.example') return new Response('<html><script>const source="https://cdn.example/video.m3u8?token=abc";</script></html>');
+    throw new Error('Unexpected URL ' + target);
+  };
+  const result = await getAniNekoSources('62002', 1, 'sub');
+  assert.deepEqual(result.sources, [{ type: 'hls', url: 'https://cdn.example/video.m3u8?token=abc' }]);
+  assert.ok(calls.some(url => url.includes('/watch/sample-anime/ep-1')));
+});
+
+test('automatic fallback tries providers sequentially when earlier providers fail', async () => {
+  const id = '62003';
+  const calls = [];
+  globalThis.fetch = async url => {
+    const target = new URL(String(url));
+    calls.push(target.toString());
+    if (target.hostname === 'megaplay.buzz') return new Response('<title>Error - MegaPlay</title>');
+    if (target.hostname === 'api.tenrai.org' && target.pathname.endsWith('/full')) return Response.json(detailPayload(Number(id)));
+    if (target.hostname === 'api.animeparadise.moe' && target.pathname === '/search') return Response.json({ data: [] });
+    if (target.hostname === 'anineko.to' && target.pathname === '/browser') {
+      return new Response('<article class="nv-anime-card"><h3 class="nv-anime-title"><a href="/watch/sample-anime" title="Sample Anime">Sample Anime</a></h3></article>');
+    }
+    if (target.hostname === 'anineko.to' && target.pathname === '/watch/sample-anime') {
+      return new Response('<article class="nv-info-episode-item"><a class="nv-info-episode-main" href="/watch/sample-anime/ep-1"><strong>1</strong></a></article>');
+    }
+    if (target.hostname === 'anineko.to' && target.pathname === '/watch/sample-anime/ep-1') {
+      return new Response('<button class="nv-server-btn" data-video="https://embed.example/watch/abc">Server</button>');
+    }
+    if (target.hostname === 'embed.example') return new Response('<script>"https://cdn.example/video.m3u8?token=abc"</script>');
+    throw new Error('Unexpected URL ' + target);
+  };
+  const result = await getFallbackSource(id, 1, 'megaplay', 'sub', {});
+  assert.equal(result.provider, 'anineko');
+  assert.equal(result.fallback, true);
+  assert.equal(result.sources[0].url, 'https://cdn.example/video.m3u8?token=abc');
+  const hosts = calls.map(value => new URL(value).hostname);
+  assert.ok(hosts.indexOf('megaplay.buzz') < hosts.indexOf('api.animeparadise.moe'));
+  assert.ok(hosts.indexOf('api.animeparadise.moe') < hosts.indexOf('anineko.to'));
+  const count = calls.length;
+  const retried = await getFallbackSource(id, 1, 'megaplay', 'sub', {});
+  assert.equal(retried.provider, 'anineko');
+  assert.notEqual(retried.cached, true, 'expiring direct streams must be resolved again');
+  assert.ok(calls.length > count, 'provider stream URLs are re-resolved instead of being reused');
+});
+
+test('automatic fallback caches stable MegaPlay embed resolutions', async () => {
+  const id = '62004';
+  let probes = 0;
+  globalThis.fetch = async url => {
+    const target = new URL(String(url));
+    if (target.hostname === 'megaplay.buzz') { probes++; return new Response('<title>File 1 - MegaPlay</title>'); }
+    throw new Error('Unexpected URL ' + target);
+  };
+  const first = await getFallbackSource(id, 1, 'megaplay', 'sub', {});
+  assert.equal(first.provider, 'megaplay');
+  const second = await getFallbackSource(id, 1, 'megaplay', 'sub', {});
+  assert.equal(second.cached, true);
+  assert.equal(probes, 1);
+});
+
+test('AnimeParadise HLS proxy rewrites same-provider manifest URLs and rejects other hosts', async () => {
+  const targetUrl = 'https://stream.animeparadise.moe/master.m3u8';
+  globalThis.fetch = async url => {
+    assert.equal(String(url), targetUrl);
+    return new Response('#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="key.bin"\nsegment-1.ts\n', {
+      headers: { 'Content-Type': 'application/vnd.apple.mpegurl' },
+    });
+  };
+  const response = await onRequest(context('stream-proxy?provider=animeparadise&url=' + encodeURIComponent(targetUrl)));
+  assert.equal(response.status, 200);
+  const body = await response.text();
+  assert.match(body, /\/api\/stream-proxy\?provider=animeparadise/);
+  assert.match(body, /key\.bin/);
+
+  const blocked = await onRequest(context('stream-proxy?provider=animeparadise&url=' + encodeURIComponent('https://evil.example/master.m3u8')));
+  assert.equal(blocked.status, 403);
+});
+
+test('direct playback routes enforce SFW filtering and source responses are not cached', async () => {
+  let playbackTouched = false;
+  globalThis.fetch = async url => {
+    const target = new URL(String(url));
+    if (target.hostname === 'api.tenrai.org' && target.pathname.endsWith('/full')) {
+      return Response.json({ data: { ...animeRow(62005, 'Hidden Sample'), rating: 'R+ - Mild Nudity' } });
+    }
+    playbackTouched = true;
+    throw new Error('Playback must not be attempted for filtered titles: ' + target);
+  };
+  const blocked = await onRequest(context('episode/62005%3A1/sources?server=auto&category=sub'));
+  assert.equal(blocked.status, 404);
+  assert.equal(playbackTouched, false);
+
+  globalThis.fetch = async url => {
+    const target = new URL(String(url));
+    if (target.hostname === 'api.tenrai.org' && target.pathname.endsWith('/full')) return Response.json(detailPayload(62006));
+    if (target.hostname === 'megaplay.buzz') return new Response('<title>File 2 - MegaPlay</title>');
+    throw new Error('Unexpected URL ' + target);
+  };
+  const response = await onRequest(context('episode/62006%3A1/sources?server=auto&category=sub'));
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+});
+
+test('automatic playback route returns the first working source', async () => {
+  globalThis.fetch = async url => {
+    const target = new URL(String(url));
+    if (target.hostname === 'api.tenrai.org' && target.pathname.endsWith('/full')) return Response.json(detailPayload(31));
+    if (target.hostname === 'megaplay.buzz') return new Response('<title>File 1 - MegaPlay</title>');
+    throw new Error('Unexpected URL ' + target);
+  };
+  const response = await onRequest(context('episode/31%3A2/sources?server=auto&preferred=megaplay&category=sub'));
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.provider, 'megaplay');
+  assert.equal(body.embedUrl, 'https://megaplay.buzz/stream/mal/31/2/sub');
 });

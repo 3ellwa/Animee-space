@@ -1,3 +1,11 @@
+## Direct multi-provider playback (no Anivexa)
+
+- Removed the Anivexa service dependency and its adapter.
+- Added independent Worker-side AnimeParadise and AniNeko adapters alongside MegaPlay.
+- Added SFW title matching before requesting an upstream episode and restricted AnimeParadise HLS proxying to the provider's stream host.
+- Automatic playback now tries the preferred provider followed by the remaining providers sequentially, stopping at the first usable source.
+- Anikoto is not counted as another provider because its current playback adapter uses MegaPlay.
+
 # Changelog
 
 ## Favourites and Not interested
@@ -78,3 +86,4 @@
 - Added MegaPlay iframe playback using AniList IDs and sub/dub language paths.
 - Added origin- and iframe-validated player event handling for progress, completion, errors and auto-next.
 - Removed demo video streams, demo subtitle tracks and the development-only mock provider banner.
+
