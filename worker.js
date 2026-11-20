@@ -24,13 +24,16 @@ function file(key) {
   const ext = key.slice(key.lastIndexOf("."));
   return new Response(bodyOf(key, ASSETS[key]), { headers: { "Content-Type": TYPES[ext] || "application/octet-stream", "Cache-Control": cacheControl(key), ...SECURITY } });
 }
+// Rendered pages are cached under a key that includes a hash of index.html, so each deploy
+// that changes the page shell starts a fresh cache instead of serving last hour's HTML.
+const SHELL_VERSION = (() => { let h = 0; for (const c of ASSETS["/index.html"]) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h.toString(36); })();
 const html = (body, status, extra = {}) => new Response(body, { status, headers: { "Content-Type": TYPES[".html"], "Cache-Control": "no-cache", ...SECURITY, ...extra } });
 
 // App pages: index.html with this page's title, description, canonical, previews and JSON-LD.
 // Rendered pages are kept in the edge cache for an hour (the catalogue changes slowly).
 async function page(request, url, ctx) {
   const cache = globalThis.caches?.default;
-  const key = new Request(url.origin + url.pathname + url.search + (url.search ? "&" : "?") + "__page=3", { method: "GET" });
+  const key = new Request(url.origin + url.pathname + url.search + (url.search ? "&" : "?") + "__page=" + SHELL_VERSION, { method: "GET" });
   if (cache) {
     const hit = await cache.match(key).catch(() => null);
     if (hit) return new Response(hit.body, hit);
