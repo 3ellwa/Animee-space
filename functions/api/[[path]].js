@@ -1,23 +1,36 @@
 // Tenrai catalogue API with MegaPlay embeds. User accounts remain on D1.
 import * as tenrai from '../_lib/providers/tenrai.js';
 import { handleAccount } from '../_lib/account.js';
+import { importAniList } from '../_lib/importers.js';
+import * as megaplay from '../_lib/providers/megaplay.js';
 
+// Browsers keep API responses for at most 10 minutes, so a deploy reaches everyone quickly.
+// The edge cache below keeps its own, longer lifetime.
+const BROWSER_MAX_AGE = 600;
+const browserCache = ttl => (ttl ? 'public, max-age=' + Math.min(ttl, BROWSER_MAX_AGE) : 'no-store');
 const json = (data, status = 200, ttl = 0) => new Response(JSON.stringify(data), {
   status,
-  headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': ttl ? 'public, max-age=' + ttl : 'no-store' },
+  headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': browserCache(ttl) },
 });
 async function cached(ctx, ttl, fn) {
   const cache = globalThis.caches?.default;
   const url = new URL(ctx.request.url);
-  url.searchParams.set('__cachev', '5');
+  url.searchParams.set('__cachev', '10');
   const key = new Request(url.toString(), { method: 'GET' });
   if (cache) {
     const hit = await cache.match(key).catch(() => null);
-    if (hit) return hit;
+    if (hit) {
+      const response = new Response(hit.body, hit);
+      response.headers.set('Cache-Control', browserCache(ttl));
+      return response;
+    }
   }
   const response = json(await fn(), 200, ttl);
   if (cache) {
-    const put = cache.put(key, response.clone()).catch(() => {});
+    // The edge copy carries the full lifetime; the browser copy gets the short one.
+    const edgeCopy = new Response(response.clone().body, response);
+    edgeCopy.headers.set('Cache-Control', 'public, max-age=' + ttl);
+    const put = cache.put(key, edgeCopy).catch(() => {});
     if (ctx.waitUntil) ctx.waitUntil(put);
     else await put;
   }
@@ -49,12 +62,29 @@ export async function onRequest(ctx) {
       return { recent: result.results, pagination: result.pagination };
     });
     if (a === 'search' && !b) return await cached(ctx, 600, async () => {
-      const page = Math.min(Math.max(Number(url.searchParams.get('page')) || 1, 1), 200);
-      const query = (url.searchParams.get('q') || '').trim().slice(0, 100);
-      const genre = (url.searchParams.get('genre') || '').trim().slice(0, 50);
-      const result = await tenrai.searchAnime({ query, genre, page });
-      return { results: result.results, pageInfo: result.pageInfo };
+      const p = url.searchParams;
+      return tenrai.searchAnime({
+        query: p.get('q'), page: p.get('page'), type: p.get('type'), status: p.get('status'),
+        rating: p.get('rating'), season: p.get('season'), year: p.get('year'), score: p.get('score'),
+        genres: p.get('genres') || p.get('genre'), order: p.get('order'),
+        letter: p.get('letter'), studio: p.get('studio'),
+      });
     });
+    if (a === 'list' && b && !c) return await cached(ctx, 1800, async () => tenrai.getList(b, url.searchParams.get('limit')));
+    if (a === 'schedule' && !b) return await cached(ctx, 1800, async () => tenrai.getSchedule(url.searchParams.get('day')));
+    if (a === 'random' && !b) return json(await tenrai.getRandom());
+    if (a === 'import' && b === 'anilist' && !c) return json(await importAniList(url.searchParams.get('user')));
+    if (a === 'genres' && !b) return json({ genres: tenrai.GENRES.map(([name]) => name) }, 200, 86400);
+    // How many episodes MegaPlay can play in sub and dub (checked against the listed count).
+    if (a === 'anime' && b && c === 'availability') return await cached(ctx, 3600, async () => {
+      const { total } = await tenrai.getEpisodes(validId(b));
+      return megaplay.getAvailability(b, total);
+    });
+    // Whether one episode plays, for "new episode" badges.
+    if (a === 'anime' && b && c === 'available') return await cached(ctx, 1800, async () =>
+      megaplay.getEpisodeAvailability(validId(b), url.searchParams.get('ep')));
+    if (a === 'anime' && b && c === 'seasons') return await cached(ctx, 86400, async () => tenrai.getSeasons(validId(b)));
+    if (a === 'anime' && b && c === 'extras') return await cached(ctx, 3600, async () => tenrai.getExtras(validId(b)));
     if (a === 'anime' && b && !c) return await cached(ctx, 3600, async () => tenrai.getAnime(validId(b)));
     if (a === 'anime' && b && c === 'episodes') return await cached(ctx, 1800, async () => tenrai.getEpisodes(validId(b)));
     if (a === 'episode' && b && c === 'servers') return await cached(ctx, 600, async () => {
@@ -74,7 +104,6 @@ export async function onRequest(ctx) {
       }
       return { results };
     });
-    if (a === 'schedule') return json({ items: [], unsupported: true });
     return json({ error: 'Not found' }, 404);
   } catch (error) {
     const status = error.status || 500;

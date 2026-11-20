@@ -2,9 +2,6 @@ name = "animee-space"
 main = "worker.js"
 compatibility_date = "2025-11-01"
 
-[vars]
-PROVIDER = "anilist"
-
 [[d1_databases]]
 binding = "DB"
 database_name = "animee-space"

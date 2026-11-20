@@ -2,7 +2,8 @@
 // Always saved in this browser; when signed in, changes also sync to your account.
 //
 // One entry per anime: { a, s, ep, t, d, w, u, m }
-//   s  list status (0 none, 1 watching, 2 planning, 3 completed, 4 on hold, 5 dropped)
+//   s  list status in the low 3 bits (0 none, 1 watching, 2 planning, 3 completed, 4 on hold,
+//      5 dropped, 6 not interested), plus 8 when the show is a favourite
 //   ep last episode opened, t/d seconds watched / episode length
 //   w  watched episode numbers (array here, compact bitset on the server)
 //   u  last change (unix seconds)
@@ -25,9 +26,13 @@ export const LIST_STATUSES = [
   ['completed', 'Completed'],
   ['paused', 'On hold'],
   ['dropped', 'Dropped'],
+  ['notinterested', 'Not interested'],
 ];
-const CODE = { watching: 1, planning: 2, completed: 3, paused: 4, dropped: 5 };
+const CODE = { watching: 1, planning: 2, completed: 3, paused: 4, dropped: 5, notinterested: 6 };
 const NAME = Object.fromEntries(Object.entries(CODE).map(([k, v]) => [v, k]));
+const FAVOURITE = 8;
+const statusOf = (e) => NAME[e.s & 7] || null;
+const isFav = (e) => !!(e.s & FAVOURITE);
 
 let lib = read('lib', {});
 let dirty = new Set(read('dirty', []));
@@ -46,20 +51,32 @@ function touch(e) {
 }
 
 // ---------- watchlist ----------
+// Every show with a list status or a favourite. status is null for a favourite with no status.
 export function getList() {
   const out = {};
   for (const e of Object.values(lib)) {
-    if (e.s) out[e.a] = { id: e.a, ...(e.m || {}), status: NAME[e.s], updated: e.u };
+    if (e.s) out[e.a] = { id: e.a, ...(e.m || {}), status: statusOf(e), favourite: isFav(e), updated: e.u };
   }
   return out;
 }
-export const getEntry = (id) => (lib[id]?.s ? { status: NAME[lib[id].s] } : null);
+export const getEntry = (id) => {
+  const e = lib[id];
+  return e?.s ? { status: statusOf(e), favourite: isFav(e) } : null;
+};
 export function setEntry(anime, status) {
   const e = entry(anime.id);
-  e.s = CODE[status] || 0;
+  e.s = (CODE[status] || 0) | (e.s & FAVOURITE);
   e.m = metaOf(anime);
   touch(e);
 }
+export function setFavourite(anime, on) {
+  const e = entry(anime.id);
+  e.s = (e.s & 7) | (on ? FAVOURITE : 0);
+  e.m = metaOf(anime);
+  touch(e);
+}
+// Shows marked "Not interested", hidden from home rows, picks and recommendations.
+export const notInterestedIds = () => new Set(Object.values(lib).filter((e) => (e.s & 7) === CODE.notinterested).map((e) => e.a));
 
 // ---------- progress ----------
 export function getProgress(id) {
@@ -95,6 +112,77 @@ export function markWatched(id, number) {
   touch(e);
 }
 
+// ---------- watch history (this browser only, newest first) ----------
+const HISTORY_MAX = 300;
+let history = read('history', []);
+export const getHistory = () => history.slice();
+export function addHistory({ animeId, ep, title, cover }) {
+  const id = String(animeId);
+  // Opening the same episode again just moves it to the top.
+  history = [{ animeId: id, ep, title, cover, at: Date.now() }, ...history.filter((h) => !(h.animeId === id && h.ep === ep))]
+    .slice(0, HISTORY_MAX);
+  write('history', history);
+}
+export function clearHistory() { history = []; write('history', history); }
+
+// ---------- import (MyAnimeList / AniList / backup) ----------
+// items: [{ id, status, title?, cover?, format?, episodes?, year?, watchedUpTo? }]
+// mode 'add' keeps shows already on the list; 'replace' clears list statuses first (progress is kept).
+export function importEntries(items, mode = 'add') {
+  // Replacing clears list statuses but keeps favourites.
+  if (mode === 'replace') for (const e of Object.values(lib)) if (e.s & 7) { e.s &= FAVOURITE; touch(e); }
+  let added = 0;
+  for (const item of items) {
+    const id = String(item.id || '');
+    if (!/^\d{1,12}$/.test(id) || !CODE[item.status]) continue;
+    const e = entry(id);
+    if (mode === 'add' && (e.s & 7)) continue;
+    e.s = CODE[item.status] | (e.s & FAVOURITE);
+    if (item.title) e.m = { ...(e.m || {}), ...metaOf({ title: item.title, cover: item.cover || e.m?.cover || null, format: item.format || null, episodes: item.episodes ?? null, year: item.year ?? null }) };
+    const upTo = Math.min(Number(item.watchedUpTo) || 0, 3000);
+    if (upTo > 0) e.w = [...new Set([...e.w, ...Array.from({ length: upTo }, (_, i) => i + 1)])];
+    e.u = now();
+    dirty.add(e.a);
+    added++;
+  }
+  saveLib();
+  sync.schedule(2000);
+  return added;
+}
+
+// ---------- backup file ----------
+export function exportBackup() {
+  return { app: 'animee-space', version: 1, exported: new Date().toISOString(), library: Object.values(lib), history };
+}
+export function restoreBackup(data, mode = 'add') {
+  if (!data || data.app !== 'animee-space' || !Array.isArray(data.library)) throw new Error('This is not an animee space backup file.');
+  // Clear rather than delete, so a signed-in account also drops the old entries on the next sync.
+  if (mode === 'replace') for (const e of Object.values(lib)) { e.s = 0; e.ep = 0; e.t = 0; e.d = 0; e.u = now(); dirty.add(e.a); }
+  let restored = 0;
+  for (const raw of data.library) {
+    const id = String(raw?.a || '');
+    if (!/^\d{1,12}$/.test(id)) continue;
+    const current = lib[id];
+    // In "add" mode, a show already on the list (or with progress) keeps its newer local copy.
+    if (current && mode === 'add' && (current.s || current.ep) && current.u >= (raw.u || 0)) continue;
+    lib[id] = {
+      a: id, s: ((Number(raw.s) & 7) <= 6 ? Number(raw.s) & 15 : Number(raw.s) & FAVOURITE) || 0, ep: Number(raw.ep) || 0, t: Number(raw.t) || 0, d: Number(raw.d) || 0,
+      w: Array.isArray(raw.w) ? raw.w.filter((n) => Number.isInteger(n) && n > 0 && n <= 8000) : [],
+      u: now(), m: raw.m && typeof raw.m === 'object' ? metaOf(raw.m) : null,
+    };
+    dirty.add(id);
+    restored++;
+  }
+  if (Array.isArray(data.history)) {
+    history = [...data.history.filter((h) => h && /^\d{1,12}$/.test(String(h.animeId))), ...(mode === 'replace' ? [] : history)]
+      .sort((x, y) => (y.at || 0) - (x.at || 0)).slice(0, HISTORY_MAX);
+    write('history', history);
+  }
+  saveLib();
+  sync.schedule(2000);
+  return restored;
+}
+
 // ---------- missing titles/posters (e.g. history synced from another device) ----------
 const metaTried = new Set(); // ask Anikoto once per id per page load, even if it has no result
 export async function ensureMeta(ids) {
@@ -110,9 +198,13 @@ export async function ensureMeta(ids) {
   } catch { return false; }
 }
 export const libraryIds = () => Object.keys(lib);
+// Shows with any progress or watched episodes.
+export const startedIds = () => new Set(Object.values(lib).filter((e) => e.ep || e.w.length).map((e) => e.a));
 
 // ---------- settings ----------
-let settings = { autoplay: true, autoskip: false, category: 'sub', ...read('settings', {}) };
+// titles: 'english' or 'japanese' (romaji). showContinue / hideStarted control the home page.
+// Only autoplay, autoskip and category sync to an account; the rest stay in this browser.
+let settings = { autoplay: true, autoskip: false, category: 'sub', titles: 'english', showContinue: true, hideStarted: false, ...read('settings', {}) };
 export const getSettings = () => ({ ...settings });
 export function setSetting(key, value) {
   settings = { ...settings, [key]: value };

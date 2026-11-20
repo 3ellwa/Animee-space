@@ -1,0 +1,17 @@
+# Local secrets (SESSION_SECRET for wrangler dev) — never commit
+.dev.vars
+.dev.vars.*
+.env
+.env.*
+
+# Wrangler local state (local D1 database, caches)
+.wrangler/
+
+# Dependencies
+node_modules/
+
+# Editor / assistant local config
+.claude/
+.vscode/
+.DS_Store
+Thumbs.db

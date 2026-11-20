@@ -7,9 +7,10 @@
   <meta name="theme-color" content="#0d0b14">
   <title>animee space</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/icons/icon-192.png">
 
   <link rel="stylesheet" href="/css/style.css">
-  <script src="https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.js" defer></script>
   <script type="module" src="/js/app.js"></script>
 </head>
 <body>
@@ -19,7 +20,10 @@
       <nav class="nav-links" id="nav-links">
         <a href="#/" data-nav="home">Home</a>
         <a href="#/search" data-nav="search">Browse</a>
+        <a href="#/schedule" data-nav="schedule">Schedule</a>
         <a href="#/watchlist" data-nav="watchlist">Watchlist</a>
+        <a href="#/random" data-nav="random">Random</a>
+        <a href="#/settings" data-nav="settings">Settings</a>
         <a href="#/account" data-nav="account" id="nav-account">Sign in</a>
       </nav>
       <form class="nav-search" id="nav-search" role="search">
@@ -35,7 +39,16 @@
   <footer class="footer">
     <div class="container">
       <a class="logo small" href="#/">animee<span> space</span></a>
-      
+      <nav class="footer-links" aria-label="More">
+        <a href="#/az">A-Z list</a>
+        <a href="#/pick">Help me pick</a>
+        <a href="#/schedule">Schedule</a>
+        <a href="#/top/airing">Top airing</a>
+        <a href="#/top/popular">Most popular</a>
+        <a href="#/random">Random</a>
+        <a href="#/watchlist?tab=history">History</a>
+        <a href="#/settings">Settings</a>
+      </nav>
     </div>
   </footer>
 </body>

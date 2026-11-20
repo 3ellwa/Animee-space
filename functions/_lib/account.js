@@ -63,13 +63,22 @@ const int = (v, min, max) => {
   return Number.isFinite(n) ? Math.min(Math.max(n, min), max) : min;
 };
 
+// s packs two things: the list status in the low 3 bits (0 none, 1 watching, 2 planning,
+// 3 completed, 4 on hold, 5 dropped, 6 not interested) and a favourite flag (8).
+const FAVOURITE = 8;
+export function cleanStatus(value) {
+  const s = int(value, 0, 15);
+  const status = s & 7;
+  return (status <= 6 ? status : 0) | (s & FAVOURITE);
+}
+
 function cleanRow(r) {
   const a = String(r?.a ?? '').trim();
   if (!/^[a-zA-Z0-9_-]{1,180}$/.test(a)) return null;
   const w = typeof r.w === 'string' && r.w.length <= MAX_BITSET_CHARS && /^[A-Za-z0-9+/]*={0,2}$/.test(r.w) ? r.w : null;
   return {
     a,
-    s: int(r.s, 0, 5),
+    s: cleanStatus(r.s),
     ep: int(r.ep, 0, 100000),
     t: int(r.t, 0, 86400),
     d: int(r.d, 0, 86400),
