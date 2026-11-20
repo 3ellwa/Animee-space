@@ -28,6 +28,7 @@ export async function isAvailable(id, episode, lang) {
   try {
     const response = await fetch(`${EMBED}/stream/mal/${id}/${episode}/${lang}`, {
       headers: { Referer: SITE, 'User-Agent': 'Mozilla/5.0 (compatible; animee-space)', Accept: 'text/html' },
+      signal: AbortSignal.timeout(8000),
     });
     const html = await response.text();
     ok = response.ok && !/<title>\s*Error\s*-\s*MegaPlay/i.test(html);

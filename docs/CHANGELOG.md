@@ -1,3 +1,24 @@
+## New identity: anim^^.
+
+- Logo: the "ee" in animee became happy eyes, `^^.`. New favicon and app icons (lime mark on ink).
+- Colours: night-dark surfaces with one brand colour, Lime, used as glow on buttons, tabs, episodes, posters and the player.
+- Type: Bricolage Grotesque for headings and the wordmark, Inter for text, both self-hosted.
+- Motion: floating glass nav, glowing scroll progress line, cards that lift and glow under the cursor, a drifting spotlight with a filling progress dot, pages that rise in. Reduced motion is respected.
+- Voice: lowercase headings ending in a lime full stop, a blinking ^^. loader, kaomoji empty, error, 404 and offline states, and an idle "still there? ^^." outside the watch page.
+- Press "/" to jump to search. Error pages only offer "Try again" when retrying can help.
+- Brand guide in `docs/BRAND.md`.
+
+## Audit fixes (November 2026)
+
+- Removed the AniNeko provider: its upstream was down (Cloudflare 522) and every request waited about 18 seconds before failing.
+- Playback fallback: 8-second deadline per provider, a 5-minute breaker for providers that keep failing, and HTTP 504 (naming the provider) instead of a generic 500 for timeouts. The MegaPlay availability probe now has a timeout too.
+- Watch page: each source gets a new player iframe, so Back leaves the page in one press instead of stepping through old players.
+- hls.js is loaded on first HLS playback instead of on every page; the app no longer waits for it before starting.
+- Search: misspelled titles ("frerien", "naurto") put close matches first even when the exact search returns unrelated titles.
+- Search suggestions close on navigation and Escape, and support arrow keys and Enter.
+- Spotlight uses the show's cover art (blurred backdrop plus poster) instead of trailer thumbnails that carried other services' logos.
+- Full findings in `docs/AUDIT-2026-11.md`.
+
 ## Direct multi-provider playback (no Anivexa)
 
 - Removed the Anivexa service dependency and its adapter.

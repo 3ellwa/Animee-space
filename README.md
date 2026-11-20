@@ -6,7 +6,7 @@ Animee.space is a Cloudflare Worker application. It serves the frontend and API 
 
 - Anime discovery, full-catalogue title search, metadata, and episode listings use the Tenrai API, which follows the Jikan v4 response schema.
 - Strict safe-for-work filtering is enabled on catalogue requests and mature details are rejected server-side.
-- Video playback uses three direct Worker-side adapters: MegaPlay (sub/dub), AnimeParadise (sub), and AniNeko (sub). No Anivexa service or separate backend is required.
+- Video playback uses two direct Worker-side adapters: MegaPlay (sub/dub) and AnimeParadise (sub). No Anivexa service or separate backend is required.
 - The watch page lists playback providers by language and automatically falls back to the next provider when a source fails.
 - Animee embeds the selected provider's player. Pause, seek, subtitles, and quality controls remain inside that embedded player.
 - MegaPlay availability checks remain available as a diagnostic, but they no longer disable episodes that may work on another configured provider.
@@ -14,7 +14,7 @@ Animee.space is a Cloudflare Worker application. It serves the frontend and API 
 ## Features
 
 - Home page with spotlight, shortcuts, Top 10, this season / coming soon / just completed, charts, "Because you watched", and genres
-- Searchable catalogue with close-match fallback for typos
+- Searchable catalogue with close-match fallback for typos ("frerien" finds Frieren)
 - Browse filters: type, status, season, year, score, age rating, up to 5 genres, and sort order; shortcuts like `#/tv`, `#/movies`, `#/airing`
 - Ranked lists (`#/top/airing`, `popular`, `favorite`, `upcoming`, `season`, `completed`), weekly airing schedule with local times, and random title
 - Anime details with seasons and related titles, characters and voice actors, recommendations, next-episode countdown, and share
@@ -33,11 +33,10 @@ Animee resolves playback directly from its Cloudflare Worker. The built-in provi
 
 - **MegaPlay**: sub and dub; its episode page is checked because its unavailable page can still return HTTP 200.
 - **AnimeParadise**: sub; uses its own REST API and a restricted HLS proxy route.
-- **AniNeko**: sub; searches the catalogue, matches the title against the SFW Tenrai metadata, and resolves the selected episode's player.
 
 Anikoto is intentionally not listed as an independent provider because its current adapter resolves playback through MegaPlay. No `ANIVEXA_API_URL`, separate Node service, or paid aggregator is needed.
 
-Automatic playback tries the saved/preferred provider first, then the other providers in order, stopping at the first valid source. Successful resolutions are cached in memory for two minutes; failed attempts are briefly cached for 15 seconds. Actual availability varies by anime, episode, language, and upstream provider. The provider list is a list of supported adapters, not a guarantee that every adapter has every episode.
+Automatic playback tries the saved/preferred provider first, then the other providers in order, stopping at the first valid source. Each provider attempt has an 8-second deadline; a provider that fails 3 times in a row (timeouts or server errors, not missing episodes) is skipped for 5 minutes, and provider timeouts are reported as HTTP 504. Successful resolutions are cached in memory for two minutes; failed attempts are briefly cached for 15 seconds. Actual availability varies by anime, episode, language, and upstream provider. The provider list is a list of supported adapters, not a guarantee that every adapter has every episode.
 
 To add an additional authorized embed provider, set the Worker variable `ANIMEE_EMBED_PROVIDERS` to a JSON array. Each provider needs a unique `id`, a display `name`, an HTTPS `embedUrlTemplate`, and supported `categories` (`sub`, `dub`, or both).
 
@@ -97,7 +96,6 @@ functions/api/[[path]].js API routes
 functions/_lib/providers/tenrai.js  SFW catalogue + MegaPlay embed route
 functions/_lib/providers/megaplay.js MegaPlay episode availability checks
 functions/_lib/providers/animeparadise.js AnimeParadise playback adapter
-functions/_lib/providers/anineko.js AniNeko playback adapter
 functions/_lib/providers/matching.js SFW title matching and upstream helpers
 functions/_lib/providers/stream-proxy.js Restricted AnimeParadise HLS proxy
 functions/_lib/providers/registry.js Multi-provider fallback registry

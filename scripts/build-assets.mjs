@@ -7,8 +7,8 @@ const publicDir = join(root, 'public');
 const walk = dir => readdirSync(dir, { withFileTypes: true })
   .flatMap(entry => entry.isDirectory() ? walk(join(dir, entry.name)) : [join(dir, entry.name)]);
 
-// Images are stored as base64 ({ b64 }) and decoded by worker.js; everything else as text.
-const BINARY = /\.(png|jpe?g|webp|ico|gif)$/i;
+// Images and fonts are stored as base64 ({ b64 }) and decoded by worker.js; everything else as text.
+const BINARY = /\.(png|jpe?g|webp|ico|gif|woff2)$/i;
 const assets = {};
 for (const file of walk(publicDir).sort()) {
   const key = '/' + relative(publicDir, file).split(sep).join('/');

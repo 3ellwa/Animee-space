@@ -266,12 +266,29 @@ function closeness(query, titles) {
   return best;
 }
 
-async function closeMatches(query) {
-  const params = new URLSearchParams({ q: query.slice(0, 3), limit: '25', order_by: 'members', sort: 'desc', 'sfw-strict': 'true' });
-  const payload = await request('/anime?' + params.toString());
+const titlesOf = anime => [anime.title, anime.titleRomaji, ...(anime.synonyms || [])];
+// True when some title of the anime contains the query as typed (ignoring case and punctuation).
+const squash = value => String(value || '').toLowerCase().replace(/[^p{L}p{N}]+/gu, ' ').trim();
+function containsQuery(anime, query) {
+  const q = squash(query);
+  return Boolean(q) && titlesOf(anime).some(title => squash(title).includes(q));
+}
+
+// Tenrai matches titles by word prefix, so a typo after the first letters ("frerien") finds
+// nothing useful. Close matches come from the most popular titles for short prefixes of the
+// query's first two words, ranked by edit distance to the query.
+async function closeMatches(query, extra = []) {
+  const words = query.toLowerCase().split(/s+/).filter(word => word.length >= 2);
+  const prefixes = [...new Set(words.slice(0, 2).map(word => word.slice(0, 2)))];
+  const pool = new Map(extra.map(anime => [anime.id, anime]));
+  for (const prefix of prefixes) {
+    const params = new URLSearchParams({ q: prefix, limit: '25', order_by: 'members', sort: 'desc', 'sfw-strict': 'true' });
+    const payload = await request('/anime?' + params.toString()).catch(() => null);
+    for (const anime of listData(payload).map(normalizeAnime)) if (anime.id && !pool.has(anime.id)) pool.set(anime.id, anime);
+  }
   const limit = Math.max(2, Math.ceil(query.length * 0.45));
-  return listData(payload).map(normalizeAnime).filter(anime => anime.id)
-    .map(anime => ({ anime, distance: closeness(query, [anime.title, anime.titleRomaji, ...anime.synonyms]) }))
+  return [...pool.values()]
+    .map(anime => ({ anime, distance: closeness(query, titlesOf(anime)) }))
     .filter(item => item.distance <= limit)
     .sort((a, b) => a.distance - b.distance || (b.anime.popularity || 0) - (a.anime.popularity || 0))
     .slice(0, 12)
@@ -351,10 +368,15 @@ export async function searchAnime(input = {}) {
   const info = pageInfo(payload, page);
   let approximate = false;
   const filtered = filters.type || filters.status || filters.rating || filters.score || filters.genres.length || filters.letter || filters.studio;
-  if (!results.length && query.length >= 4 && page === 1 && !filtered) {
-    results = await closeMatches(query);
-    approximate = results.length > 0;
-    if (approximate) Object.assign(info, { currentPage: 1, lastPage: 1, hasNextPage: false, total: results.length });
+  // No result contains the query as typed: it is probably misspelled, so put close matches first.
+  if (query.length >= 4 && page === 1 && !filtered && !results.some(anime => containsQuery(anime, query))) {
+    const close = await closeMatches(query, results);
+    if (close.length) {
+      const ids = new Set(close.map(anime => anime.id));
+      approximate = !results.length || results[0].id !== close[0].id;
+      results = [...close, ...results.filter(anime => !ids.has(anime.id))];
+      if (!info.hasNextPage) Object.assign(info, { currentPage: 1, lastPage: 1, total: results.length });
+    }
   }
   return { results, pageInfo: info, approximate, seasonal: false };
 }

@@ -3,7 +3,6 @@
 import * as tenrai from './tenrai.js';
 import * as megaplay from './megaplay.js';
 import * as animeparadise from './animeparadise.js';
-import * as anineko from './anineko.js';
 
 const BUILTIN_ID = 'megaplay';
 const ID_RE = /^[a-z0-9][a-z0-9_-]{0,39}$/;
@@ -11,7 +10,6 @@ const CATEGORIES = new Set(['sub', 'dub']);
 const BUILTIN_PROVIDERS = [
   { id: 'megaplay', name: 'MegaPlay', categories: ['sub', 'dub'] },
   { id: 'animeparadise', name: 'AnimeParadise', categories: ['sub'] },
-  { id: 'anineko', name: 'AniNeko', categories: ['sub'] },
 ];
 
 const fail = (status, message) => Object.assign(new Error(message), { status });
@@ -76,6 +74,45 @@ export async function getServers(rawId, rawEpisode, env = {}) {
   })));
 }
 
+// Provider health: after a few consecutive outages a provider is skipped for a while,
+// so one dead upstream cannot add its full timeout to every episode. "Doesn't have this
+// episode" (4xx) answers are normal and do not count as outages.
+const BREAKER_THRESHOLD = 3;
+const BREAKER_COOLDOWN_MS = 5 * 60 * 1000;
+const health = new Map(); // id -> { fails, until }
+export const playbackLimits = { providerMs: 8000, totalMs: 12000, minProviderMs: 3000 };
+
+const isOutage = error => !error?.status || error.status >= 500;
+function providerDown(id) {
+  const entry = health.get(id);
+  return Boolean(entry && entry.until > Date.now());
+}
+function recordResult(id, error) {
+  if (!error) { health.delete(id); return; }
+  if (!isOutage(error)) return;
+  const entry = health.get(id) || { fails: 0, until: 0 };
+  entry.fails += 1;
+  if (entry.fails >= BREAKER_THRESHOLD) { entry.until = Date.now() + BREAKER_COOLDOWN_MS; entry.fails = 0; }
+  health.set(id, entry);
+}
+export function resetProviderHealth() { health.clear(); }
+
+/** Run one provider call with a deadline; a slow upstream becomes a 504 naming the provider. */
+async function withDeadline(name, ms, task) {
+  let timer;
+  const deadline = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(fail(504, `${name} did not respond in time.`)), Math.max(1, ms));
+  });
+  try {
+    return await Promise.race([task(), deadline]);
+  } catch (error) {
+    if (error?.name === 'TimeoutError' || error?.name === 'AbortError') throw fail(504, `${name} did not respond in time.`);
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 const fallbackCache = new Map();
 const FALLBACK_CACHE_MS = 2 * 60 * 1000;
 const FALLBACK_FAILURE_MS = 15 * 1000;
@@ -99,15 +136,26 @@ export async function getFallbackSource(rawId, rawEpisode, rawPreferred, rawCate
   candidates.sort((a, b) => Number(b.id === preferred) - Number(a.id === preferred));
   const failures = [];
 
+  const started = Date.now();
   for (const candidate of candidates) {
+    if (providerDown(candidate.id)) {
+      failures.push(`${candidate.name}: temporarily unavailable`);
+      continue;
+    }
+    // Later providers get whatever is left of the overall budget, but never less than a short
+    // floor: skipping the last provider outright would turn a slow first try into a hard failure.
+    const remaining = playbackLimits.totalMs - (Date.now() - started);
+    const budget = Math.max(playbackLimits.minProviderMs, Math.min(playbackLimits.providerMs, remaining));
     try {
-      if (candidate.id === BUILTIN_ID && !(await megaplay.isAvailable(id, episode, category))) {
-        failures.push('MegaPlay: episode unavailable');
-        continue;
-      }
-      const source = await getSources(id, episode, candidate.id, category, env);
+      const source = await withDeadline(candidate.name, budget, async () => {
+        if (candidate.id === BUILTIN_ID && !(await megaplay.isAvailable(id, episode, category))) {
+          throw fail(404, 'episode unavailable');
+        }
+        return getSources(id, episode, candidate.id, category, env);
+      });
       const playable = Boolean(source?.embedUrl || source?.sources?.some(item => item?.url));
       if (!playable) throw fail(502, 'provider returned no playable source');
+      recordResult(candidate.id, null);
       const result = {
         ...source,
         episodeId: `${id}:${episode}`,
@@ -116,12 +164,13 @@ export async function getFallbackSource(rawId, rawEpisode, rawPreferred, rawCate
         fallback: candidate.id !== preferred,
       };
       // Direct stream URLs from scraped providers can expire. Cache only stable
-      // iframe/template providers, not AnimeParadise or AniNeko resolutions.
+      // iframe/template providers, not AnimeParadise resolutions.
       if (candidate.id === BUILTIN_ID || !BUILTIN_PROVIDERS.some(provider => provider.id === candidate.id)) {
         fallbackCache.set(key, { value: result, expires: Date.now() + FALLBACK_CACHE_MS });
       }
       return result;
     } catch (error) {
+      recordResult(candidate.id, error);
       failures.push(`${candidate.name}: ${error?.message || 'provider failed'}`);
     }
   }
@@ -133,6 +182,14 @@ export async function getFallbackSource(rawId, rawEpisode, rawPreferred, rawCate
   throw fail(502, message);
 }
 
+/** A single, explicitly chosen provider, with the same deadline as automatic playback. */
+export async function getDirectSources(rawId, rawEpisode, rawServer, rawCategory, env = {}) {
+  const server = String(rawServer || BUILTIN_ID).trim().toLowerCase();
+  const provider = getProviderList(env).find(item => item.id === server);
+  return withDeadline(provider?.name || 'The provider', playbackLimits.providerMs,
+    () => getSources(rawId, rawEpisode, server, rawCategory, env));
+}
+
 export async function getSources(rawId, rawEpisode, rawServer, rawCategory, env = {}) {
   const id = validAnimeId(rawId);
   const episode = episodeNumber(rawEpisode);
@@ -142,7 +199,6 @@ export async function getSources(rawId, rawEpisode, rawServer, rawCategory, env 
 
   if (server === 'megaplay') return tenrai.getSources(id, episode, category);
   if (server === 'animeparadise') return animeparadise.getSources(id, episode, category);
-  if (server === 'anineko') return anineko.getSources(id, episode, category);
 
   const provider = configuredProviders(env).find(item => item.id === server);
   if (!provider) throw fail(404, 'That playback server is not configured.');

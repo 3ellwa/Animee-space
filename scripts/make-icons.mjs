@@ -22,18 +22,23 @@ function png(size, pixel) {
   return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', deflateSync(raw, { level: 9 })), chunk('IEND', Buffer.alloc(0))]);
 }
 
-const BG = [13, 11, 20];
-const PINK = [255, 126, 182];
-const VIOLET = [167, 139, 250];
-// Logo in a 64x64 box: rounded square (radius 16) and a triangle (24,18)-(48,32)-(24,46).
+const INK = [8, 9, 10];
+const LIME = [198, 255, 61];
+// Logo in a 64x64 box, matching public/favicon.svg: a lime rounded square (radius 16) with the
+// ^^. face in ink: two chevrons drawn as round-capped strokes, and a dot.
 function inRoundedSquare(u, v) {
   const r = 16, cx = Math.min(Math.max(u, r), 64 - r), cy = Math.min(Math.max(v, r), 64 - r);
   return u >= 0 && v >= 0 && u <= 64 && v <= 64 && (u - cx) ** 2 + (v - cy) ** 2 <= r * r;
 }
-function inTriangle(u, v) {
-  const side = (ax, ay, bx, by) => (bx - ax) * (v - ay) - (by - ay) * (u - ax);
-  const a = side(24, 18, 48, 32), b = side(48, 32, 24, 46), c = side(24, 46, 24, 18);
-  return (a >= 0 && b >= 0 && c >= 0) || (a <= 0 && b <= 0 && c <= 0);
+function nearSegment(u, v, ax, ay, bx, by, half) {
+  const dx = bx - ax, dy = by - ay;
+  const t = Math.max(0, Math.min(1, ((u - ax) * dx + (v - ay) * dy) / (dx * dx + dy * dy)));
+  return (u - ax - t * dx) ** 2 + (v - ay - t * dy) ** 2 <= half * half;
+}
+const STROKES = [[9, 38, 16, 26], [16, 26, 23, 38], [31, 38, 38, 26], [38, 26, 45, 38]];
+function inFace(u, v) {
+  if (STROKES.some(([ax, ay, bx, by]) => nearSegment(u, v, ax, ay, bx, by, 2.75))) return true;
+  return (u - 53.5) ** 2 + (v - 38.6) ** 2 <= 3.4 ** 2;
 }
 function icon(size, { maskable = false } = {}) {
   const scale = maskable ? 0.8 : 1; // maskable icons keep the logo inside the safe zone
@@ -43,10 +48,8 @@ function icon(size, { maskable = false } = {}) {
     for (let sy = 0; sy < S; sy++) for (let sx = 0; sx < S; sx++) {
       const u = ((x + (sx + 0.5) / S) - offset) / box * 64, v = ((y + (sy + 0.5) / S) - offset) / box * 64;
       let col = null;
-      if (inTriangle(u, v) && inRoundedSquare(u, v)) {
-        const t = Math.min(1, Math.max(0, (u + v) / 128));
-        col = PINK.map((p, i) => p + (VIOLET[i] - p) * t);
-      } else if (inRoundedSquare(u, v) || maskable) col = BG;
+      if (inRoundedSquare(u, v)) col = inFace(u, v) ? INK : LIME;
+      else if (maskable) col = LIME; // the maskable icon fills its whole square
       if (col) { r += col[0]; g += col[1]; b += col[2]; a += 255; }
     }
     const n = S * S, cover = a / 255;

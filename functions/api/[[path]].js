@@ -116,7 +116,7 @@ export async function onRequest(ctx) {
       }
       return json({
         episodeId: b,
-        ...await playback.getSources(reference.animeId, reference.episode, server, language, ctx.env || {}),
+        ...await playback.getDirectSources(reference.animeId, reference.episode, server, language, ctx.env || {}),
       });
     }
     if (a === 'batch' && !b) return await cached(ctx, 600, async () => {
@@ -129,8 +129,10 @@ export async function onRequest(ctx) {
     });
     return json({ error: 'Not found' }, 404);
   } catch (error) {
-    const status = error.status || 500;
+    // Upstream timeouts are a gateway problem, not an Animee crash.
+    const timedOut = error?.name === 'TimeoutError' || error?.name === 'AbortError';
+    const status = error.status || (timedOut ? 504 : 500);
     if (status === 500) console.error('Animee API failure', url.pathname, error?.stack || error);
-    return json({ error: status === 500 ? 'The anime service had a problem. Try again shortly.' : error.message }, status);
+    return json({ error: status === 500 ? 'The anime service had a problem. Try again shortly.' : timedOut && !error.status ? 'An upstream service did not respond in time.' : error.message }, status);
   }
 }

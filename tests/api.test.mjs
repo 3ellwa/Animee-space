@@ -3,12 +3,12 @@ import { afterEach, test } from 'node:test';
 import { onRequest } from '../functions/api/[[path]].js';
 import { throttle } from '../functions/_lib/providers/tenrai.js';
 import { probeSettings } from '../functions/_lib/providers/megaplay.js';
-import { getProviderList, getServers, getSources, getFallbackSource } from '../functions/_lib/providers/registry.js';
+import { getProviderList, getServers, getSources, getFallbackSource, playbackLimits, resetProviderHealth } from '../functions/_lib/providers/registry.js';
 
 throttle.gapMs = 0;
 probeSettings.gapMs = 0;
 const originalFetch = globalThis.fetch;
-afterEach(() => { globalThis.fetch = originalFetch; });
+afterEach(() => { globalThis.fetch = originalFetch; resetProviderHealth(); });
 
 function context(pathAndQuery, env = {}) {
   const request = new Request('https://animee.test/api/' + pathAndQuery);
@@ -96,7 +96,7 @@ test('a misspelled title falls back to close matches', async () => {
   globalThis.fetch = async url => {
     const q = new URL(String(url)).searchParams.get('q');
     if (q === 'frirene') return Response.json({ data: [], pagination: {} });
-    assert.equal(q, 'fri');
+    assert.equal(q, 'fr');
     return Response.json({ data: [animeRow(1, 'Frieren'), animeRow(2, 'Fruits Basket'), animeRow(3, 'Kaiju No. 8')], pagination: {} });
   };
   const body = await (await onRequest(context('search?q=frirene'))).json();
@@ -265,7 +265,7 @@ test('MAL details, episode references, and MegaPlay embeds share one stable ID',
   assert.equal(episodeData.episodes[1].number, 2);
   assert.equal(episodeData.episodes[1].isFiller, true);
   const servers = await onRequest(context('episode/20%3A2/servers'));
-  assert.deepEqual((await servers.json()).servers.map(server => server.category), ['sub', 'dub', 'sub', 'sub']);
+  assert.deepEqual((await servers.json()).servers.map(server => server.category), ['sub', 'dub', 'sub']);
   const source = await onRequest(context('episode/20%3A2/sources?category=sub'));
   assert.equal((await source.json()).embedUrl, 'https://megaplay.buzz/stream/mal/20/2/sub');
 });
@@ -300,7 +300,6 @@ test('playback registry returns real provider IDs and routes sources to the sele
       ['megaplay', 'MegaPlay', 'sub'],
       ['megaplay', 'MegaPlay', 'dub'],
       ['animeparadise', 'AnimeParadise', 'sub'],
-      ['anineko', 'AniNeko', 'sub'],
       ['backup-one', 'Backup One', 'sub'],
       ['backup-one', 'Backup One', 'dub'],
       ['backup-two', 'Backup Two', 'sub'],
@@ -342,10 +341,10 @@ test('strict content filtering rejects directly requested mature ratings', async
 
 test('built-in playback providers require no optional backend configuration', async () => {
   const providers = getProviderList({});
-  assert.deepEqual(providers.map(provider => provider.id), ['megaplay', 'animeparadise', 'anineko']);
+  assert.deepEqual(providers.map(provider => provider.id), ['megaplay', 'animeparadise']);
   const servers = await getServers('20', 1, {});
   assert.deepEqual(servers.map(server => [server.id, server.category]), [
-    ['megaplay', 'sub'], ['megaplay', 'dub'], ['animeparadise', 'sub'], ['anineko', 'sub'],
+    ['megaplay', 'sub'], ['megaplay', 'dub'], ['animeparadise', 'sub'],
   ]);
   assert.ok(!providers.some(provider => provider.id === 'anikoto'), 'Anikoto playback uses MegaPlay and is not counted as an independent source');
 });
@@ -374,30 +373,6 @@ test('AnimeParadise resolves episode sources through its own REST API', async ()
   assert.equal(result.tracks[0].lang, 'en');
 });
 
-test('AniNeko resolves the matching title, requested episode, and embed', async () => {
-  const { getSources: getAniNekoSources } = await import('../functions/_lib/providers/anineko.js');
-  const calls = [];
-  globalThis.fetch = async url => {
-    const target = new URL(String(url));
-    calls.push(target.toString());
-    if (target.hostname === 'api.tenrai.org' && target.pathname.endsWith('/full')) return Response.json(detailPayload(62002));
-    if (target.hostname === 'anineko.to' && target.pathname === '/browser') {
-      return new Response('<article class="nv-anime-card"><h3 class="nv-anime-title"><a href="/watch/sample-anime" title="Sample Anime">Sample Anime</a></h3></article>');
-    }
-    if (target.hostname === 'anineko.to' && target.pathname === '/watch/sample-anime') {
-      return new Response('<article class="nv-info-episode-item"><a class="nv-info-episode-main" href="/watch/sample-anime/ep-1"><strong>1</strong><span>Episode One</span></a></article>');
-    }
-    if (target.hostname === 'anineko.to' && target.pathname === '/watch/sample-anime/ep-1') {
-      return new Response('<button class="nv-server-btn" data-video="https://embed.example/watch/abc">Server</button>');
-    }
-    if (target.hostname === 'embed.example') return new Response('<html><script>const source="https://cdn.example/video.m3u8?token=abc";</script></html>');
-    throw new Error('Unexpected URL ' + target);
-  };
-  const result = await getAniNekoSources('62002', 1, 'sub');
-  assert.deepEqual(result.sources, [{ type: 'hls', url: 'https://cdn.example/video.m3u8?token=abc' }]);
-  assert.ok(calls.some(url => url.includes('/watch/sample-anime/ep-1')));
-});
-
 test('automatic fallback tries providers sequentially when earlier providers fail', async () => {
   const id = '62003';
   const calls = [];
@@ -406,29 +381,26 @@ test('automatic fallback tries providers sequentially when earlier providers fai
     calls.push(target.toString());
     if (target.hostname === 'megaplay.buzz') return new Response('<title>Error - MegaPlay</title>');
     if (target.hostname === 'api.tenrai.org' && target.pathname.endsWith('/full')) return Response.json(detailPayload(Number(id)));
-    if (target.hostname === 'api.animeparadise.moe' && target.pathname === '/search') return Response.json({ data: [] });
-    if (target.hostname === 'anineko.to' && target.pathname === '/browser') {
-      return new Response('<article class="nv-anime-card"><h3 class="nv-anime-title"><a href="/watch/sample-anime" title="Sample Anime">Sample Anime</a></h3></article>');
+    if (target.hostname === 'api.animeparadise.moe' && target.pathname === '/search') {
+      return Response.json({ data: [{ _id: 'ap-show', title: 'Sample Anime', year: 2020 }] });
     }
-    if (target.hostname === 'anineko.to' && target.pathname === '/watch/sample-anime') {
-      return new Response('<article class="nv-info-episode-item"><a class="nv-info-episode-main" href="/watch/sample-anime/ep-1"><strong>1</strong></a></article>');
+    if (target.hostname === 'api.animeparadise.moe' && target.pathname === '/anime/ap-show/episode') {
+      return Response.json({ data: [{ uid: 'ap-episode-1', number: '1' }] });
     }
-    if (target.hostname === 'anineko.to' && target.pathname === '/watch/sample-anime/ep-1') {
-      return new Response('<button class="nv-server-btn" data-video="https://embed.example/watch/abc">Server</button>');
+    if (target.hostname === 'api.animeparadise.moe' && target.pathname === '/ep/ap-episode-1') {
+      return Response.json({ data: { episode: { streamLink: 'signed-stream-token' } } });
     }
-    if (target.hostname === 'embed.example') return new Response('<script>"https://cdn.example/video.m3u8?token=abc"</script>');
     throw new Error('Unexpected URL ' + target);
   };
   const result = await getFallbackSource(id, 1, 'megaplay', 'sub', {});
-  assert.equal(result.provider, 'anineko');
+  assert.equal(result.provider, 'animeparadise');
   assert.equal(result.fallback, true);
-  assert.equal(result.sources[0].url, 'https://cdn.example/video.m3u8?token=abc');
+  assert.match(result.sources[0].url, /^\/api\/stream-proxy\?provider=animeparadise/);
   const hosts = calls.map(value => new URL(value).hostname);
   assert.ok(hosts.indexOf('megaplay.buzz') < hosts.indexOf('api.animeparadise.moe'));
-  assert.ok(hosts.indexOf('api.animeparadise.moe') < hosts.indexOf('anineko.to'));
   const count = calls.length;
   const retried = await getFallbackSource(id, 1, 'megaplay', 'sub', {});
-  assert.equal(retried.provider, 'anineko');
+  assert.equal(retried.provider, 'animeparadise');
   assert.notEqual(retried.cached, true, 'expiring direct streams must be resolved again');
   assert.ok(calls.length > count, 'provider stream URLs are re-resolved instead of being reused');
 });
@@ -503,4 +475,85 @@ test('automatic playback route returns the first working source', async () => {
   const body = await response.json();
   assert.equal(body.provider, 'megaplay');
   assert.equal(body.embedUrl, 'https://megaplay.buzz/stream/mal/31/2/sub');
+});
+
+test('a hanging provider is cut off by the deadline and reported as 504', async () => {
+  const saved = { ...playbackLimits };
+  playbackLimits.providerMs = 50;
+  try {
+    globalThis.fetch = async url => {
+      const target = new URL(String(url));
+      if (target.hostname === 'api.tenrai.org' && target.pathname.endsWith('/full')) return Response.json(detailPayload(62010));
+      return new Promise(() => {}); // never answers
+    };
+    const response = await onRequest(context('episode/62010%3A1/sources?server=animeparadise&category=sub'));
+    assert.equal(response.status, 504);
+    assert.match((await response.json()).error, /AnimeParadise/);
+  } finally {
+    Object.assign(playbackLimits, saved);
+  }
+});
+
+test('a provider that keeps failing is skipped instead of retried on every episode', async () => {
+  let paradiseCalls = 0;
+  globalThis.fetch = async url => {
+    const target = new URL(String(url));
+    if (target.hostname === 'api.tenrai.org' && target.pathname.endsWith('/full')) return Response.json(detailPayload(62011));
+    if (target.hostname === 'api.animeparadise.moe') { paradiseCalls++; return new Response('down', { status: 522 }); }
+    if (target.hostname === 'megaplay.buzz') return new Response('<title>File 1 - MegaPlay</title>');
+    throw new Error('Unexpected URL ' + target);
+  };
+  for (let ep = 1; ep <= 3; ep++) {
+    const result = await getFallbackSource('62011', ep, 'animeparadise', 'sub', {});
+    assert.equal(result.provider, 'megaplay');
+  }
+  const afterTrip = paradiseCalls;
+  const result = await getFallbackSource('62011', 4, 'animeparadise', 'sub', {});
+  assert.equal(result.provider, 'megaplay');
+  assert.equal(paradiseCalls, afterTrip, 'a tripped provider is not contacted');
+});
+
+test('an episode a provider simply lacks does not trip its breaker', async () => {
+  let searches = 0;
+  globalThis.fetch = async url => {
+    const target = new URL(String(url));
+    if (target.hostname === 'api.tenrai.org' && target.pathname.endsWith('/full')) return Response.json(detailPayload(62012));
+    if (target.hostname === 'api.animeparadise.moe' && target.pathname === '/search') {
+      searches++;
+      return Response.json({ data: [{ _id: 'ap-show', title: 'Sample Anime', year: 2020 }] });
+    }
+    if (target.hostname === 'api.animeparadise.moe') return Response.json({ data: [] });
+    if (target.hostname === 'megaplay.buzz') return new Response('<title>File 1 - MegaPlay</title>');
+    throw new Error('Unexpected URL ' + target);
+  };
+  for (let ep = 1; ep <= 4; ep++) await getFallbackSource('62012', ep, 'animeparadise', 'sub', {});
+  assert.equal(searches, 4);
+});
+
+test('a misspelled search puts close matches ahead of unrelated results', async () => {
+  globalThis.fetch = async url => {
+    const target = new URL(String(url));
+    const q = target.searchParams.get('q');
+    if (target.pathname.endsWith('/anime') && q === 'frerien') return Response.json({ data: [animeRow(1, 'Free!')] });
+    if (target.pathname.endsWith('/anime') && q === 'fr') {
+      return Response.json({ data: [animeRow(2, 'Fruits Basket'), animeRow(3, "Frieren: Beyond Journey's End")] });
+    }
+    throw new Error('Unexpected URL ' + target);
+  };
+  const response = await onRequest(context('search?q=frerien'));
+  const body = await response.json();
+  assert.equal(body.results[0].title, "Frieren: Beyond Journey's End");
+  assert.equal(body.approximate, true);
+  assert.ok(body.results.some(anime => anime.title === 'Free!'), 'original results are kept after the close matches');
+});
+
+test('an exact search does not trigger the close-match lookup', async () => {
+  const queries = [];
+  globalThis.fetch = async url => {
+    const target = new URL(String(url));
+    queries.push(target.searchParams.get('q'));
+    return Response.json({ data: [animeRow(4, 'One Piece')] });
+  };
+  await onRequest(context('search?q=one%20piece&page=1&type=&nocache=' + Date.now()));
+  assert.deepEqual(queries, ['one piece']);
 });

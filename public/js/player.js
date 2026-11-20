@@ -1,4 +1,30 @@
 // Provider playback supports native HLS/MP4 sources and third-party iframe players.
+
+// hls.js is only needed for HLS sources, so it is fetched on first use instead of on every page.
+// Keep the URL and hash in sync with the CSP in worker.js.
+const HLS_SRC = 'https://cdn.jsdelivr.net/npm/hls.js@1.7.4/dist/hls.min.js';
+const HLS_SRI = 'sha384-p9vgU/7IYJWd3I4STrtqxqR/2cAQlhIX7D/HrTnIMEjjcUox165b7se7sxmm3zDg';
+let hlsLoading = null;
+export function loadHls() {
+  if (window.Hls) return Promise.resolve(window.Hls);
+  if (!hlsLoading) {
+    hlsLoading = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = HLS_SRC;
+      script.integrity = HLS_SRI;
+      script.crossOrigin = 'anonymous';
+      script.onload = () => (window.Hls ? resolve(window.Hls) : reject(new Error('hls.js did not load')));
+      script.onerror = () => reject(new Error('hls.js could not be downloaded'));
+      document.head.appendChild(script);
+    }).catch((error) => { hlsLoading = null; throw error; });
+  }
+  return hlsLoading;
+}
+
+const IFRAME_HTML = '<iframe class="embed-frame" title="Anime episode player" ' +
+  'allow="autoplay; fullscreen; picture-in-picture; encrypted-media" allowfullscreen webkitallowfullscreen mozallowfullscreen ' +
+  'referrerpolicy="strict-origin-when-cross-origin" hidden></iframe>';
+
 export class Player {
   constructor(root, opts = {}) {
     this.root = root;
@@ -12,9 +38,7 @@ export class Player {
 
     root.innerHTML = '<div class="player">' +
       '<video playsinline controls preload="metadata"></video>' +
-      '<iframe class="embed-frame" title="Anime episode player" ' +
-        'allow="autoplay; fullscreen; picture-in-picture; encrypted-media" allowfullscreen webkitallowfullscreen mozallowfullscreen ' +
-        'referrerpolicy="strict-origin-when-cross-origin" hidden></iframe>' +
+      IFRAME_HTML +
       '<button class="pl-btn next" type="button" hidden>Next episode ▶</button>' +
       '<div class="pl-msg" hidden></div>' +
       '</div><div class="player-tools"><button class="btn sm fullscreen" type="button" hidden>Fullscreen ⛶</button></div>';
@@ -26,7 +50,6 @@ export class Player {
 
     this.fullscreenBtn.onclick = () => this.enterFullscreen();
     this.nextBtn.onclick = () => this.opts.onNext?.();
-    this.iframe.onload = () => this.msg('');
     this.onMessage = event => this.handleEmbedMessage(event);
     window.addEventListener('message', this.onMessage);
     this.onEnd = () => {
@@ -37,6 +60,22 @@ export class Player {
     this.video.addEventListener('timeupdate', this.onTime);
     this.video.addEventListener('ended', this.onEnd);
     this.video.addEventListener('pause', () => this.save(true));
+  }
+
+  // Changing an existing iframe's src adds an entry to the tab's history, so Back would step
+  // through old players instead of leaving the page. A newly inserted iframe's first load
+  // does not, so every source gets a brand-new frame.
+  freshIframe(src) {
+    const template = document.createElement('template');
+    template.innerHTML = IFRAME_HTML;
+    const frame = template.content.firstElementChild;
+    if (src) {
+      frame.src = src;
+      frame.hidden = false;
+      frame.onload = () => this.msg('');
+    }
+    this.iframe.replaceWith(frame);
+    this.iframe = frame;
   }
 
   msg(message) {
@@ -54,8 +93,8 @@ export class Player {
     this.fullscreenBtn.hidden = true;
     this.nextBtn.hidden = true;
     this.msg('');
-    this.iframe.hidden = true;
-    this.iframe.removeAttribute('src');
+    this.loadToken = (this.loadToken || 0) + 1;
+    this.freshIframe();
     this.video.hidden = false;
     this.embedTime = 0;
     this.embedLastSave = 0;
@@ -71,8 +110,8 @@ export class Player {
       this.iframe.hidden = false;
       this.fullscreenBtn.hidden = false;
       this.embedOrigin = data.embedOrigin || new URL(data.embedUrl).origin;
-      this.iframe.src = data.embedUrl;
       this.msg('Loading episode…');
+      this.freshIframe(data.embedUrl);
       return;
     }
     const source = (data.sources || [])[0];
@@ -91,6 +130,19 @@ export class Player {
       if (startAt > 5 && (!video.duration || startAt < video.duration - 15)) video.currentTime = startAt;
       video.play().catch(() => {});
     };
+    if (source.type === 'hls' && !window.Hls) {
+      const token = this.loadToken;
+      this.msg('Loading episode…');
+      loadHls()
+        .catch(() => null)
+        .then(() => { if (token === this.loadToken) { this.msg(''); this.attachSource(source, start); } });
+      return;
+    }
+    this.attachSource(source, start);
+  }
+
+  attachSource(source, start) {
+    const video = this.video;
     const Hls = window.Hls;
     if (source.type === 'hls' && Hls && Hls.isSupported()) {
       const hls = new Hls({ capLevelToPlayerSize: true, maxBufferLength: 30 });
@@ -146,7 +198,7 @@ export class Player {
       this.nextBtn.hidden = !this.opts.hasNext?.();
       this.opts.onEnded?.();
     }
-    if (data.event === 'error') this.msg('The embedded player reported a playback error. Try another language.');
+    if (data.event === 'error') this.msg('The embedded player reported a playback error. Try another server.');
   }
 
   saveEmbed(force, duration = 0) {

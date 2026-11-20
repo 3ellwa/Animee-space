@@ -18,10 +18,6 @@ AnimeParadise is an independent sub-only provider. The adapter searches `https:/
 
 The stream is delivered through `/api/stream-proxy`, which only accepts HTTPS requests to the AnimeParadise stream host and rewrites HLS playlist and key references back through that same restricted route. It does not proxy arbitrary URLs. Signed stream links may be short-lived or request-context dependent, so playback source responses and resolved AnimeParadise tokens are deliberately not cached across requests.
 
-### AniNeko
-
-AniNeko is a separate sub-only adapter using `https://anineko.to`. It searches the provider catalogue, compares returned titles with the SFW Tenrai title and synonyms, loads the matching show page, and resolves the requested episode's server buttons. When a page exposes a direct HLS or MP4 URL it returns that source; otherwise it uses the provider's embed in Animee's iframe player.
-
 ### Providers intentionally not duplicated
 
 Anikoto is not listed as an independent playback provider because its current SDK adapter resolves the video through MegaPlay. Listing both would make one underlying source look like two independent fallbacks.
@@ -30,11 +26,13 @@ Anikoto is not listed as an independent playback provider because its current SD
 
 The watch page requests `server=auto`. The Worker tries the preferred provider first, then the remaining providers one at a time. It stops at the first provider that returns a usable embed or video source. If a provider fails to match the title, does not have the requested episode, or fails to resolve a source, the next provider is tried.
 
+Each provider attempt has an 8-second deadline (later providers get what is left of a 12-second budget, never less than 3 seconds). A provider that fails 3 times in a row with a timeout or server error is skipped for 5 minutes in that isolate; an answer that it simply lacks the episode does not count. Timeouts are returned as HTTP 504 naming the provider.
+
 Successful fallback results are cached in the Worker isolate for two minutes; failures are cached for 15 seconds. The API response also uses the Cloudflare Cache API. Isolate memory is temporary and is not shared globally, so cache hits are an optimization rather than persistent storage.
 
 The provider list describes adapters that Animee knows how to call, not guaranteed availability for every title or episode. Animee does not claim that every provider has a complete catalogue. Upstream sites can change their domains, markup, APIs, or availability without notice.
 
-The browser player includes hls.js v1.7.4 for HLS playback in browsers without native HLS support. The Worker CSP permits the pinned jsDelivr script and the HTTPS media/frame origins required by independent providers.
+The browser player loads hls.js v1.7.4 (with its integrity hash) the first time an HLS source plays, so pages that never play HLS do not download it. The Worker CSP permits the pinned jsDelivr script and the HTTPS media/frame origins required by independent providers.
 
 ## Custom embed providers
 

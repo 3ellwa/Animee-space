@@ -10,7 +10,7 @@ export function api(path, { fresh = false } = {}) {
   const url = '/api' + path + (path.includes('?') ? '&' : '?') + 'v=' + API_VERSION;
   const p = fetch(url, { headers: { Accept: 'application/json' } }).then(async (r) => {
     const data = await r.json().catch(() => ({ error: 'Bad response from server' }));
-    if (!r.ok) throw new Error(data.error || `Request failed (${r.status})`);
+    if (!r.ok) throw Object.assign(new Error(data.error || `Request failed (${r.status})`), { status: r.status });
     return data;
   });
   if (!fresh) {

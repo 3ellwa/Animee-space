@@ -4,21 +4,28 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="robots" content="noindex, nofollow">
-  <meta name="theme-color" content="#0d0b14">
+  <meta name="theme-color" content="#08090A">
+  <meta name="description" content="Watch anime, keep your list, never lose your place. ^^.">
   <title>animee space</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="apple-touch-icon" href="/icons/icon-192.png">
+  <link rel="preload" href="/fonts/bricolage-grotesque.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/inter.woff2" as="font" type="font/woff2" crossorigin>
 
   <link rel="stylesheet" href="/css/style.css">
-  <!-- integrity: the browser refuses the file if its contents ever change; update the hash when bumping the version -->
-  <script defer src="https://cdn.jsdelivr.net/npm/hls.js@1.7.4/dist/hls.min.js" integrity="sha384-p9vgU/7IYJWd3I4STrtqxqR/2cAQlhIX7D/HrTnIMEjjcUox165b7se7sxmm3zDg" crossorigin="anonymous"></script>
   <script type="module" src="/js/app.js"></script>
 </head>
 <body>
-  <header class="nav">
+  <div class="scroll-progress" aria-hidden="true"></div>
+  <a class="skip" href="#app">Skip to content</a>
+
+  <header class="nav" id="nav">
     <div class="nav-inner">
-      <a class="logo" href="#/">animee<span> space</span></a>
+      <a class="logo" href="#/" aria-label="animee, home">
+        <span class="logo-mark" aria-hidden="true"><svg viewBox="0 0 48 24"><path class="eye" d="M3 20.5 L10 6 L17 20.5"/><path class="eye" d="M24 20.5 L31 6 L38 20.5"/><circle class="dot" cx="45" cy="20.6" r="2.9"/></svg></span>
+        <span class="wordmark" aria-hidden="true">anim<svg class="wm-eyes" viewBox="0 0 48 24"><path class="eye" d="M3 20.5 L10 6 L17 20.5"/><path class="eye" d="M24 20.5 L31 6 L38 20.5"/><circle class="dot" cx="45" cy="20.6" r="2.9"/></svg></span>
+      </a>
       <nav class="nav-links" id="nav-links">
         <a href="#/" data-nav="home">Home</a>
         <a href="#/search" data-nav="search">Browse</a>
@@ -29,18 +36,25 @@
         <a href="#/account" data-nav="account" id="nav-account">Sign in</a>
       </nav>
       <form class="nav-search" id="nav-search" role="search">
-        <input type="search" name="q" placeholder="Search anime…" autocomplete="off" aria-label="Search anime">
+        <svg class="search-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20 L16.2 16.2"/></svg>
+        <input type="search" name="q" placeholder="Search anime" autocomplete="off" aria-label="Search anime">
+        <kbd class="search-key" aria-hidden="true">/</kbd>
         <div class="suggest" id="suggest" hidden></div>
       </form>
-      <button class="menu-btn" id="menu-btn" aria-label="Menu">☰</button>
+      <button class="menu-btn" id="menu-btn" aria-label="Menu" aria-expanded="false"><span></span><span></span></button>
     </div>
   </header>
 
   <main id="app" class="container"></main>
 
   <footer class="footer">
-    <div class="container">
-      <a class="logo small" href="#/">animee<span> space</span></a>
+    <div class="container footer-inner">
+      <div class="footer-brand">
+        <a class="logo big" href="#/" aria-label="animee, home">
+          <span class="wordmark" aria-hidden="true">anim<svg class="wm-eyes" viewBox="0 0 48 24"><path class="eye" d="M3 20.5 L10 6 L17 20.5"/><path class="eye" d="M24 20.5 L31 6 L38 20.5"/><circle class="dot" cx="45" cy="20.6" r="2.9"/></svg></span>
+        </a>
+        <p class="footer-tag">watch anime. stay happy.</p>
+      </div>
       <nav class="footer-links" aria-label="More">
         <a href="#/az">A-Z list</a>
         <a href="#/pick">Help me pick</a>
@@ -53,5 +67,7 @@
       </nav>
     </div>
   </footer>
+
+  <div class="whisper" id="whisper" aria-hidden="true"><p>still there? <span class="kao">^^.</span></p></div>
 </body>
 </html>

@@ -1,6 +1,7 @@
 import { api } from './api.js';
 import * as store from './store.js';
 import { Player } from './player.js';
+import './fx.js';
 
 const app = document.getElementById('app');
 let cleanups = [];
@@ -26,7 +27,9 @@ const fmtCountdown = (sec) => {
   const d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600), m = Math.floor((sec % 3600) / 60);
   return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`;
 };
-const loader = () => '<div class="loader"></div>';
+// The brand's ^^. face. Its eyes blink, and the loader bounces the dot.
+const HAPPY = '<svg class="happy" viewBox="0 0 48 24" aria-hidden="true"><path class="eye" d="M3 20.5 L10 6 L17 20.5"/><path class="eye" d="M24 20.5 L31 6 L38 20.5"/><circle class="dot" cx="45" cy="20.6" r="2.9"/></svg>';
+const loader = () => `<div class="loader" role="status"><span class="loader-face">${HAPPY}</span><span class="sr-only">Loading</span></div>`;
 const onCleanup = (fn) => cleanups.push(fn);
 // The title to show, following the English / Japanese setting.
 const T = (a) => (store.getSettings().titles === 'japanese' && a?.titleRomaji ? a.titleRomaji : a?.title || '');
@@ -155,9 +158,11 @@ async function route() {
     }
   } catch (err) {
     if (!alive()) return;
-    app.innerHTML = `<div class="error"><h2>Couldn't load this page</h2><p>${esc(err.message)}</p>
-      <button class="btn" id="retry">Try again</button></div>`;
-    document.getElementById('retry').onclick = route;
+    // 4xx answers (bad link, missing title) won't fix themselves, so only offer a retry for the rest.
+    const lasting = err.status >= 400 && err.status < 500;
+    app.innerHTML = `<div class="error" data-kao="${lasting ? '(._.)' : '(x_x)'}"><h2>${lasting ? 'Nothing here' : "Couldn't load this page"}</h2><p>${esc(err.message)}</p>
+      ${lasting ? '<a class="btn primary" href="#/">Go home</a>' : '<button class="btn primary" id="retry">Try again</button>'}</div>`;
+    document.getElementById('retry')?.addEventListener('click', route);
   }
 }
 
@@ -244,14 +249,17 @@ function bindSpotlight() {
   onCleanup(() => clearInterval(timer));
 }
 
+// Spotlight art is the show's own cover: a blurred backdrop plus the sharp poster. Trailer
+// thumbnails were wider but often carried a streaming service's logo or a "Trailer" caption.
 function spotlight(list) {
   if (!list?.length) return '';
   return `<section class="spotlight" aria-label="Spotlight">
     ${list.map((a, i) => `
       <div class="slide${i === 0 ? ' on' : ''}">
-        <img src="${esc(a.banner || a.cover)}" alt="" ${i ? 'loading="lazy"' : ''}>
+        <div class="slide-bg" style="background-image:url('${esc(a.cover)}')"></div>
+        <img class="slide-poster" src="${esc(a.cover)}" alt="" ${i ? 'loading="lazy"' : ''}>
         <div class="slide-info">
-          <div class="rank">#${i + 1} Spotlight</div>
+          <div class="rank"><span>#${i + 1}</span> spotlight</div>
           <h2>${esc(T(a))}</h2>
           <div class="meta">
             ${a.format ? `<span>${FORMAT[a.format]}</span>` : ''}
@@ -1391,7 +1399,7 @@ function parseMalExport(text) {
 }
 
 function viewNotFound() {
-  app.innerHTML = '<div class="empty"><h2>404</h2><p>This page doesn\'t exist.</p><a class="btn" href="#/">Go home</a></div>';
+  app.innerHTML = '<div class="empty lost" data-kao="-_-."><h2>404, this page wandered off</h2><p>The link is broken or the page never existed.</p><a class="btn primary" href="#/">Take me home</a></div>';
 }
 
 // ---------- nav search with suggestions ----------
@@ -1427,8 +1435,30 @@ function setupSearch() {
       } catch { if (my === seq) box.hidden = true; }
     }, 450);
   };
-  box.onclick = () => { box.hidden = true; input.value = ''; };
-  document.addEventListener('click', (e) => { if (!form.contains(e.target)) box.hidden = true; });
+  const close = () => { clearTimeout(timer); seq++; box.hidden = true; };
+  box.onclick = () => { close(); input.value = ''; };
+  document.addEventListener('click', (e) => { if (!form.contains(e.target)) close(); });
+  // Any route change (a picked result, Back, a link elsewhere) closes the list.
+  window.addEventListener('hashchange', close);
+  // Arrow keys move through the suggestions, Enter opens the highlighted one, Escape closes.
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { close(); return; }
+    if (box.hidden || (e.key !== 'ArrowDown' && e.key !== 'ArrowUp')) return;
+    const links = [...box.querySelectorAll('a')];
+    if (!links.length) return;
+    e.preventDefault();
+    links[e.key === 'ArrowDown' ? 0 : links.length - 1].focus();
+  });
+  box.addEventListener('keydown', (e) => {
+    const links = [...box.querySelectorAll('a')];
+    const at = links.indexOf(document.activeElement);
+    if (e.key === 'Escape') { close(); input.focus(); return; }
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    e.preventDefault();
+    const next = at + (e.key === 'ArrowDown' ? 1 : -1);
+    if (next < 0 || next >= links.length) input.focus();
+    else links[next].focus();
+  });
 }
 
 // ---------- boot ----------
