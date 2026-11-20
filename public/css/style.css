@@ -679,7 +679,10 @@ button.tab { color: inherit; }
 .rank-card:hover .rank-title { color: var(--lime); }
 
 /* ---------- spotlight with real banner art ---------- */
-.slide-art { position: absolute; top: 0; right: 0; bottom: 0; width: 76%; height: 100%; object-fit: cover; object-position: center 30%; }
+.slide-art { position: absolute; top: 0; right: 0; bottom: 0; width: 76%; height: 100%; object-fit: cover; object-position: center 30%; opacity: 0; transition: opacity .8s var(--ease); }
+.slide.has-art .slide-art { opacity: 1; }
+.slide-bg, .slide-poster { transition: opacity .8s var(--ease); }
+.slide.has-art .slide-bg, .slide.has-art .slide-poster { opacity: 0; }
 .slide.on .slide-art { animation: zoom 14s ease-in-out infinite alternate; }
 @keyframes zoom { from { transform: scale(1); } to { transform: scale(1.06); } }
 .slide.has-art::after { background: linear-gradient(90deg, var(--ink) 18%, rgb(8 9 10 / .86) 34%, rgb(8 9 10 / .25) 62%, rgb(8 9 10 / .05)), linear-gradient(0deg, var(--ink), transparent 42%); }

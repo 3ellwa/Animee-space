@@ -1,6 +1,6 @@
 ## Home rows and sharp spotlight
 
-- Spotlight uses each show's wide banner from AniList's free public API (by MAL ID), so the hero is sharp instead of a blurred cover. Shows without a banner keep the cover fallback. AniList being down never breaks the home page.
+- Spotlight uses each show's wide banner from AniList's free public API (by MAL ID), so the hero is sharp instead of a blurred cover. The visitor's browser asks AniList directly (AniList refuses requests from Cloudflare's servers) and remembers the answers for three days. Shows without a banner, or AniList being down, keep the cover art.
 - Home is now a set of horizontal rows with arrow buttons: Because you watched, Top 10 this season (big ranked numbers), Airing now, New this season, Coming soon, Just completed, Most popular, Fan favourites. Each row loads when you scroll near it.
 - API cache versions bumped so the new home response replaces cached copies straight away.
 

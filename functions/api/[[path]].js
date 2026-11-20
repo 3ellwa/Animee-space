@@ -5,7 +5,6 @@ import { importAniList } from '../_lib/importers.js';
 import * as megaplay from '../_lib/providers/megaplay.js';
 import * as playback from '../_lib/providers/registry.js';
 import { proxyStream } from '../_lib/providers/stream-proxy.js';
-import { getBanners } from '../_lib/providers/anilist.js';
 
 // Browsers keep API responses for at most 10 minutes, so a deploy reaches everyone quickly.
 // The edge cache below keeps its own, longer lifetime.
@@ -69,10 +68,7 @@ export async function onRequest(ctx) {
     });
     if (a === 'home' && !b) return await cached(ctx, 600, async () => {
       const result = await tenrai.getSeasonalAnime();
-      // Sharp wide art for the spotlight (the first slides); covers stay the fallback.
-      const banners = await getBanners(result.results.slice(0, 12).map(anime => anime.id));
-      const recent = result.results.map(anime => (banners[anime.id] ? { ...anime, backdrop: banners[anime.id] } : anime));
-      return { recent, pagination: result.pagination };
+      return { recent: result.results, pagination: result.pagination };
     });
     if (a === 'search' && !b) return await cached(ctx, 600, async () => {
       const p = url.searchParams;

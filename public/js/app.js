@@ -217,7 +217,7 @@ async function viewHome(alive) {
     store.removeProgress(b.dataset.id);
     b.closest('.cont').remove();
   });
-  bindSpotlight();
+  bindSpotlight(alive);
   checkNewEpisodes(cont, alive);
   bindShelf('shelf-top', async () => rankCards(unstarted(season).slice(0, 10)), alive);
   for (const name of ['airing', 'season', 'upcoming', 'completed', 'popular', 'favorite']) {
@@ -261,9 +261,58 @@ function checkNewEpisodes(cont, alive) {
   }
 }
 
-function bindSpotlight() {
+// Wide banner art from AniList's public API, fetched by the browser (AniList refuses requests
+// from Cloudflare's servers, but allows browsers). Answers, including "no banner", are kept for
+// three days so returning visitors don't ask again. Any failure just leaves the cover art.
+const BANNER_KEY = 'animee-space:banners';
+const BANNER_TTL = 3 * 86400e3;
+async function loadBanners(ids) {
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(BANNER_KEY) || '{}') || {}; } catch { saved = {}; }
+  const now = Date.now();
+  const missing = ids.filter((id) => !(saved[id] && saved[id].t > now - BANNER_TTL)).map(Number).filter(Boolean);
+  if (missing.length) {
+    try {
+      const r = await fetch('https://graphql.anilist.co', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ query: 'query ($ids: [Int]) { Page(perPage: 50) { media(idMal_in: $ids, type: ANIME) { idMal bannerImage } } }', variables: { ids: missing } }),
+      });
+      const d = r.ok ? await r.json() : null;
+      const found = {};
+      for (const m of d?.data?.Page?.media || []) {
+        if (typeof m?.bannerImage === 'string' && m.bannerImage.startsWith('https://') && !found[m.idMal]) found[m.idMal] = m.bannerImage;
+      }
+      if (d) for (const id of missing) saved[id] = { u: found[id] || null, t: now };
+      // Drop entries older than the TTL so the store stays small.
+      for (const [id, v] of Object.entries(saved)) if (!v || v.t < now - BANNER_TTL) delete saved[id];
+      try { localStorage.setItem(BANNER_KEY, JSON.stringify(saved)); } catch { /* storage full or blocked */ }
+    } catch { /* AniList unreachable: keep the cover art */ }
+  }
+  return Object.fromEntries(ids.map((id) => [id, saved[id]?.u || null]));
+}
+function applyBanners(root, alive) {
+  const slides = [...root.querySelectorAll('.slide[data-id]')];
+  loadBanners(slides.map((s) => s.dataset.id)).then((urls) => {
+    if (!alive()) return;
+    slides.forEach((slide, i) => {
+      const url = urls[slide.dataset.id];
+      if (!url) return;
+      const img = new Image();
+      img.className = 'slide-art';
+      img.alt = '';
+      if (i) img.loading = 'lazy';
+      img.onload = () => slide.classList.add('has-art');
+      img.src = url;
+      slide.prepend(img);
+    });
+  });
+}
+
+function bindSpotlight(alive) {
   const root = app.querySelector('.spotlight');
   if (!root) return;
+  applyBanners(root, alive);
   const slides = [...root.querySelectorAll('.slide')];
   const dots = [...root.querySelectorAll('.dots button')];
   let i = 0;
@@ -281,17 +330,15 @@ function bindSpotlight() {
   onCleanup(() => clearInterval(timer));
 }
 
-// Spotlight art: AniList's wide banner when the show has one (sharp, no other service's logo),
-// otherwise the cover as a blurred backdrop with the sharp poster beside it.
+// Spotlight art: the cover as a blurred backdrop with the sharp poster beside it, until the
+// show's wide AniList banner arrives (see loadBanners) and fades in over the top.
 function spotlight(list) {
   if (!list?.length) return '';
   return `<section class="spotlight" aria-label="Spotlight">
     ${list.map((a, i) => `
-      <div class="slide${i === 0 ? ' on' : ''}${a.backdrop ? ' has-art' : ''}">
-        ${a.backdrop
-          ? `<img class="slide-art" src="${esc(a.backdrop)}" alt="" ${i ? 'loading="lazy"' : 'fetchpriority="high"'}>`
-          : `<div class="slide-bg" style="background-image:url('${esc(a.cover)}')"></div>
-        <img class="slide-poster" src="${esc(a.cover)}" alt="" ${i ? 'loading="lazy"' : ''}>`}
+      <div class="slide${i === 0 ? ' on' : ''}" data-id="${a.id}">
+        <div class="slide-bg" style="background-image:url('${esc(a.cover)}')"></div>
+        <img class="slide-poster" src="${esc(a.cover)}" alt="" ${i ? 'loading="lazy"' : ''}>
         <div class="slide-info">
           <div class="rank"><span>#${i + 1}</span> spotlight</div>
           <h2>${esc(T(a))}</h2>
