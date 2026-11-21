@@ -48,7 +48,21 @@ export async function enable() {
   if (answer !== 'granted') throw new Error('Notifications are blocked for animee. Allow them in your browser’s site settings (the icon left of the address), then try again.');
   const reg = await navigator.serviceWorker.ready;
   let sub = await reg.pushManager.getSubscription();
-  if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: toBytes(key) });
+  if (!sub) {
+    try {
+      sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: toBytes(key) });
+    } catch (err) {
+      // "Registration failed - push service error": the browser's own push service said no.
+      // Brave turns Google's push service off by default; other browsers hit this when a
+      // network or extension blocks it.
+      const brave = await navigator.brave?.isBrave?.().catch(() => false);
+      if (brave) throw new Error('Brave blocks pop-ups by default. Open brave://settings/privacy, turn on "Use Google services for push messaging", restart Brave, then press Turn on again.');
+      if (err?.name === 'AbortError' || /push service/i.test(err?.message || '')) {
+        throw new Error('Your browser\'s push service refused to sign up this device. A network, VPN or ad blocker may be blocking it; try again without them, or in Chrome, Edge or Firefox.');
+      }
+      throw err;
+    }
+  }
   await post('subscribe', { endpoint: sub.endpoint, ids: store.followedIds(), alerts: alertsCode() });
   try { localStorage.setItem(ON_KEY, '1'); } catch { /* ignore */ }
 }
