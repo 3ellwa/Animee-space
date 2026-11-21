@@ -5,6 +5,7 @@ import './fx.js';
 import * as inbox from './inbox.js';
 import * as push from './push.js';
 import * as aniList from './anilist.js';
+import { BRAND, IS_CINEMEE } from './site.js';
 
 const app = document.getElementById('app');
 let cleanups = [];
@@ -175,7 +176,7 @@ async function route() {
   const { parts, query } = parseHash();
   const HUB_PAGES = ['me', 'watchlist', 'new', 'requests', 'stats', 'settings', 'account'];
   setActiveNav(HUB_PAGES.includes(parts[0]) ? 'me' : parts[0] || 'home');
-  document.title = 'animee space';
+  document.title = BRAND.title;
   window.dispatchEvent(new Event('animee:navigate'));
   window.scrollTo(0, 0);
   app.innerHTML = loader();
@@ -222,7 +223,7 @@ async function viewHome(alive) {
   const quick = [['TV series', '/tv'], ['Movies', '/movies'], ['Airing now', '/airing'], ['Coming soon', '/upcoming'],
     ['Schedule', '/schedule'], ['Help me pick', '/pick'], ['A-Z', '/az'], ['All filters', '/search'], ['Random', '/random']];
   app.innerHTML =
-    '<h1 class="sr-only">animee space: watch anime</h1>' +
+    `<h1 class="sr-only">${BRAND.title}: ${IS_CINEMEE ? 'watch movies and TV' : 'watch anime'}</h1>` +
     spotlight(season.filter((x) => !store.notInterestedIds().has(String(x.id))).slice(0, 8)) +
     `<nav class="quick" aria-label="Shortcuts">${quick.map(([label, href]) => `<a class="chip" href="${href}">${label}</a>`).join('')}</nav>` +
     (cont.length ? section('Continue watching', '<div class="row">' + cont.map(contCard).join('') + '</div>') : '') +
@@ -526,7 +527,7 @@ async function viewList(name, alive) {
   if (!LIST_TITLES[name]) return viewNotFound();
   const d = await api(`/list/${name}?limit=25`);
   if (!alive()) return;
-  document.title = `${LIST_TITLES[name]} · animee space`;
+  document.title = `${LIST_TITLES[name]} · ${BRAND.title}`;
   const others = Object.keys(LIST_TITLES).filter((k) => k !== name);
   app.innerHTML = `<h1 class="page-title">${LIST_TITLES[name]}</h1>
     <div class="tabs">${[name, ...others].map((k) => `<a class="tab${k === name ? ' on' : ''}" href="/top/${k}">${LIST_TITLES[k]}</a>`).join('')}</div>
@@ -681,7 +682,7 @@ async function viewAnime(id, alive, query = new URLSearchParams()) {
   if (!id) return viewNotFound();
   const a = await api(`/anime/${id}`);
   if (!alive()) return;
-  document.title = `${a.title} · animee space`;
+  document.title = `${a.title} · ${BRAND.title}`;
   store.rememberMeta(a);
   // Old or slug-less links settle on the show's one canonical address.
   if (location.pathname !== animeHref(a)) history.replaceState(null, '', animeHref(a) + location.search);
@@ -813,7 +814,7 @@ async function viewWatch(id, query, alive) {
   epsP.then((d) => step(`Found ${d.episodes?.length || 0} episodes. Syncing your progress…`), () => {});
   const [a, epData] = await Promise.all([showP, epsP, store.sync.freshen()]);
   if (!alive()) return;
-  document.title = `Watch ${a.title} · animee space`;
+  document.title = `Watch ${a.title} · ${BRAND.title}`;
   store.rememberMeta(a);
   const episodes = epData.episodes;
 
@@ -1217,7 +1218,7 @@ async function viewWatch(id, query, alive) {
 
 // ---------- new for you ----------
 async function viewNew(alive) {
-  document.title = 'New episodes · animee space';
+  document.title = `New episodes · ${BRAND.title}`;
   const draw = (items, checking) => {
     if (!alive()) return;
     const when = inbox.inboxCheckedAt();
@@ -1273,7 +1274,7 @@ function hubHead(active) {
   try { hidden = localStorage.getItem(HOW_KEY) === '1'; } catch { /* ignore */ }
   const alerts = inbox.inboxItems().length;
   return `<div class="hub-head">
-    <div class="hub-title"><div><h1 class="page-title" style="margin:0">my anime</h1>
+    <div class="hub-title"><div><h1 class="page-title" style="margin:0">${BRAND.hub}</h1>
       <p class="card-meta" style="margin:4px 0 0">Your list, your progress and your alerts. Saved in this browser, no sign-up; sign in to sync devices.</p></div>
       <button class="btn sm" type="button" id="how-toggle">${hidden ? 'ⓘ How it works' : 'Hide tips'}</button></div>
     <div class="how card-box" id="how"${hidden ? ' hidden' : ''}>
@@ -1286,7 +1287,7 @@ function hubHead(active) {
         <li><b>Bring an old list</b> from MyAnimeList or AniList in <a href="/settings#import">Settings</a>.</li>
       </ol>
     </div>
-    <nav class="tabs hub-tabs" aria-label="My anime">${HUB_TABS.map(([k, href, label]) =>
+    <nav class="tabs hub-tabs" aria-label="${BRAND.hubNav}">${HUB_TABS.map(([k, href, label]) =>
       `<a class="tab${k === active ? ' on' : ''}" href="${href}">${label}${k === 'alerts' && alerts ? ` <small class="hub-dot">${alerts}</small>` : ''}</a>`).join('')}</nav>
   </div>`;
 }
@@ -1304,7 +1305,7 @@ function addHub(active) {
 
 // Continue tab: everything in progress, newest first, with remove buttons.
 function viewMe() {
-  document.title = 'My anime · animee space';
+  document.title = `${BRAND.hubNav} · ${BRAND.title}`;
   const cont = store.continueList().filter((p) => p.title);
   app.innerHTML = `<h2 class="hub-sub">continue watching</h2>
     ${cont.length ? `<div class="cont-grid">${cont.map(contCard).join('')}</div>`
@@ -1335,7 +1336,7 @@ function requesterId() {
 const KIND_LABEL = { anime: 'An anime you want added', idea: 'An idea for the site', broken: 'Something is broken', other: 'Something else' };
 const fmtWhen = (sec) => new Date(sec * 1000).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
 async function viewRequests(alive) {
-  document.title = 'Requests · animee space';
+  document.title = `Requests · ${BRAND.title}`;
   const who = requesterId();
   app.innerHTML = `<h2 class="hub-sub">ask us something</h2>
     <p class="card-meta">A missing anime, an idea or a problem: we read every message, and the answer shows up right here.</p>
@@ -1405,7 +1406,7 @@ async function viewRequests(alive) {
 
 // ---------- admin (hidden; needs the ADMIN_KEY secret) ----------
 function viewAdmin() {
-  document.title = 'Admin · animee space';
+  document.title = `Admin · ${BRAND.title}`;
   const KEY = 'animee-space:admin-key';
   const getKey = () => { try { return sessionStorage.getItem(KEY) || ''; } catch { return ''; } };
   const forget = () => { try { sessionStorage.removeItem(KEY); } catch { /* ignore */ } };
@@ -1476,7 +1477,7 @@ function viewAdmin() {
 // ---------- stats ----------
 // Everything is worked out from what this browser knows (your library, plus history opened here).
 function viewStats() {
-  document.title = 'My stats · animee space';
+  document.title = `My stats · ${BRAND.title}`;
   const rows = store.libraryRows();
   const history = store.getHistory();
   const episodes = rows.reduce((n, r) => n + r.watched, 0);
@@ -1508,7 +1509,7 @@ function viewStats() {
   const year = new Date().getFullYear();
   const thisYear = history.filter((h) => new Date(h.at).getFullYear() === year).length;
 
-  const summary = `My anime stats on animee: ${episodes} episodes watched (${fmtHours(minutes)}), ${count('completed')} shows completed${genres[0] ? `, favourite genre ${genres[0][0]}` : ''}.`;
+  const summary = `My ${IS_CINEMEE ? 'movie and TV' : 'anime'} stats on ${BRAND.name}: ${episodes} episodes watched (${fmtHours(minutes)}), ${count('completed')} shows completed${genres[0] ? `, favourite genre ${genres[0][0]}` : ''}.`;
 
   app.innerHTML = `
     <h2 class="hub-sub">my stats</h2>
@@ -1557,7 +1558,7 @@ const LIST_PAGE = 60;
 const asCard = (e) => ({ ...e, availableEpisodes: e.episodes });
 const LIST_SORTS = [['recent', 'Last changed first'], ['oldest', 'First changed first'], ['title', 'Title A-Z'], ['year', 'Newest year']];
 function viewWatchlist(query) {
-  document.title = 'Watchlist · animee space';
+  document.title = `Watchlist · ${BRAND.title}`;
   const ids = Object.keys(store.getList());
   store.ensureMeta(ids).then((changed) => { if (changed && parseHash().parts[0] === 'watchlist') route(); });
   const list = Object.values(store.getList()).filter((e) => e.title);
@@ -1675,7 +1676,7 @@ function viewAccount(query) {
   addHub('account');
 }
 function viewAccountPage(query) {
-  document.title = 'Account · animee space';
+  document.title = `Account · ${BRAND.title}`;
   const user = store.currentUser();
 
   if (user) {
@@ -1795,7 +1796,7 @@ function schedRow(a, note) {
   </a>`;
 }
 async function viewSchedule(query, alive) {
-  document.title = 'Schedule · animee space';
+  document.title = `Schedule · ${BRAND.title}`;
   // Days follow Japan time: offset -1 is yesterday there, 0 today, up to 5 days ahead.
   const JST = 9 * 3600e3;
   const jstNow = new Date(Date.now() + JST);
@@ -1854,7 +1855,7 @@ async function viewSchedule(query, alive) {
 // ---------- A-Z list ----------
 const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
 async function viewAZ(query, alive) {
-  document.title = 'A-Z list · animee space';
+  document.title = `A-Z list · ${BRAND.title}`;
   const letter = LETTERS.includes((query.get('letter') || '').toUpperCase()) ? query.get('letter').toUpperCase() : '';
   const page = Math.max(1, Number(query.get('page')) || 1);
   app.innerHTML = `<h1 class="page-title">${letter ? `Anime starting with ${letter}` : 'Anime A-Z'}</h1>
@@ -1890,7 +1891,7 @@ const LENGTHS = [['short', 'Short, up to 13 episodes', 1, 13], ['mid', 'One or t
 const shuffle = (list) => list.map((v) => [Math.random(), v]).sort((x, y) => x[0] - y[0]).map(([, v]) => v);
 
 async function viewPick(alive) {
-  document.title = 'Help me pick · animee space';
+  document.title = `Help me pick · ${BRAND.title}`;
   const { genres } = await api('/genres').catch(() => ({ genres: [] }));
   if (!alive()) return;
   let liked = null; // { id, title }
@@ -1987,7 +1988,7 @@ async function viewPick(alive) {
 // ---------- settings ----------
 const ANILIST_IMPORT_LIMIT = 4000;
 function viewSettings(alive) {
-  document.title = 'Settings · animee space';
+  document.title = `Settings · ${BRAND.title}`;
   const s = store.getSettings();
   const user = store.currentUser();
   const radio = (name, value, label, current) => `<label class="chip check"><input type="radio" name="${name}" value="${value}"${current === value ? ' checked' : ''}> ${label}</label>`;
@@ -2015,14 +2016,14 @@ function viewSettings(alive) {
     </form>
 
     <section class="settings-group" id="push-group"><h2>Pop-ups on this device</h2>
-      <p class="card-meta">Get a pop-up when a show you follow gets a new episode, even when animee is closed.</p>
+      <p class="card-meta">Get a pop-up when a show you follow gets a new episode, even when ${BRAND.name} is closed.</p>
       <p class="card-meta" id="push-status" role="status">Checking…</p>
       <div class="actions"><button class="btn" id="push-toggle" type="button" hidden></button>
         <button class="btn" id="push-test" type="button" hidden>Send a test pop-up</button></div>
     </section>
 
     <section class="settings-group" id="install-group"><h2>Install the app</h2>
-      <p class="card-meta">Add animee space to your phone or computer and open it like an app, full screen and one tap away. No app store needed.</p>
+      <p class="card-meta">Add ${BRAND.title} to your phone or computer and open it like an app, full screen and one tap away. No app store needed.</p>
       <button class="btn" id="install" type="button">Install the app</button>
       <p class="card-meta" id="install-note"></p>
     </section>
@@ -2076,15 +2077,15 @@ function viewSettings(alive) {
   const pushTest = document.getElementById('push-test');
   const drawPush = async () => {
     if (!push.supported()) { pushStatus.textContent = 'This browser can\'t show pop-ups.'; return; }
-    if (!(await push.serverKey())) { pushStatus.textContent = 'Pop-ups aren\'t switched on for animee yet.'; return; }
+    if (!(await push.serverKey())) { pushStatus.textContent = `Pop-ups aren't switched on for ${BRAND.name} yet.`; return; }
     const on = await push.isOn();
     const perm = push.permission();
     const following = store.followedIds().length;
     pushStatus.textContent = on
       ? `On. You follow ${following} show${following === 1 ? '' : 's'}; each new episode pops up here.`
       : perm === 'denied'
-        ? 'Your browser is blocking notifications for animee. Click the icon left of the address, set Notifications to Allow, then press Turn on.'
-        : push.needsInstall() ? 'On iPhone and iPad, add animee to your Home Screen first (Share → Add to Home Screen), then turn pop-ups on from there.'
+        ? `Your browser is blocking notifications for ${BRAND.name}. Click the icon left of the address, set Notifications to Allow, then press Turn on.`
+        : push.needsInstall() ? `On iPhone and iPad, add ${BRAND.name} to your Home Screen first (Share → Add to Home Screen), then turn pop-ups on from there.`
           : 'Off on this device.';
     pushToggle.hidden = false;
     pushToggle.textContent = on ? 'Turn off' : 'Turn on pop-ups';
@@ -2113,11 +2114,11 @@ function viewSettings(alive) {
   if (standalone) { installBtn.hidden = true; installNote.textContent = 'You are already using the installed app.'; }
   else if (/iphone|ipad|ipod/i.test(navigator.userAgent)) { installBtn.hidden = true; installNote.textContent = 'On iPhone or iPad: tap Share in Safari, then Add to Home Screen.'; }
   installBtn.onclick = async () => {
-    if (!installPrompt) { installNote.textContent = 'Your browser doesn\'t offer installing right now. In Chrome or Edge, use the install icon in the address bar, or the menu, then Install animee space.'; return; }
+    if (!installPrompt) { installNote.textContent = `Your browser doesn't offer installing right now. In Chrome or Edge, use the install icon in the address bar, or the menu, then Install ${BRAND.title}.`; return; }
     installPrompt.prompt();
     const { outcome } = await installPrompt.userChoice.catch(() => ({ outcome: 'dismissed' }));
     installPrompt = null;
-    installNote.textContent = outcome === 'accepted' ? 'Installed. You can open animee space from your home screen or apps.' : '';
+    installNote.textContent = outcome === 'accepted' ? `Installed. You can open ${BRAND.title} from your home screen or apps.` : '';
   };
 
   const importResult = document.getElementById('import-result');
@@ -2164,7 +2165,7 @@ function viewSettings(alive) {
     const blob = new Blob([JSON.stringify(store.exportBackup(), null, 1)], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `animee-space-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `${BRAND.backup}-backup-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   };

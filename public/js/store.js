@@ -10,6 +10,7 @@
 //   m  cached title/cover for display — local only, never uploaded
 
 import { api } from './api.js';
+import { BRAND } from './site.js';
 
 const PREFIX = 'animee-space:';
 const read = (key, fallback) => {
@@ -232,10 +233,10 @@ export function importEntries(items, mode = 'add') {
 
 // ---------- backup file ----------
 export function exportBackup() {
-  return { app: 'animee-space', version: 1, exported: new Date().toISOString(), library: Object.values(lib), history };
+  return { app: BRAND.backup, version: 1, exported: new Date().toISOString(), library: Object.values(lib), history };
 }
 export function restoreBackup(data, mode = 'add') {
-  if (!data || data.app !== 'animee-space' || !Array.isArray(data.library)) throw new Error('This is not an animee space backup file.');
+  if (!data || data.app !== BRAND.backup || !Array.isArray(data.library)) throw new Error(`This is not a ${BRAND.title} backup file.`);
   // Clear rather than delete, so a signed-in account also drops the old entries on the next sync.
   if (mode === 'replace') for (const e of Object.values(lib)) { e.s = 0; e.ep = 0; e.t = 0; e.d = 0; e.u = now(); dirty.add(e.a); }
   let restored = 0;

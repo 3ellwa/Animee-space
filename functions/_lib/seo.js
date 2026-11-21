@@ -3,11 +3,14 @@
 // index.html, and answers /sitemap.xml and /robots.txt. Crawlers and chat apps that don't run
 // JavaScript still see the right title, description and image for every show.
 import * as tenrai from './providers/tenrai.js';
+import { SITES } from './site.js';
 
 export const ORIGIN = 'https://animee.space';
 const SITE = 'animee';
 const OG_IMAGE = ORIGIN + '/og.png';
 const DEFAULT_DESC = 'Watch anime in sub and dub, keep your list and your place in every show, and see what airs this week. Free, with no account needed.';
+const CINEMEE_DESC = 'Watch movies and TV shows, keep your list and your place in every episode, and see what airs this week. Free, with no account needed.';
+const CINEMEE_ORIGIN = SITES.cinemee.origin;
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 // JSON inside <script type="application/ld+json"> must not be able to close the tag.
@@ -51,7 +54,15 @@ const WEBSITE_LD = {
 };
 
 /** Works out what one path should look like in search results. Returns null for unknown paths. */
-export async function describe(url) {
+export async function describe(url, site = 'animee') {
+  // cinemee: movie and TV pages get their own titles in phase 2; until then every page is the app.
+  if (site === 'cinemee') {
+    const first = url.pathname.split('/').filter(Boolean)[0];
+    return {
+      status: 200, title: 'cinemee: watch movies and TV', description: CINEMEE_DESC, image: CINEMEE_ORIGIN + '/og.png', imageIsWide: true,
+      canonical: first ? null : CINEMEE_ORIGIN + '/', robots: first ? 'noindex, follow' : null,
+    };
+  }
   const parts = url.pathname.split('/').filter(Boolean).map((p) => { try { return decodeURIComponent(p); } catch { return p; } });
   const [first, second, third] = parts;
 
@@ -144,22 +155,24 @@ function animeNoscript(a, path) {
 }
 
 /** Puts the page's head tags into index.html. */
-export function render(html, page) {
-  const title = esc(page.title || SITE);
-  const description = esc(page.description || DEFAULT_DESC);
-  const image = esc(page.image || OG_IMAGE);
+export function render(html, page, site = 'animee') {
+  const cinemee = site === 'cinemee';
+  const title = esc(page.title || (cinemee ? 'cinemee' : SITE));
+  const description = esc(page.description || (cinemee ? CINEMEE_DESC : DEFAULT_DESC));
+  const image = esc(page.image || (cinemee ? CINEMEE_ORIGIN + '/og.png' : OG_IMAGE));
+  const wideImage = !page.image || page.imageIsWide;
   const tags = [
     `<meta name="description" content="${description}">`,
     `<meta name="robots" content="${page.status === 404 ? 'noindex, nofollow' : esc(page.robots || 'index, follow, max-image-preview:large')}">`,
     page.canonical ? `<link rel="canonical" href="${esc(page.canonical)}">` : '',
-    `<meta property="og:site_name" content="animee">`,
+    `<meta property="og:site_name" content="${cinemee ? 'cinemee' : 'animee'}">`,
     `<meta property="og:type" content="${esc(page.type || 'website')}">`,
     `<meta property="og:title" content="${title}">`,
     `<meta property="og:description" content="${description}">`,
     page.canonical ? `<meta property="og:url" content="${esc(page.canonical)}">` : '',
     `<meta property="og:image" content="${image}">`,
-    page.image ? '' : '<meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">',
-    `<meta name="twitter:card" content="${page.image ? 'summary' : 'summary_large_image'}">`,
+    wideImage ? '<meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">' : '',
+    `<meta name="twitter:card" content="${wideImage ? 'summary_large_image' : 'summary'}">`,
     `<meta name="twitter:title" content="${title}">`,
     `<meta name="twitter:description" content="${description}">`,
     `<meta name="twitter:image" content="${image}">`,
@@ -174,7 +187,7 @@ export function render(html, page) {
   return out;
 }
 
-export function robots() {
+export function robots(site = 'animee') {
   return [
     'User-agent: *',
     'Allow: /',
@@ -189,7 +202,7 @@ export function robots() {
     'Disallow: /requests',
     'Disallow: /admin',
     '',
-    `Sitemap: ${ORIGIN}/sitemap.xml`,
+    `Sitemap: ${site === 'cinemee' ? CINEMEE_ORIGIN : ORIGIN}/sitemap.xml`,
     '',
   ].join('\n');
 }
@@ -202,7 +215,11 @@ const SITEMAP_SOURCES = [
   ...[1, 2].map((page) => `/top/anime?filter=favorite&page=${page}`),
   '/seasons/now?page=1', '/seasons/now?page=2', '/seasons/upcoming?page=1',
 ];
-export async function sitemap() {
+export async function sitemap(site = 'animee') {
+  if (site === 'cinemee') {
+    // Phase 1: the home page only; movie and TV pages are added with the TMDB catalogue.
+    return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n<url><loc>${CINEMEE_ORIGIN}/</loc><changefreq>daily</changefreq><priority>1.0</priority></url>\n</urlset>\n`;
+  }
   const today = new Date().toISOString().slice(0, 10);
   const urls = Object.entries(STATIC).map(([path, [, , freq, priority]]) => ({ loc: ORIGIN + '/' + path, freq, priority }));
   for (const name of Object.keys(LISTS)) urls.push({ loc: `${ORIGIN}/top/${name}`, freq: 'daily', priority: '0.7' });

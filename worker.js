@@ -2,6 +2,7 @@ import { onRequest } from "./functions/api/[[path]].js";
 import { ASSETS } from "./worker-assets.js";
 import * as seo from "./functions/_lib/seo.js";
 import { runPushCheck } from "./functions/_lib/push.js";
+import { SITES, siteOf, siteEnv, brandShell, brandServiceWorker } from "./functions/_lib/site.js";
 
 const TYPES = {".html":"text/html; charset=utf-8",".css":"text/css; charset=utf-8",".js":"text/javascript; charset=utf-8",".svg":"image/svg+xml",".txt":"text/plain; charset=utf-8",".png":"image/png",".webmanifest":"application/manifest+json",".woff2":"font/woff2",".xml":"application/xml; charset=utf-8"};
 // Images and fonts are stored in worker-assets.js as { b64 } (see scripts/build-assets.mjs).
@@ -20,7 +21,11 @@ function cacheControl(key) {
   if (key.endsWith(".woff2")) return "public, max-age=31536000, immutable";
   return "public, max-age=3600";
 }
-function file(key) {
+// cinemee's own icons, manifest and share image live in public/sites/cinemee/ and win over the
+// shared files at the same path.
+function file(key, site = "animee") {
+  const own = site !== "animee" && ASSETS["/sites/" + site + key] !== undefined ? "/sites/" + site + key : null;
+  if (own) key = own;
   if (ASSETS[key] === undefined) return null;
   const ext = key.slice(key.lastIndexOf("."));
   return new Response(bodyOf(key, ASSETS[key]), { headers: { "Content-Type": TYPES[ext] || "application/octet-stream", "Cache-Control": cacheControl(key), ...SECURITY } });
@@ -32,21 +37,21 @@ const html = (body, status, extra = {}) => new Response(body, { status, headers:
 
 // App pages: index.html with this page's title, description, canonical, previews and JSON-LD.
 // Rendered pages are kept in the edge cache for an hour (the catalogue changes slowly).
-async function page(request, url, ctx) {
+async function page(request, url, ctx, site = "animee") {
   const cache = globalThis.caches?.default;
   const key = new Request(url.origin + url.pathname + url.search + (url.search ? "&" : "?") + "__page=" + SHELL_VERSION, { method: "GET" });
   if (cache) {
     const hit = await cache.match(key).catch(() => null);
     if (hit) return new Response(hit.body, hit);
   }
-  const shell = ASSETS["/index.html"];
-  const info = await seo.describe(url).catch(() => ({ status: 200, transient: true }));
+  const shell = brandShell(ASSETS["/index.html"], site);
+  const info = await seo.describe(url, site).catch(() => ({ status: 200, transient: true }));
   if (info?.redirect) return Response.redirect(info.redirect, 301);
   if (!info || info.status === 404) {
     // Unknown address: the app shows its 404 page, crawlers get a real 404 status.
-    return html(seo.render(shell, { status: 404, title: "Page not found · animee" }), 404, { "X-Robots-Tag": "noindex" });
+    return html(seo.render(shell, { status: 404, title: `Page not found · ${SITES[site].name}` }, site), 404, { "X-Robots-Tag": "noindex" });
   }
-  const response = html(seo.render(shell, info), 200);
+  const response = html(seo.render(shell, info, site), 200);
   if (cache && !info.transient) {
     const stored = new Response(response.clone().body, response);
     stored.headers.set("Cache-Control", "public, max-age=3600");
@@ -60,7 +65,7 @@ async function sitemap(url, ctx) {
   const key = new Request(url.origin + "/sitemap.xml?__v=1", { method: "GET" });
   const hit = cache && await cache.match(key).catch(() => null);
   if (hit) return new Response(hit.body, hit);
-  const response = new Response(await seo.sitemap(), { headers: { "Content-Type": TYPES[".xml"], "Cache-Control": "public, max-age=21600" } });
+  const response = new Response(await seo.sitemap(siteOf(url.href)), { headers: { "Content-Type": TYPES[".xml"], "Cache-Control": "public, max-age=21600" } });
   if (cache) ctx.waitUntil(cache.put(key, response.clone()).catch(() => {}));
   return response;
 }
@@ -74,26 +79,33 @@ export default {
       url.protocol = "https:";
       return Response.redirect(url.toString(), 301);
     }
+    // animee or cinemee, by address; cinemee gets its own database (see functions/_lib/site.js).
+    const site = siteOf(request.url);
+    const siteEnvironment = siteEnv(env, site);
     if (url.pathname === "/api" || url.pathname.startsWith("/api/")) {
       const path = url.pathname.slice(4).split("/").filter(Boolean);
-      const response = await onRequest({ request, env, params: { path }, waitUntil: p => ctx.waitUntil(p) });
+      const response = await onRequest({ request, env: siteEnvironment, params: { path }, waitUntil: p => ctx.waitUntil(p) });
       const out = new Response(response.body, response);
       out.headers.set("X-Robots-Tag", "noindex");
       return out;
     }
     const respond = (res) => (request.method === "HEAD" ? new Response(null, res) : res);
-    if (url.pathname === "/robots.txt") return respond(new Response(seo.robots(), { headers: { "Content-Type": TYPES[".txt"], "Cache-Control": "public, max-age=3600" } }));
+    if (url.pathname === "/robots.txt") return respond(new Response(seo.robots(site), { headers: { "Content-Type": TYPES[".txt"], "Cache-Control": "public, max-age=3600" } }));
     if (url.pathname === "/sitemap.xml") return respond(await sitemap(url, ctx));
     // Browsers and crawlers ask for /favicon.ico on their own; answer with the PNG mark.
-    if (url.pathname === "/favicon.ico") return respond(file("/icons/icon-192.png"));
+    if (url.pathname === "/favicon.ico") return respond(file("/icons/icon-192.png", site));
     const key = url.pathname === "/" ? "/index.html" : url.pathname;
-    if (key !== "/index.html" && key in ASSETS) return respond(file(key));
+    // The per-site folders are only reachable through their normal paths.
+    if (key.startsWith("/sites/")) return new Response("Not found", { status: 404, headers: { "X-Robots-Tag": "noindex" } });
+    if (key === "/sw.js" && site !== "animee") return respond(new Response(brandServiceWorker(ASSETS["/sw.js"], site), { headers: { "Content-Type": TYPES[".js"], "Cache-Control": "no-cache", ...SECURITY } }));
+    if (key !== "/index.html" && key in ASSETS) return respond(file(key, site));
     if (/\.[a-z0-9]+$/i.test(key) && key !== "/index.html") return new Response("Not found", { status: 404, headers: { "X-Robots-Tag": "noindex" } });
-    return respond(await page(request, url, ctx));
+    return respond(await page(request, url, ctx, site));
   },
   // Every 10 minutes (wrangler.toml [triggers]): look for new episodes of followed shows and
   // wake the devices that asked for pop-ups.
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(runPushCheck(env).catch((err) => console.error("push check failed", err)));
+    ctx.waitUntil(runPushCheck(siteEnv(env, "animee")).catch((err) => console.error("push check failed", err)));
+    if (env.CINEMEE_DB) ctx.waitUntil(runPushCheck(siteEnv(env, "cinemee")).catch((err) => console.error("cinemee push check failed", err)));
   },
 };

@@ -1,6 +1,6 @@
 // Draws the app icons (the favicon's logo) as PNGs, with no image libraries.
 // Run with `node scripts/make-icons.mjs` after changing the logo.
-import { writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
 
 const crcTable = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
@@ -23,7 +23,8 @@ function png(w, h, pixel) {
 }
 
 const INK = [8, 9, 10];
-const LIME = [198, 255, 61];
+// The brand colour: animee's lime, or cinemee's red (see the bottom of this file).
+let LIME = [198, 255, 61];
 // Logo in a 64x64 box, matching public/favicon.svg: a lime rounded square (radius 16) with the
 // ^^. face in ink: two chevrons drawn as round-capped strokes, and a dot.
 function inRoundedSquare(u, v) {
@@ -78,8 +79,14 @@ function ogImage() {
     return [Math.round(r / n), Math.round(g / n), Math.round(b / n), 255];
   });
 }
-writeFileSync('public/og.png', ogImage());
-writeFileSync('public/icons/icon-192.png', icon(192));
-writeFileSync('public/icons/icon-512.png', icon(512));
-writeFileSync('public/icons/icon-maskable-512.png', icon(512, { maskable: true }));
+function writeSet(colour, dir) {
+  LIME = colour;
+  mkdirSync(`${dir}/icons`, { recursive: true });
+  writeFileSync(`${dir}/og.png`, ogImage());
+  writeFileSync(`${dir}/icons/icon-192.png`, icon(192));
+  writeFileSync(`${dir}/icons/icon-512.png`, icon(512));
+  writeFileSync(`${dir}/icons/icon-maskable-512.png`, icon(512, { maskable: true }));
+}
+writeSet([198, 255, 61], 'public');                // animee: lime
+writeSet([255, 61, 82], 'public/sites/cinemee');   // cinemee: red (served for cinemee.animee.space)
 console.log('icons written');

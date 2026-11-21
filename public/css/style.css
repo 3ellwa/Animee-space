@@ -74,6 +74,15 @@
   accent-color: var(--lime);
 }
 
+/* cinemee (movies and TV) is the same design in red: only the brand colour changes.
+   The worker sets data-site="cinemee" on <html> for cinemee.animee.space. */
+:root[data-site="cinemee"] {
+  --lime: #FF3D52;
+  --lime-rgb: 255 61 82;
+  --zest: #FF8F9B;
+  --moss: #C21430;
+}
+
 /* ---------- base ---------- */
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; scroll-padding-top: 96px; }
@@ -811,3 +820,7 @@ kbd { display: inline-block; min-width: 1.5em; padding: 0 5px; border-radius: 5p
 .req-answer { padding: 10px 12px; border-left: 3px solid var(--lime); background: rgb(var(--lime-rgb) / .06); border-radius: 8px; }
 .admin-table { border-collapse: collapse; min-width: 360px; font-size: 14px; }
 .admin-table th, .admin-table td { text-align: left; padding: 6px 12px; border-bottom: 1px solid var(--line-soft); }
+
+/* TMDB credit in cinemee's footer */
+.footer-credit { margin: 10px 0 0; max-width: 420px; color: var(--fog-dim); font-size: 12px; line-height: 1.5; }
+.footer-credit a { color: var(--fog); }

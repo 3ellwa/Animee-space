@@ -3,6 +3,7 @@
 // following or unfollowing later updates that list.
 
 import * as store from './store.js';
+import { BRAND } from './site.js';
 
 const ON_KEY = 'animee-space:push-on';
 const alertsCode = () => ({ both: 0, sub: 1, dub: 2 }[store.getSettings().alertsFor] ?? 0);
@@ -41,11 +42,11 @@ async function post(path, body) {
 
 export async function enable() {
   if (!supported()) throw new Error('This browser can’t show pop-ups.');
-  if (needsInstall()) throw new Error('On iPhone and iPad, add animee to your Home Screen first (Share → Add to Home Screen), then turn pop-ups on from the installed app.');
+  if (needsInstall()) throw new Error(`On iPhone and iPad, add ${BRAND.name} to your Home Screen first (Share → Add to Home Screen), then turn pop-ups on from the installed app.`);
   const key = await serverKey();
   if (!key) throw new Error('Pop-ups aren’t set up on the server yet.');
   const answer = await Notification.requestPermission();
-  if (answer !== 'granted') throw new Error('Notifications are blocked for animee. Allow them in your browser’s site settings (the icon left of the address), then try again.');
+  if (answer !== 'granted') throw new Error(`Notifications are blocked for ${BRAND.name}. Allow them in your browser’s site settings (the icon left of the address), then try again.`);
   const reg = await navigator.serviceWorker.ready;
   let sub = await reg.pushManager.getSubscription();
   if (!sub) {

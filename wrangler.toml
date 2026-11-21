@@ -8,6 +8,15 @@ database_name = "animee-space"
 database_id = "bc75323b-aa43-466d-aa3e-929f48dd5f16"
 migrations_dir = "migrations"
 
+# cinemee (cinemee.animee.space) keeps its own accounts and saved data (functions/_lib/site.js).
+# Same tables as animee, so it uses the same migrations folder.
+# TODO before deploying: replace the placeholder with the id from `npx wrangler d1 create cinemee`.
+[[d1_databases]]
+binding = "CINEMEE_DB"
+database_name = "cinemee"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
 [vars]
 ANIMEE_EMBED_PROVIDERS = "[]"
 
