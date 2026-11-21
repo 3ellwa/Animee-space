@@ -62,8 +62,8 @@ Names are deliberately neutral; ids stay real in settings, reports, logs and /ad
 4. **Hoshi** = TryEmbed (sub/dub, AniList id; blocks automated browsers, fine for real visitors).
 
 **cinemee**:
-1. **Orion** = vidnext.pro (red theme, `startAt`, progress messages, seek). Best one.
-2. **Nova** = VidNest.
+1. **Orion** = vidnext.pro (red theme, `startAt`, progress messages, seek; Arabic subtitles). Best one.
+2. **Nova** = VidNest (Arabic subtitles).
 3. **Atlas** = EmbedMaster (`embedmaster.link`, dark skin; accepts `sub_url[]` subtitle files).
 4. **Vega** = vidsrc.to (subtitles in many languages incl. Arabic, in its own menu).
 5. **Lyra** = VidCore (lots of ads, so last).
@@ -140,7 +140,7 @@ npx wrangler dev --port 8787 --test-scheduled
 ## Ideas not built yet (from docs/HIANIME-NOTES.md and conversations)
 
 - Reorder servers per episode from the reports table (scheduled job).
-- Arabic subtitles we supply ourselves (SubDL / OpenSubtitles → VTT → Atlas's `sub_url[]`).
+- Arabic subtitles we supply ourselves (SubDL / OpenSubtitles → VTT → Atlas's `sub_url[]`). Low priority: Orion, Nova and Vega already have them.
 - TVmaze for real TV air times on cinemee's schedule and calendar; OMDb for IMDb/RT scores.
 - vidsrc options (default subtitle language, resume) once its docs can be read.
 - Light theme / accent colours were declined (dark only).
