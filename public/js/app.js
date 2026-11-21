@@ -996,7 +996,7 @@ async function viewWatch(id, query, alive) {
   const episodes = epData.episodes;
 
   if (!episodes.length) {
-    app.innerHTML = `<div class="empty"><h2>No episodes yet</h2><p>${esc(T(a))} hasn't released any episodes.</p>
+    app.innerHTML = `<div class="empty"><h2>No episodes yet</h2><p>${esc(T(a))} ${IS_CINEMEE ? "isn't out yet" : "hasn't released any episodes"}.</p>
       <a class="btn" href="${animeHref(a)}">Back to details</a></div>`;
     return;
   }
@@ -1047,7 +1047,7 @@ async function viewWatch(id, query, alive) {
           </div>
         </div>
         <div class="servers">
-          <div class="now">You are watching<b id="now-ep"></b>If one server doesn't work, try another.</div>
+          <div class="now">You are watching<b id="now-ep"></b><span id="server-hint">If one server doesn't work, try another.</span></div>
           <div class="resume-note" id="resume-note" hidden></div>
           <div id="server-list"></div>
           <div class="not-working"><button class="btn sm" id="not-working" type="button">⚠ Not working? Try another server</button></div>
@@ -1130,6 +1130,7 @@ async function viewWatch(id, query, alive) {
     // MegaPlay resumed at the saved time: say so, with a way back to the beginning.
     onResumed: (at) => showNote(`Picked up where you stopped, at <b>${clock(at)}</b>. <button class="btn sm" type="button">Start over</button>`, () => player.seekTo(0)),
     onFail: (message) => tryNextServer(message),
+    serverCount: () => new Set(servers.map((s) => s.id)).size,
     onStarted: () => {
       if (server) store.setGoodServer(a.id, server.category, server.id);
       // An episode counts as watched as soon as it starts playing (it gets its tick in the list,
@@ -1300,6 +1301,10 @@ async function viewWatch(id, query, alive) {
         <button class="srv${server && server.id === s.id && server.category === cat ? ' on' : ''}" data-id="${esc(s.id)}" data-cat="${cat}"${playable(current, cat) ? '' : ` disabled title="Not out in ${cat} for this episode yet"`}>${esc(s.name)}</button>`).join('')}</div></div>`;
     }).join('');
     $('server-list').innerHTML = groups || '<span class="card-meta">No servers available.</span>';
+    // One server (cinemee): nothing to switch to, so no "try another" hint or button.
+    const several = new Set(servers.map((s) => s.id)).size > 1;
+    $('server-hint').hidden = !several;
+    $('not-working').closest('.not-working').hidden = !several;
   }
   $('server-list').onclick = (e) => {
     const b = e.target.closest('.srv');
@@ -1383,7 +1388,9 @@ async function viewWatch(id, query, alive) {
       switchedLanguage = Boolean(next);
     }
     if (!next) {
-      player.msg(`${message} No other ${failed.category} server could play it either. You can report it below.`);
+      player.msg(new Set(servers.map((s) => s.id)).size > 1
+        ? `${message} No other ${failed.category} server could play it either. You can report it below.`
+        : `${message} You can report it below.`);
       return true;
     }
     server = { id: next.id, category: next.category };
@@ -1599,7 +1606,7 @@ function requesterId() {
     return id;
   } catch { return null; }
 }
-const KIND_LABEL = { anime: 'An anime you want added', idea: 'An idea for the site', broken: 'Something is broken', other: 'Something else' };
+const KIND_LABEL = { anime: IS_CINEMEE ? 'A movie or show you want added' : 'An anime you want added', idea: 'An idea for the site', broken: 'Something is broken', other: 'Something else' };
 const fmtWhen = (sec) => new Date(sec * 1000).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
 async function viewRequests(alive) {
   document.title = `Requests · ${BRAND.title}`;
@@ -1610,7 +1617,7 @@ async function viewRequests(alive) {
       <fieldset class="chips"><legend class="card-meta">It is about</legend>
         ${Object.entries(KIND_LABEL).map(([k, l], i) => `<label class="chip check"><input type="radio" name="kind" value="${k}"${i === 0 ? ' checked' : ''}> ${l}</label>`).join('')}
       </fieldset>
-      <label class="field" id="req-anime-field"><span>Anime name</span><input class="input" name="anime" maxlength="120" autocomplete="off"></label>
+      <label class="field" id="req-anime-field"><span>${IS_CINEMEE ? 'Title' : 'Anime name'}</span><input class="input" name="anime" maxlength="120" autocomplete="off"></label>
       <label class="field"><span>Message</span><textarea class="input" name="message" rows="4" maxlength="1000" placeholder="Anything that helps: season, episode, what went wrong…"></textarea></label>
       <div class="actions"><button class="btn primary" type="submit">Send</button><span class="card-meta" id="req-status" role="status"></span></div>
     </form>
@@ -1782,7 +1789,7 @@ function viewStats() {
     ${!rows.length ? `<div class="empty"><h2>Nothing yet ^^.</h2><p>Watch something and your stats start here.</p><a class="btn primary" href="/">Find something to watch</a></div>` : `
     <div class="stats stat-grid">
       <div><b>${episodes}</b><span>episodes watched</span></div>
-      <div><b>${fmtHours(minutes)}</b><span>of anime (about)</span></div>
+      <div><b>${fmtHours(minutes)}</b><span>${IS_CINEMEE ? 'of watching' : 'of anime'} (about)</span></div>
       <div><b>${count('completed')}</b><span>completed</span></div>
       <div><b>${count('watching')}</b><span>watching</span></div>
       <div><b>${count('planning')}</b><span>plan to watch</span></div>
@@ -2205,7 +2212,7 @@ async function viewAZ(query, alive) {
   document.title = `A-Z list · ${BRAND.title}`;
   const letter = LETTERS.includes((query.get('letter') || '').toUpperCase()) ? query.get('letter').toUpperCase() : '';
   const page = Math.max(1, Number(query.get('page')) || 1);
-  app.innerHTML = `<h1 class="page-title">${letter ? `Anime starting with ${letter}` : 'Anime A-Z'}</h1>
+  app.innerHTML = `<h1 class="page-title">${letter ? `${IS_CINEMEE ? 'Titles' : 'Anime'} starting with ${letter}` : `${IS_CINEMEE ? 'Titles' : 'Anime'} A-Z`}</h1>
     <p class="card-meta">Know the name but not the spelling? Jump to its first letter.</p>
     <nav class="az-bar" aria-label="Letters">
       <a class="chip${letter ? '' : ' on'}" href="/az">All</a>
@@ -2257,9 +2264,9 @@ async function viewPick(alive) {
       <fieldset><legend>2. A genre</legend>
         <select name="genre" aria-label="Genre"><option value="">Any genre</option>${genres.map((g) => `<option>${esc(g)}</option>`).join('')}</select>
       </fieldset>
-      <fieldset><legend>3. An anime you already like</legend>
+      <fieldset><legend>3. ${IS_CINEMEE ? 'A movie or show' : 'An anime'} you already like</legend>
         <div class="pick-like">
-          <input class="input" type="search" id="like-q" placeholder="Type a title…" autocomplete="off" aria-label="An anime you already like">
+          <input class="input" type="search" id="like-q" placeholder="Type a title…" autocomplete="off" aria-label="${IS_CINEMEE ? 'A movie or show' : 'An anime'} you already like">
           <div class="suggest" id="like-suggest" hidden></div>
         </div>
         <div id="like-chosen" class="card-meta"></div>

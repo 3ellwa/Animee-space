@@ -27,7 +27,7 @@ const episodeNumber = raw => {
 };
 const validAnimeId = raw => {
   const value = String(raw || '').trim();
-  if (!/^\d{1,12}$/.test(value)) throw fail(400, 'Invalid MAL anime ID');
+  if (!/^\d{1,12}$/.test(value)) throw fail(400, 'That link doesn\'t point to a title.');
   return value;
 };
 

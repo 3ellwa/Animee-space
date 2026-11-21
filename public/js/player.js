@@ -21,7 +21,7 @@ export function loadHls() {
   return hlsLoading;
 }
 
-const IFRAME_HTML = '<iframe class="embed-frame" title="Anime episode player" ' +
+const IFRAME_HTML = '<iframe class="embed-frame" title="Episode player" ' +
   'allow="autoplay; fullscreen; picture-in-picture; encrypted-media" allowfullscreen webkitallowfullscreen mozallowfullscreen ' +
   'referrerpolicy="strict-origin-when-cross-origin" hidden></iframe>';
 
@@ -287,12 +287,12 @@ export class Player {
         if (!detail.fatal) return;
         if (detail.type === Hls.ErrorTypes.NETWORK_ERROR) hls.startLoad();
         else if (detail.type === Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError();
-        else this.fail('Playback error. Try another server.');
+        else this.fail(`Playback error.${this.serverHint()}`);
       });
     } else if (source.type !== 'hls' || video.canPlayType('application/vnd.apple.mpegurl')) {
       video.src = source.url;
       video.addEventListener('loadedmetadata', start, { once: true });
-      video.addEventListener('error', () => this.fail('This stream failed to load. Try another server.'), { once: true });
+      video.addEventListener('error', () => this.fail(`This stream failed to load.${this.serverHint()}`), { once: true });
     } else {
       this.fail('Your browser can’t play this stream.');
     }
@@ -307,6 +307,11 @@ export class Player {
     } catch {
       this.msg('Fullscreen was blocked. Use the embedded player controls if available.');
     }
+  }
+
+  // " Try another server." only makes sense when there is another server (cinemee has one).
+  serverHint() {
+    return this.opts.serverCount?.() > 1 ? ' Try another server.' : ' Try again in a little while.';
   }
 
   isMegaPlay() {
@@ -394,7 +399,7 @@ export class Player {
         this.nextBtn.hidden = !this.opts.hasNext?.();
         this.opts.onEnded?.();
       }
-      if (eventName === 'error') this.fail('The embedded player reported a playback error. Try another server.');
+      if (eventName === 'error') this.fail(`The player reported a playback error.${this.serverHint()}`);
       return;
     }
 
@@ -440,7 +445,7 @@ export class Player {
       this.opts.onEnded?.();
     }
     if (data.event === 'error') {
-      const message = 'The embedded player reported a playback error. Try another server.';
+      const message = `The player reported a playback error.${this.serverHint()}`;
       if (!this.isMegaPlay()) { this.fail(message); return; }
       clearTimeout(this.errorTimer);
       this.errorTimer = setTimeout(() => { this.errorTimer = null; this.fail(message); }, 5000);

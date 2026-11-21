@@ -45,7 +45,7 @@ async function cached(ctx, ttl, fn) {
 }
 const validId = raw => {
   const id = String(raw ?? '').trim();
-  if (!/^\d{1,12}$/.test(id)) throw Object.assign(new Error('Invalid MAL anime ID'), { status: 400 });
+  if (!/^\d{1,12}$/.test(id)) throw Object.assign(new Error('That link doesn\'t point to a title.'), { status: 400 });
   return id;
 };
 function episodeRef(raw) {
