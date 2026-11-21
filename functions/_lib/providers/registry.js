@@ -10,10 +10,12 @@ const BUILTIN_ID = 'megaplay';
 const ID_RE = /^[a-z0-9][a-z0-9_-]{0,39}$/;
 const CATEGORIES = new Set(['sub', 'dub']);
 const BUILTIN_PROVIDERS = [
-  { id: 'megaplay', name: 'MegaPlay', categories: ['sub', 'dub'] },
-  { id: 'animeparadise', name: 'AnimeParadise', categories: ['sub'] },
-  { id: 'vidnest', name: 'VidNest', categories: ['sub', 'dub'] },
-  { id: 'tryembed', name: 'TryEmbed', categories: ['sub', 'dub'] },
+  // `name` is what visitors see on the server buttons: short neutral names, not the upstream
+  // sites. `id` stays the real one, used in saved settings, reports, logs and the admin page.
+  { id: 'megaplay', name: 'Sora', categories: ['sub', 'dub'] },
+  { id: 'animeparadise', name: 'Kaze', categories: ['sub'] },
+  { id: 'vidnest', name: 'Nami', categories: ['sub', 'dub'] },
+  { id: 'tryembed', name: 'Hoshi', categories: ['sub', 'dub'] },
 ];
 
 const fail = (status, message) => Object.assign(new Error(message), { status });
@@ -176,13 +178,16 @@ export async function getFallbackSource(rawId, rawEpisode, rawPreferred, rawCate
       return result;
     } catch (error) {
       recordResult(candidate.id, error);
-      failures.push(`${candidate.name}: ${error?.message || 'provider failed'}`);
+      failures.push(`${candidate.id}: ${error?.message || 'provider failed'}`);
     }
   }
 
+  // Visitors get a plain message; the per-server reasons (which name the upstream sites)
+  // go to the Worker logs instead.
+  if (failures.length) console.warn(`playback: nothing resolved ${id}:${episode} ${category}: ${failures.join(' | ').slice(0, 800)}`);
   const message = failures.length
-    ? `No playback provider could resolve this episode. ${failures.join(' | ').slice(0, 500)}`
-    : `No playback providers are available for ${category}.`;
+    ? `No server could play this episode in ${category} right now. Try again in a little while.`
+    : `No servers are available for ${category}.`;
   fallbackCache.set(key, { error: message, status: 502, expires: Date.now() + FALLBACK_FAILURE_MS });
   throw fail(502, message);
 }
@@ -191,8 +196,14 @@ export async function getFallbackSource(rawId, rawEpisode, rawPreferred, rawCate
 export async function getDirectSources(rawId, rawEpisode, rawServer, rawCategory, env = {}, opts = {}) {
   const server = String(rawServer || BUILTIN_ID).trim().toLowerCase();
   const provider = getProviderList(env).find(item => item.id === server);
-  return withDeadline(provider?.name || 'The provider', playbackLimits.providerMs,
-    () => getSources(rawId, rawEpisode, server, rawCategory, env, opts));
+  try {
+    return await withDeadline(provider?.name || 'That server', playbackLimits.providerMs,
+      () => getSources(rawId, rawEpisode, server, rawCategory, env, opts));
+  } catch (error) {
+    if (error?.status === 400 || error?.status === 504 || !provider) throw error;
+    console.warn(`playback: ${server} failed for ${rawId}:${rawEpisode}: ${error?.message || error}`);
+    throw fail(error?.status && error.status < 500 ? error.status : 502, `${provider.name} couldn't play this episode.`);
+  }
 }
 
 /** opts.aniListId: the show's AniList ID, looked up by the browser (VidNest and TryEmbed need it). */

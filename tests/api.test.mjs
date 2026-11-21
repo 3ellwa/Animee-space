@@ -297,13 +297,13 @@ test('playback registry returns real provider IDs and routes sources to the sele
   assert.deepEqual(
     servers.servers.map(s => [s.id, s.name, s.category]),
     [
-      ['megaplay', 'MegaPlay', 'sub'],
-      ['megaplay', 'MegaPlay', 'dub'],
-      ['animeparadise', 'AnimeParadise', 'sub'],
-      ['vidnest', 'VidNest', 'sub'],
-      ['vidnest', 'VidNest', 'dub'],
-      ['tryembed', 'TryEmbed', 'sub'],
-      ['tryembed', 'TryEmbed', 'dub'],
+      ['megaplay', 'Sora', 'sub'],
+      ['megaplay', 'Sora', 'dub'],
+      ['animeparadise', 'Kaze', 'sub'],
+      ['vidnest', 'Nami', 'sub'],
+      ['vidnest', 'Nami', 'dub'],
+      ['tryembed', 'Hoshi', 'sub'],
+      ['tryembed', 'Hoshi', 'dub'],
       ['backup-one', 'Backup One', 'sub'],
       ['backup-one', 'Backup One', 'dub'],
       ['backup-two', 'Backup Two', 'sub'],
@@ -570,7 +570,9 @@ test('a hanging provider is cut off by the deadline and reported as 504', async 
     };
     const response = await onRequest(context('episode/62010%3A1/sources?server=animeparadise&category=sub'));
     assert.equal(response.status, 504);
-    assert.match((await response.json()).error, /AnimeParadise/);
+    const { error } = await response.json();
+    assert.match(error, /Kaze/); // the visitor-facing name, never the upstream site
+    assert.doesNotMatch(error, /AnimeParadise/i);
   } finally {
     Object.assign(playbackLimits, saved);
   }
@@ -672,4 +674,23 @@ test('an AniList ID from the browser is used as is, so the Worker never has to a
   const direct = await getSources('4242', 5, 'tryembed', 'sub', {}, { aniListId: '172463' });
   assert.equal(direct.embedUrl, 'https://tryembed.us.cc/embed/anime/172463/5/sub');
   resetAniListCache();
+});
+
+test('when no server plays, visitors see a plain message without upstream site names', async () => {
+  globalThis.fetch = async (url) => {
+    const target = new URL(String(url));
+    if (target.hostname === 'api.tenrai.org' && target.pathname.endsWith('/full')) return Response.json(detailPayload(62099));
+    return new Response('down', { status: 503 });
+  };
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    const res = await onRequest(context('episode/62099%3A1/sources?server=auto&preferred=megaplay&category=sub'));
+    assert.equal(res.status, 502);
+    const { error } = await res.json();
+    assert.match(error, /No server could play this episode/);
+    assert.doesNotMatch(error, /megaplay|animeparadise|vidnest|tryembed|anilist/i);
+  } finally {
+    console.warn = warn;
+  }
 });

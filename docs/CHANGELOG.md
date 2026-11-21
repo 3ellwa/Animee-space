@@ -1,3 +1,8 @@
+## Short server names
+
+- Server buttons use short neutral names instead of the upstream sites: **Sora** (MegaPlay), **Kaze** (AnimeParadise), **Nami** (VidNest), **Hoshi** (TryEmbed). Internal ids are unchanged, so saved preferences, reports and the admin page keep working.
+- When nothing plays, visitors see a plain "No server could play this episode" message; the per-server reasons (which name the upstream sites) go to the Worker logs. A single chosen server that fails says "<name> couldn't play this episode."
+
 ## VidNest and TryEmbed servers; AniList lookups from the browser
 
 - Two more playback servers, each one entry in sub and dub: **VidNest** (`vidnest.fun`) and **TryEmbed** (`tryembed.us.cc`). Both open at your saved position (`startAt`), so there's no "skip to 11:24" hint for them; TryEmbed's own auto-next is turned off so animee's Up next stays in charge, and its progress messages are accepted only from its exact player window.

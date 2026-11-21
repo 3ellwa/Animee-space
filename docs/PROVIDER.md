@@ -8,6 +8,8 @@ Strict safe-for-work filtering is enabled using `sfw-strict=true` on catalogue r
 
 ## Built-in playback providers
 
+Visitors see short neutral server names instead of the upstream sites: **Sora** (MegaPlay), **Kaze** (AnimeParadise), **Nami** (VidNest) and **Hoshi** (TryEmbed). They are set in `BUILTIN_PROVIDERS` in `functions/_lib/providers/registry.js`. The real ids stay in saved settings, reports, Worker logs and the admin page. Error messages shown to visitors use the short names; the detailed upstream reasons go to the Worker logs.
+
 ### MegaPlay
 
 MegaPlay uses `https://megaplay.buzz/stream/mal/{mal-id}/{episode-number}/{sub|dub}`. Animee checks the actual episode page because MegaPlay can return HTTP 200 for its unavailable-episode page. Playback is hosted in the provider iframe, so provider-owned controls remain inside the iframe.
