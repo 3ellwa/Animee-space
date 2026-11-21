@@ -138,3 +138,24 @@ test('without a token the catalogue says it is not set up, instead of crashing',
   assert.equal(res.status, 503);
   assert.match((await res.json()).error, /not set up/);
 });
+
+test('movie and TV pages get their own titles, previews and one canonical address', async () => {
+  const seo = await import('../functions/_lib/seo-cinemee.js');
+  tmdb.resetCache();
+  fakeTmdb();
+  const page = await seo.describe(new URL('https://cinemee.animee.space/movie/5501/fight-club'), env);
+  assert.equal(page.status, 200);
+  assert.equal(page.title, 'Fight Club (1999): watch the movie · cinemee');
+  assert.equal(page.canonical, 'https://cinemee.animee.space/movie/5501/fight-club');
+  assert.equal(page.ld[0]['@type'], 'Movie');
+  // Old anime-style address, wrong type and missing slug all settle on the canonical one.
+  for (const path of ['/anime/5501', '/tv/5501/fight-club', '/movie/5501']) {
+    const r = await seo.describe(new URL('https://cinemee.animee.space' + path), env);
+    assert.equal(r.redirect, 'https://cinemee.animee.space/movie/5501/fight-club', path);
+  }
+  const show = await seo.describe(new URL('https://cinemee.animee.space/tv/13992/game-of-thrones'), env);
+  assert.equal(show.ld[0]['@type'], 'TVSeries');
+  assert.equal((await seo.describe(new URL('https://cinemee.animee.space/movie/13993'), env)).status, 404);
+  assert.equal((await seo.describe(new URL('https://cinemee.animee.space/nonsense/page'), env)).status, 404);
+  assert.match(seo.robots(), /Sitemap: https:\/\/cinemee\.animee\.space\/sitemap\.xml/);
+});

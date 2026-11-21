@@ -311,7 +311,7 @@ export async function getList(name, limit = 24) {
 
 // ---------- search and browse ----------
 const ORDERS = {
-  popularity: 'popularity.desc', score: 'vote_average.desc', newest: '{date}.desc', oldest: '{date}.asc', title: '{title}.asc',
+  popular: 'popularity.desc', popularity: 'popularity.desc', score: 'vote_average.desc', newest: '{date}.desc', oldest: '{date}.asc', title: '{title}.asc',
 };
 export async function searchAnime(input = {}) {
   const query = String(input.query || '').trim().slice(0, 100);
@@ -326,7 +326,9 @@ export async function searchAnime(input = {}) {
   const pick = (side) => names.map((n) => GENRE_TABLE.find(([name]) => name === n)?.[side === 'movie' ? 1 : 2]).filter(Boolean);
   const order = ORDERS[input.order] || ORDERS.popularity;
   const yearValue = /^\d{4}$/.test(String(input.year || '')) ? Number(input.year) : null;
-  const score = Number(input.score) ? Math.min(10, Number(input.score) / 10) : null;
+  const score = Number(input.score) ? Math.min(10, Number(input.score)) : null;
+  // Status shortcuts: "on air now" = TV shows still running; "coming soon" = films not out yet.
+  const status = String(input.status || '').toLowerCase();
   const params = (side) => {
     const ids = pick(side);
     // A genre that one side doesn't have rules that side out.
@@ -340,9 +342,11 @@ export async function searchAnime(input = {}) {
       // Sorting by score or date needs enough votes to mean something.
       'vote_count.gte': input.order === 'score' ? 200 : input.order ? 20 : null,
       [side === 'movie' ? 'primary_release_date.lte' : 'first_air_date.lte']: input.order === 'newest' ? today() : null,
+      ...(status === 'airing' && side === 'tv' ? { with_status: '0', 'air_date.gte': today() } : {}),
+      ...(status === 'upcoming' && side === 'movie' ? { 'primary_release_date.gte': today() } : {}),
     };
   };
-  const sides = type ? [type] : ['movie', 'tv'];
+  const sides = status === 'airing' ? ['tv'] : status === 'upcoming' ? ['movie'] : type ? [type] : ['movie', 'tv'];
   const pages = await Promise.all(sides.map((side) => {
     const p = params(side);
     return p ? request(`/discover/${side}`, { ...p, page }).then((payload) => ({ side, payload })).catch(() => null) : null;

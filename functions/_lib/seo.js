@@ -4,6 +4,7 @@
 // JavaScript still see the right title, description and image for every show.
 import * as tenrai from './providers/tenrai.js';
 import { SITES } from './site.js';
+import * as cinemeeSeo from './seo-cinemee.js';
 
 export const ORIGIN = 'https://animee.space';
 const SITE = 'animee';
@@ -54,15 +55,8 @@ const WEBSITE_LD = {
 };
 
 /** Works out what one path should look like in search results. Returns null for unknown paths. */
-export async function describe(url, site = 'animee') {
-  // cinemee: movie and TV pages get their own titles in phase 2; until then every page is the app.
-  if (site === 'cinemee') {
-    const first = url.pathname.split('/').filter(Boolean)[0];
-    return {
-      status: 200, title: 'cinemee: watch movies and TV', description: CINEMEE_DESC, image: CINEMEE_ORIGIN + '/og.png', imageIsWide: true,
-      canonical: first ? null : CINEMEE_ORIGIN + '/', robots: first ? 'noindex, follow' : null,
-    };
-  }
+export async function describe(url, site = 'animee', env = {}) {
+  if (site === 'cinemee') return cinemeeSeo.describe(url, env);
   const parts = url.pathname.split('/').filter(Boolean).map((p) => { try { return decodeURIComponent(p); } catch { return p; } });
   const [first, second, third] = parts;
 
@@ -188,6 +182,7 @@ export function render(html, page, site = 'animee') {
 }
 
 export function robots(site = 'animee') {
+  if (site === 'cinemee') return cinemeeSeo.robots();
   return [
     'User-agent: *',
     'Allow: /',
@@ -215,11 +210,8 @@ const SITEMAP_SOURCES = [
   ...[1, 2].map((page) => `/top/anime?filter=favorite&page=${page}`),
   '/seasons/now?page=1', '/seasons/now?page=2', '/seasons/upcoming?page=1',
 ];
-export async function sitemap(site = 'animee') {
-  if (site === 'cinemee') {
-    // Phase 1: the home page only; movie and TV pages are added with the TMDB catalogue.
-    return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n<url><loc>${CINEMEE_ORIGIN}/</loc><changefreq>daily</changefreq><priority>1.0</priority></url>\n</urlset>\n`;
-  }
+export async function sitemap(site = 'animee', env = {}) {
+  if (site === 'cinemee') return cinemeeSeo.sitemap(env);
   const today = new Date().toISOString().slice(0, 10);
   const urls = Object.entries(STATIC).map(([path, [, , freq, priority]]) => ({ loc: ORIGIN + '/' + path, freq, priority }));
   for (const name of Object.keys(LISTS)) urls.push({ loc: `${ORIGIN}/top/${name}`, freq: 'daily', priority: '0.7' });

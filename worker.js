@@ -37,7 +37,7 @@ const html = (body, status, extra = {}) => new Response(body, { status, headers:
 
 // App pages: index.html with this page's title, description, canonical, previews and JSON-LD.
 // Rendered pages are kept in the edge cache for an hour (the catalogue changes slowly).
-async function page(request, url, ctx, site = "animee") {
+async function page(request, url, ctx, site = "animee", env = {}) {
   const cache = globalThis.caches?.default;
   const key = new Request(url.origin + url.pathname + url.search + (url.search ? "&" : "?") + "__page=" + SHELL_VERSION, { method: "GET" });
   if (cache) {
@@ -45,7 +45,7 @@ async function page(request, url, ctx, site = "animee") {
     if (hit) return new Response(hit.body, hit);
   }
   const shell = brandShell(ASSETS["/index.html"], site);
-  const info = await seo.describe(url, site).catch(() => ({ status: 200, transient: true }));
+  const info = await seo.describe(url, site, env).catch(() => ({ status: 200, transient: true }));
   if (info?.redirect) return Response.redirect(info.redirect, 301);
   if (!info || info.status === 404) {
     // Unknown address: the app shows its 404 page, crawlers get a real 404 status.
@@ -60,12 +60,12 @@ async function page(request, url, ctx, site = "animee") {
   return response;
 }
 
-async function sitemap(url, ctx) {
+async function sitemap(url, ctx, env = {}) {
   const cache = globalThis.caches?.default;
   const key = new Request(url.origin + "/sitemap.xml?__v=1", { method: "GET" });
   const hit = cache && await cache.match(key).catch(() => null);
   if (hit) return new Response(hit.body, hit);
-  const response = new Response(await seo.sitemap(siteOf(url.href)), { headers: { "Content-Type": TYPES[".xml"], "Cache-Control": "public, max-age=21600" } });
+  const response = new Response(await seo.sitemap(siteOf(url.href), env), { headers: { "Content-Type": TYPES[".xml"], "Cache-Control": "public, max-age=21600" } });
   if (cache) ctx.waitUntil(cache.put(key, response.clone()).catch(() => {}));
   return response;
 }
@@ -91,7 +91,7 @@ export default {
     }
     const respond = (res) => (request.method === "HEAD" ? new Response(null, res) : res);
     if (url.pathname === "/robots.txt") return respond(new Response(seo.robots(site), { headers: { "Content-Type": TYPES[".txt"], "Cache-Control": "public, max-age=3600" } }));
-    if (url.pathname === "/sitemap.xml") return respond(await sitemap(url, ctx));
+    if (url.pathname === "/sitemap.xml") return respond(await sitemap(url, ctx, siteEnvironment));
     // Browsers and crawlers ask for /favicon.ico on their own; answer with the PNG mark.
     if (url.pathname === "/favicon.ico") return respond(file("/icons/icon-192.png", site));
     const key = url.pathname === "/" ? "/index.html" : url.pathname;
@@ -100,7 +100,7 @@ export default {
     if (key === "/sw.js" && site !== "animee") return respond(new Response(brandServiceWorker(ASSETS["/sw.js"], site), { headers: { "Content-Type": TYPES[".js"], "Cache-Control": "no-cache", ...SECURITY } }));
     if (key !== "/index.html" && key in ASSETS) return respond(file(key, site));
     if (/\.[a-z0-9]+$/i.test(key) && key !== "/index.html") return new Response("Not found", { status: 404, headers: { "X-Robots-Tag": "noindex" } });
-    return respond(await page(request, url, ctx, site));
+    return respond(await page(request, url, ctx, site, siteEnvironment));
   },
   // Every 10 minutes (wrangler.toml [triggers]): look for new episodes of followed shows and
   // wake the devices that asked for pop-ups.

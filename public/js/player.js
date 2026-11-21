@@ -54,6 +54,22 @@ export class Player {
     this.nextBtn.onclick = () => this.opts.onNext?.();
     this.onMessage = event => this.handleEmbedMessage(event);
     window.addEventListener('message', this.onMessage);
+    // The embedded player's own fullscreen button makes only its frame fullscreen, which hides
+    // animee's "Up next" card. Move fullscreen to the whole player box instead (the click inside
+    // the frame still counts as the user's gesture). If the browser refuses, nothing changes.
+    this.onFullscreen = () => {
+      this.tellFullscreen();
+      const current = document.fullscreenElement || document.webkitFullscreenElement;
+      const box = this.root.querySelector('.player');
+      if (!current || current !== this.iframe || !box || this.swappingFullscreen) return;
+      this.swappingFullscreen = true;
+      const request = box.requestFullscreen?.bind(box) || box.webkitRequestFullscreen?.bind(box);
+      Promise.resolve(request?.())
+        .catch(() => {}) // stays fullscreen on the frame; the card just isn't visible there
+        .finally(() => { this.swappingFullscreen = false; });
+    };
+    document.addEventListener('fullscreenchange', this.onFullscreen);
+    document.addEventListener('webkitfullscreenchange', this.onFullscreen);
     this.onEnd = () => {
       this.save(true);
       this.opts.onEnded?.();
@@ -265,6 +281,13 @@ export class Player {
     }
   }
 
+  // Tell MegaPlay's player whether animee's player box is fullscreen (see handleEmbedMessage).
+  tellFullscreen() {
+    const w = this.iframe?.contentWindow;
+    if (!w || !this.embedOrigin || !/megaplay\.buzz$/.test(new URL(this.embedOrigin).hostname)) return;
+    try { w.postMessage({ megaFullscreenState: document.fullscreenElement === this.root.querySelector('.player') }, this.embedOrigin); } catch { /* frame gone */ }
+  }
+
   handleEmbedMessage(event) {
     if (!this.embedOrigin || event.origin !== this.embedOrigin || event.source !== this.iframe.contentWindow) return;
     let data = event.data;
@@ -272,6 +295,20 @@ export class Player {
       try { data = JSON.parse(data); } catch { return; }
     }
     if (!data || typeof data !== 'object') return;
+
+    // MegaPlay's fullscreen handshake: its player asks whether the page handles fullscreen
+    // (getFullscreenState). Once we answer (megaFullscreenState), its own fullscreen button asks
+    // us to toggle (toggleFullscreen) instead of making only its frame fullscreen, so animee's
+    // whole player box goes fullscreen and the "Up next" card stays visible.
+    if (data.megaCommand) {
+      if (data.megaCommand === 'getFullscreenState') this.tellFullscreen();
+      if (data.megaCommand === 'toggleFullscreen') {
+        const box = this.root.querySelector('.player');
+        if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+        else box?.requestFullscreen?.().catch(() => {});
+      }
+      return;
+    }
     if (data.channel && data.channel !== 'megacloud') return;
 
     // TryEmbed documents PLAYER_EVENT messages with playback state nested in `data`.
@@ -340,6 +377,8 @@ export class Player {
 
   destroy() {
     this.reset();
+    document.removeEventListener('fullscreenchange', this.onFullscreen);
+    document.removeEventListener('webkitfullscreenchange', this.onFullscreen);
     this.video.removeEventListener('timeupdate', this.onTime);
     this.video.removeEventListener('ended', this.onEnd);
     window.removeEventListener('message', this.onMessage);

@@ -53,6 +53,10 @@ export function brandShell(html, site) {
     [/Search anime/g, 'Search movies and TV'],
     ['>My Anime <span', '>My List <span'],
     ['watch anime. stay happy.', 'watch movies. stay happy.'],
+    // Footer links: there's no A-Z for movies (TMDB can't list by first letter).
+    ['<a href="/az">A-Z list</a>', ''],
+    ['<a href="/top/airing">Top airing</a>', '<a href="/top/airing">On TV this week</a>'],
+    ['<a href="/top/popular">Most popular</a>', '<a href="/top/popular">Trending</a>'],
     ['<p class="footer-tag">watch movies. stay happy.</p>', '<p class="footer-tag">watch movies. stay happy.</p>\n        ' + TMDB_CREDIT],
   ];
   let out = html;
