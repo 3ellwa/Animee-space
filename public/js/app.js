@@ -723,7 +723,7 @@ function loadSeasons(a, alive, slotId, linkTo = 'anime', onLoaded) {
               <b>${esc(s.title)}</b>
               ${s.startEp ? '' : `<span class="here-badge">${s.airDate ? `Starts ${new Date(s.airDate + 'T12:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}` : 'Coming later'}</span>`}
             </span>`;
-          return s.startEp ? `<a class="season" href="/watch/${a.id}?ep=${s.startEp}">${inner}</a>` : `<div class="season">${inner}</div>`;
+          return s.startEp ? `<a class="season" href="/watch/${a.id}?season=${s.season}">${inner}</a>` : `<div class="season">${inner}</div>`;
         }).join('')}</div>
       </section>`;
       return;
@@ -773,6 +773,19 @@ function loadExtras(id, alive, slots) {
       ].filter(Boolean);
       box.insertAdjacentHTML('afterbegin', `<div class="ratings"><b>Ratings</b><span>${parts.join(' · ')}</span></div>`);
     }
+    if (recs && x.recommendations?.length && !IS_CINEMEE) {
+      // Look the full titles up (six at a time, cached) and rename the cards in place.
+      const ids = x.recommendations.slice(0, slots.limit || 12).map((r) => r.id);
+      for (let i = 0; i < ids.length; i += 6) {
+        api(`/batch?ids=${ids.slice(i, i + 6).join(',')}`).then(({ results }) => {
+          if (!alive()) return;
+          for (const full of results || []) {
+            cardShows.set(String(full.id), full);
+            recs.querySelectorAll(`[data-card="${full.id}"] .card-title`).forEach((el) => { el.textContent = T(full); });
+          }
+        }).catch(() => {});
+      }
+    }
     if (recs && x.recommendations?.length) recs.innerHTML = section('You might also like', grid(store.notInterestedIds().size ? x.recommendations.filter((r) => !store.notInterestedIds().has(String(r.id))).slice(0, slots.limit || 12) : x.recommendations.slice(0, slots.limit || 12)));
   }).catch(() => {});
 }
@@ -781,7 +794,7 @@ function listSelect(a) {
   const entry = store.getEntry(a.id);
   return `<select id="list-status" aria-label="Watchlist">
     <option value="">${entry?.status ? 'Remove from list' : '＋ Add to list'}</option>
-    ${store.LIST_STATUSES.map(([k, l]) => `<option value="${k}"${entry?.status === k ? ' selected' : ''}>${l}</option>`).join('')}
+    ${store.LIST_STATUSES.filter(([k]) => k !== 'notinterested' || entry?.status === k).map(([k, l]) => `<option value="${k}"${entry?.status === k ? ' selected' : ''}>${l}</option>`).join('')}
   </select>`;
 }
 function bindListSelect(a) {
@@ -831,8 +844,8 @@ window.addEventListener('error', (e) => {
 // At most three per page load, and only errors from this site's own scripts.
 let errorsSent = 0;
 function sendError(message, source = '') {
-  if (errorsSent >= 3 || !message) return;
-  if (source && !String(source).startsWith(location.origin)) return; // extensions, players
+  if (errorsSent >= 3 || !message || /^Script error\.?$/i.test(String(message))) return;
+  if (!source || !String(source).startsWith(location.origin)) return; // only this site's own scripts
   errorsSent++;
   const place = parseHash().parts[0] || 'home';
   fetch('/api/error', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ place, message: String(message).slice(0, 300) }) }).catch(() => {});
@@ -1107,7 +1120,7 @@ async function viewAnime(id, alive, query = new URLSearchParams()) {
           <div class="desc clamp" id="desc">${esc(a.description || 'No description yet.')}</div>
           ${(a.description || '').length > 400 ? '<button class="link-btn" id="more">Read more</button>' : ''}
         </section>
-        ${a.trailer ? section('Trailer', `<iframe class="trailer" src="https://www.youtube-nocookie.com/embed/${esc(a.trailer)}" title="Trailer" allowfullscreen loading="lazy"></iframe>`) : ''}
+        ${a.trailer ? section('Trailer', `<button class="trailer trailer-poster" type="button" id="trailer-play" data-key="${esc(a.trailer)}" aria-label="Play the trailer" style="background-image:url('https://i.ytimg.com/vi/${esc(a.trailer)}/hqdefault.jpg')"><span>▶</span></button>`) : ''}
         <div id="seasons"></div>
         <div id="related">${a.relations.length ? section('Related', grid(a.relations)) : ''}</div>
         <div id="extras-chars"></div>
@@ -1143,6 +1156,11 @@ async function viewAnime(id, alive, query = new URLSearchParams()) {
   });
   bindListButtons(a);
   bindRatingSelect(a, document.getElementById('my-rating'));
+  // The trailer loads YouTube's player only when you ask for it.
+  const trailerBtn = document.getElementById('trailer-play');
+  if (trailerBtn) trailerBtn.onclick = () => {
+    trailerBtn.outerHTML = `<iframe class="trailer" src="https://www.youtube-nocookie.com/embed/${esc(trailerBtn.dataset.key)}?autoplay=1" title="Trailer" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
+  };
   bindShare(a);
   loadExtras(a.id, alive, { chars: 'extras-chars', recs: 'extras-recs', ratings: 'info-box' });
   // How many episodes actually stream, in sub and dub.
@@ -1217,7 +1235,9 @@ async function viewWatch(id, query, alive) {
 
   const settings = store.getSettings();
   const prog = store.getProgress(a.id);
-  const wantEp = Number(query.get('ep')) || prog?.ep || 1;
+  // ?season=2 (from a TV page's season card): that season's first episode in this list.
+  const seasonStart = Number(query.get('season')) ? episodes.find((e) => e.season === Number(query.get('season')))?.number : null;
+  const wantEp = Number(query.get('ep')) || seasonStart || prog?.ep || 1;
   let current = episodes.find((e) => e.number === wantEp) || episodes[0];
   const missingEp = query.get('ep') && current.number !== wantEp ? wantEp : null;
   // ?t=754 from a "Share moment" link: start there (once).
@@ -1446,7 +1466,9 @@ async function viewWatch(id, query, alive) {
     const t = player.getCurrentTime();
     const idle = Math.abs(t - idleSince) < 5;
     idleSince = t;
-    if (idle && document.visibilityState === 'visible' && store.currentUser()) store.sync.freshen({ maxAge: 30000 });
+    // Only players that report their time (t > 0): one that never does (Nova) would look idle
+    // forever and pull the whole library every 45 seconds.
+    if (idle && t > 0 && document.visibilityState === 'visible' && store.currentUser()) store.sync.freshen({ maxAge: 30000 });
   }, 45000);
   onCleanup(() => clearInterval(devicePoll));
 
@@ -1539,11 +1561,9 @@ async function viewWatch(id, query, alive) {
       if (!f) return;
       if (f.size > 500 * 1024) { toastNote('That file is too big (500 KB at most).'); return; }
       try {
-        const raw = await f.text();
-        // SRT → WebVTT in the browser: timestamps get a dot, cue numbers go, a header is added.
-        const t = raw.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n').trim();
-        const vtt = /^WEBVTT/.test(t) ? `${t}\n` : `WEBVTT\n\n${t.replace(/(\d{1,2}:\d{2}:\d{2}),(\d{3})/g, '$1.$2').replace(/^\d+\n(?=\d{1,2}:\d{2}:\d{2}\.\d{3})/gm, '')}\n`;
-        const r = await fetch('/api/subs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ vtt }) });
+        // The server turns .srt into WebVTT (functions/_lib/subs.js).
+        const text = await f.text();
+        const r = await fetch('/api/subs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
         const d = await r.json();
         if (!r.ok) throw new Error(d.error || 'Upload failed');
         const label = f.name.replace(/\.(srt|vtt)$/i, '').slice(0, 40) || 'My subtitles';
@@ -1633,13 +1653,16 @@ async function viewWatch(id, query, alive) {
     tried.delete(server.id);
     store.setShowCategory(a.id, server.category);
     store.setSetting('category', server.category);
-    store.setSetting('provider', server.id);
+    // Becomes the default server only once it actually plays (see playSource).
+    chosenServer = server.id;
     renderServers();
     playSource(player.getCurrentTime());
   };
 
   // Servers that already failed for this episode, so an automatic retry never loops.
   let tried = new Set();
+  // A server you clicked, until we know whether it played.
+  let chosenServer = null;
   // explicit: ask for exactly this server (automatic retries), instead of "this one first".
   async function playSource(startAt, { explicit = false } = {}) {
     const ep = current;
@@ -1654,12 +1677,14 @@ async function viewWatch(id, query, alive) {
       // Your own subtitle file for this episode goes to Atlas (EmbedMaster) as sub_url[] / sub_label[].
       const mySub = customSub();
       if (mySub && src.provider === 'embedmaster' && src.embedUrl) {
-        const u = new URL(src.embedUrl);
-        u.searchParams.append('sub_url[]', mySub.url);
-        u.searchParams.append('sub_label[]', mySub.label);
-        src.embedUrl = u.toString();
+        src.embedUrl += `${src.embedUrl.includes('?') ? '&' : '?'}sub_url[]=${encodeURIComponent(mySub.url)}&sub_label[]=${encodeURIComponent(mySub.label)}`;
       }
       tried.add(src.provider);
+      if (chosenServer) {
+        if (src.provider === chosenServer) store.setSetting('provider', chosenServer);
+        else if (!note.dataset.sticky) showNote(`${esc(serverName({ id: chosenServer }))} couldn't play this one, so <b>${esc(serverName({ id: src.provider }))}</b> is playing.`);
+        chosenServer = null;
+      }
       // Reflect the provider that actually resolved, not merely the first one tried.
       if (src.provider) {
         const resolved = servers.find((item) => item.id === src.provider && item.category === server.category);
@@ -1885,7 +1910,7 @@ async function viewWatch(id, query, alive) {
     if (!p || p.closed) return;
     const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/party/${p.code}/ws${p.hostKey ? `?host=${p.hostKey}` : ''}`);
     p.ws = ws;
-    ws.onopen = () => { p.retry = 0; renderPartyBar(); };
+    ws.onopen = () => { p.retry = 0; p.everOpen = true; renderPartyBar(); };
     ws.onmessage = (e) => {
       let d;
       try { d = JSON.parse(e.data); } catch { return; }
@@ -1903,8 +1928,10 @@ async function viewWatch(id, query, alive) {
     ws.onclose = () => {
       if (p.closed || party !== p) return;
       p.ws = null;
-      renderPartyBar();
       p.retry = (p.retry || 0) + 1;
+      // Never connected after a few tries: the party is full (20 people) or gone.
+      if (!p.everOpen && p.retry >= 4) { renderPartyBar('couldn\u2019t join: the party may be full or over'); return; }
+      renderPartyBar();
       setTimeout(connectParty, Math.min(15000, 1000 * 2 ** p.retry));
     };
   }

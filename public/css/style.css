@@ -176,7 +176,7 @@ main.container { flex: 1; padding-bottom: 56px; }
 .logo.small .wordmark { font-size: 20px; }
 
 .nav-links { display: flex; gap: 2px; }
-.nav-links a { position: relative; padding: 8px 12px; border-radius: 10px; color: var(--fog); font-weight: 500; font-size: 14.5px; transition: color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease); }
+.nav-links a { position: relative; white-space: nowrap; padding: 8px 12px; border-radius: 10px; color: var(--fog); font-weight: 500; font-size: 14.5px; transition: color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease); }
 .nav-links a:hover { color: var(--paper); background: rgb(242 243 238 / .05); }
 .nav-links a.active { color: var(--lime); }
 .nav-links a.active::after { content: ""; position: absolute; left: 50%; bottom: 2px; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: var(--lime); box-shadow: 0 0 10px var(--lime); }
@@ -414,6 +414,9 @@ button.tab { color: inherit; }
 .char img { width: 48px; height: 64px; object-fit: cover; }
 .char small { color: var(--fog); display: block; }
 .trailer { aspect-ratio: 16/9; width: 100%; border: 0; border-radius: 18px; }
+.trailer-poster { display: grid; place-items: center; background: #000 center / cover no-repeat; cursor: pointer; }
+.trailer-poster span { width: 72px; height: 72px; border-radius: 50%; display: grid; place-items: center; font-size: 28px; color: var(--ink); background: var(--lime); box-shadow: var(--glow-sm); transition: transform var(--dur-fast); }
+.trailer-poster:hover span, .trailer-poster:focus-visible span { transform: scale(1.08); }
 .links { display: flex; flex-wrap: wrap; gap: 8px; }
 
 /* ---------- seasons in watching order ---------- */
@@ -855,6 +858,11 @@ kbd { display: inline-block; min-width: 1.5em; padding: 0 5px; border-radius: 5p
 .save-menu .save-rate { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px 4px; font-size: 12px; color: var(--fog); }
 .save-menu .rating-select { padding: 7px 10px; font-size: 13px; }
 .share-box .chips input { margin-right: 6px; }
+/* Comfortable touch targets on phones (about 40 px), without changing the desktop look. */
+@media (pointer: coarse) {
+  .btn.sm, .chip, .tab, .srv, .ep, .link-btn, .party-react button { min-height: 40px; }
+  .chip, .btn.sm { display: inline-flex; align-items: center; }
+}
 .hist-day { margin: 20px 0 8px; font-size: 13px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--fog); }
 .hist-row { position: relative; }
 .hist-row .sched-row { padding-right: 48px; }

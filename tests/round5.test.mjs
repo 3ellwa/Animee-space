@@ -65,3 +65,18 @@ test('scripts and styles answer "not modified" when the browser already has them
   const again = await worker.fetch(new Request('https://animee.space/js/site.js', { headers: { 'If-None-Match': etag } }), {}, { waitUntil() {} });
   assert.equal(again.status, 304);
 });
+
+test('review fixes: shared total counts every visible title; uploads may be raw .srt text', async () => {
+  const rows = Array.from({ length: 70 }, (_, i) => ({ anime_id: i + 1, s: 1, u: 70 - i }));
+  const DB = { prepare: () => ({ bind: () => ({ first: async () => ({ id: 1, name: 'ali', prefs: 16 }), all: async () => ({ results: rows }) }) }) };
+  const out = await publicList({ DB }, 'ali', { getAnime: async (id) => ({ id, title: 't' }) });
+  assert.equal(out.total, 70);
+  assert.equal(out.items.length, 60);
+  const { handleSubs } = await import('../functions/_lib/subs.js');
+  const saved = [];
+  const subsDb = { prepare: (sql) => ({ bind: (...a) => ({ run: async () => saved.push(a) }) }) };
+  const req = new Request('https://cinemee.animee.space/api/subs', { method: 'POST', headers: { Origin: 'https://cinemee.animee.space' }, body: JSON.stringify({ text: '1\n00:00:01,000 --> 00:00:02,000\nHi\n' }) });
+  const res = await handleSubs({ request: req, env: { DB: subsDb } }, ['subs']);
+  assert.equal(res.status, 200);
+  assert.match(saved[0][1], /^WEBVTT\n\n00:00:01\.000 --> 00:00:02\.000/);
+});

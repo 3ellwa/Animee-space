@@ -141,6 +141,13 @@ export function setShowCategory(id, category) {
   e.s = (e.s & ~(LANG_SET | LANG_DUB)) | LANG_SET | (category === 'dub' ? LANG_DUB : 0);
   touch(e);
 }
+// A status number from a backup file: list status 0-6, the flags, and a rating of 1-10.
+function cleanBackupStatus(value) {
+  const v = Number(value) || 0;
+  const status = (v & 7) <= 6 ? v & 7 : 0;
+  const rating = (v >> RATING_SHIFT) & 15;
+  return status | (v & (FAVOURITE | LANG_SET | LANG_DUB | FOLLOW)) | ((rating <= 10 ? rating : 0) << RATING_SHIFT);
+}
 // ---------- your ratings ----------
 const ratingOf = (e) => ((e?.s || 0) & RATING_MASK) >> RATING_SHIFT;
 export const getRating = (id) => ratingOf(lib[id]);
@@ -295,7 +302,7 @@ export function restoreBackup(data, mode = 'add') {
     // In "add" mode, a show already on the list (or with progress) keeps its newer local copy.
     if (current && mode === 'add' && (current.s || current.ep) && current.u >= (raw.u || 0)) continue;
     lib[id] = {
-      a: id, s: ((Number(raw.s) & 7) <= 6 ? Number(raw.s) & 127 : Number(raw.s) & KEEP) || 0, ep: Number(raw.ep) || 0, t: Number(raw.t) || 0, d: Number(raw.d) || 0,
+      a: id, s: cleanBackupStatus(raw.s), ep: Number(raw.ep) || 0, t: Number(raw.t) || 0, d: Number(raw.d) || 0,
       w: Array.isArray(raw.w) ? raw.w.filter((n) => Number.isInteger(n) && n > 0 && n <= 8000) : [],
       u: now(), m: raw.m && typeof raw.m === 'object' ? metaOf(raw.m) : null,
     };

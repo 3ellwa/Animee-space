@@ -37,7 +37,8 @@ export async function publicList(env, rawName, catalogue) {
   if (mode === 'off') throw fail();
   const { results } = await env.DB.prepare('SELECT anime_id, s, u FROM library WHERE user_id = ? AND s != 0 ORDER BY u DESC LIMIT 400')
     .bind(user.id).all();
-  const rows = (results || []).filter((r) => visibleRow(r.s, mode)).slice(0, MAX_ITEMS);
+  const visible = (results || []).filter((r) => visibleRow(r.s, mode));
+  const rows = visible.slice(0, MAX_ITEMS);
   const items = [];
   // A few lookups at a time; titles the catalogue can't give right now are left out.
   for (let i = 0; i < rows.length; i += 6) {
@@ -49,5 +50,5 @@ export async function publicList(env, rawName, catalogue) {
     }));
     items.push(...found.filter(Boolean));
   }
-  return { name: user.name, mode, items, total: rows.length };
+  return { name: user.name, mode, items, total: visible.length };
 }

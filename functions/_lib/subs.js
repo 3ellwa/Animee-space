@@ -2,7 +2,7 @@
 // file into WebVTT and uploads it here; Atlas loads it from our address (its docs require the
 // file's server to allow any origin), passed as sub_url[] / sub_label[] on the embed.
 //
-//   POST /api/subs { vtt }   -> { id, url }   at most 500 KB of WebVTT text, rate-limited
+//   POST /api/subs { text }  -> { id, url }   an .srt or .vtt file's text (500 KB max), rate-limited
 //   GET  /api/subs/<id>.vtt  -> the file (Access-Control-Allow-Origin: *)
 //
 // Files are kept for 3 days, then deleted; nothing else is stored with them.
@@ -47,7 +47,7 @@ export async function handleSubs(ctx, parts) {
   if (text.length > MAX_BYTES * 2) return json({ error: 'That subtitle file is too big (500 KB at most).' }, 413);
   let body;
   try { body = JSON.parse(text); } catch { return json({ error: 'Invalid JSON' }, 400); }
-  const vtt = cleanVtt(body?.vtt);
+  const vtt = cleanVtt(srtToVtt(body?.text ?? body?.vtt));
   if (!vtt) return json({ error: 'That doesn’t look like a subtitle file (.srt or .vtt, 500 KB at most).' }, 400);
   if (env.REQUEST_LIMITER?.limit) {
     const ip = request.headers.get('CF-Connecting-IP') || 'local';

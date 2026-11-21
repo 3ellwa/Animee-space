@@ -166,6 +166,11 @@ async function pending(env, url) {
   if (!sub) return json({ items: [] });
   let items = [];
   try { items = JSON.parse(sub.pending || '[]'); } catch { /* ignore */ }
+  // A test pop-up on a weekly-digest device: show the test, keep the collected episodes for Sunday.
+  if (items[0]?.test && (sub.alerts & WEEKLY)) {
+    await env.DB.prepare('UPDATE push_subs SET pending = ? WHERE id = ?').bind(JSON.stringify(items.slice(1)), sub.id).run();
+    return json({ items: [items[0]] });
+  }
   if (items.length) await env.DB.prepare('UPDATE push_subs SET pending = NULL WHERE id = ?').bind(sub.id).run();
   return json({ items: (sub.alerts & WEEKLY) && !items[0]?.test ? digest(items) : items });
 }
@@ -178,10 +183,13 @@ async function test(request, env) {
     const { success } = await env.REQUEST_LIMITER.limit({ key: 'pushtest:' + ip }).catch(() => ({ success: true }));
     if (!success) throw fail(429, 'Wait a minute before another test.');
   }
-  const sub = await env.DB.prepare('SELECT id FROM push_subs WHERE endpoint = ?').bind(endpoint).first();
+  const sub = await env.DB.prepare('SELECT id, pending FROM push_subs WHERE endpoint = ?').bind(endpoint).first();
   if (!sub) throw fail(404, 'Pop-ups are not on for this device');
+  // In front of anything already collected (a weekly digest keeps its episodes).
+  let kept = [];
+  try { kept = JSON.parse(sub.pending || '[]').filter((i) => !i.test); } catch { /* ignore */ }
   await env.DB.prepare('UPDATE push_subs SET pending = ? WHERE id = ?')
-    .bind(JSON.stringify([{ test: true, title: 'Pop-ups work ^^.', body: 'New episodes of shows you follow will show up like this.' }]), sub.id).run();
+    .bind(JSON.stringify([{ test: true, title: 'Pop-ups work ^^.', body: 'New episodes of shows you follow will show up like this.' }, ...kept]), sub.id).run();
   const result = await wake(env, endpoint);
   if (result === 'gone') await env.DB.prepare('DELETE FROM push_subs WHERE id = ?').bind(sub.id).run();
   return json({ ok: result === 'ok', result });

@@ -193,7 +193,8 @@ export async function onRequest(ctx) {
     }
     if (a === 'popular-here' && !b) return await cached(ctx, 1800, async () => popularHere(ctx.env || {}, cat));
     // A shared list (only when its owner turned sharing on; see share.js).
-    if (a === 'u' && b && !c) return await cached(ctx, 300, async () => publicList(ctx.env || {}, b, cat));
+    // Not edge-cached, so turning sharing off takes effect at once.
+    if (a === 'u' && b && !c) return json(await publicList(ctx.env || {}, b, cat));
     if (a === 'batch' && !b) return await cached(ctx, 600, async () => {
       const ids = [...new Set((url.searchParams.get('ids') || '').split(',').filter(id => /^\d{1,12}$/.test(id)))].slice(0, 6);
       const results = [];
