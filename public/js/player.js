@@ -45,6 +45,7 @@ export class Player {
       '<button class="pl-btn next" type="button" hidden>Next episode ▶</button>' +
       '<div class="pl-msg" hidden></div>' +
       '<div class="pl-upnext" hidden role="status" aria-live="polite"></div>' +
+      '<button class="pl-exit" type="button" aria-label="Exit full screen">✕ Exit full screen</button>' +
       '</div><div class="player-tools"><button class="btn sm fullscreen" type="button" hidden>Fullscreen ⛶</button></div>';
     this.video = root.querySelector('video');
     this.iframe = root.querySelector('iframe');
@@ -52,6 +53,15 @@ export class Player {
     this.nextBtn = root.querySelector('.next');
     this.msgEl = root.querySelector('.pl-msg');
     this.upNextEl = root.querySelector('.pl-upnext');
+    // Exit button for animee's own fullscreen: fades after 3 s, comes back on mouse move or touch.
+    const box = root.querySelector('.player');
+    root.querySelector('.pl-exit').onclick = () => document.exitFullscreen?.().catch(() => {});
+    this.wake = () => {
+      box.classList.remove('fs-idle');
+      clearTimeout(this.idleTimer);
+      if (document.fullscreenElement === box) this.idleTimer = setTimeout(() => box.classList.add('fs-idle'), 3000);
+    };
+    ['mousemove', 'touchstart', 'keydown'].forEach((ev) => box.addEventListener(ev, this.wake, { passive: true }));
 
     this.fullscreenBtn.onclick = () => this.enterFullscreen();
     this.nextBtn.onclick = () => this.opts.onNext?.();
@@ -62,6 +72,13 @@ export class Player {
     // the frame still counts as the user's gesture). If the browser refuses, nothing changes.
     this.onFullscreen = () => {
       this.tellFullscreen();
+      this.wake?.();
+      const ours = (document.fullscreenElement || null) === this.root.querySelector('.player');
+      const orientation = window.screen?.orientation;
+      if (COARSE_POINTER() && orientation?.lock) {
+        if (ours) { this.turned = true; orientation.lock('landscape').catch(() => { this.turned = false; }); }
+        else if (!document.fullscreenElement && this.turned) { this.turned = false; try { orientation.unlock(); } catch { /* ignore */ } }
+      }
       const current = document.fullscreenElement || document.webkitFullscreenElement;
       const box = this.root.querySelector('.player');
       if (!current || current !== this.iframe || !box || this.swappingFullscreen) return;
@@ -205,6 +222,9 @@ export class Player {
     this.meta = meta;
     // MegaPlay can't be told where to start, but it takes a seek once it's playing.
     this.megaReady = false;
+    this.autoSkipOn = false;
+    this.lastTime = 0;
+    this.programmaticSeek = false;
     this.pendingSeek = data.embedUrl && Number(startAt) > 15 ? Number(startAt) : 0;
     if (data.embedUrl) {
       this.video.hidden = true;
@@ -298,10 +318,30 @@ export class Player {
     if (!w || !this.isMegaPlay()) return;
     try { w.postMessage(JSON.stringify(message), this.embedOrigin); } catch { /* frame gone */ }
   }
+  /** Jump n seconds forward or back (arrow keys). Native video and MegaPlay. */
+  seekBy(seconds) {
+    if (!this.iframe.hidden) {
+      if (!this.isMegaPlay()) return false;
+      this.userSeek = true;
+      this.seekTo(Math.max(0, (this.embedTime || 0) + seconds));
+      return true;
+    }
+    if (!this.video.duration) return false;
+    this.video.currentTime = Math.min(Math.max(0, this.video.currentTime + seconds), this.video.duration - 1);
+    return true;
+  }
+
   /** Jump to a time in the embedded player, where it supports it (MegaPlay). */
   seekTo(seconds) {
+    this.programmaticSeek = !this.userSeek;
+    this.userSeek = false;
     this.megaSend({ event: 'seek', time: Math.max(0, Math.floor(seconds)) });
     this.embedTime = Math.max(0, seconds);
+  }
+
+  setAutoSkip(on) {
+    this.autoSkipOn = Boolean(on);
+    this.megaSend({ cmd: 'SKP_DATA', auto: Boolean(on) });
   }
 
   // Tell MegaPlay's player whether animee's player box is fullscreen (see handleEmbedMessage).
@@ -360,13 +400,22 @@ export class Player {
 
     const playingAt = data.event === 'time' ? Number(data.time) : data.type === 'watching-log' ? Number(data.currentTime) : NaN;
     if (playingAt > 0) {
+      // Going back more than 5 s with auto skip on means "I want to see this part" (e.g. the
+      // intro it just skipped): pause auto skip for this episode.
+      if (this.autoSkipOn && this.lastTime && playingAt < this.lastTime - 5 && !this.programmaticSeek) {
+        this.autoSkipOn = false;
+        this.megaSend({ cmd: 'SKP_DATA', auto: false });
+        this.opts.onAutoSkipPaused?.();
+      }
+      this.programmaticSeek = false;
+      this.lastTime = playingAt;
       this.markStarted();
       clearTimeout(this.errorTimer); // it recovered
       this.errorTimer = null;
       if (!this.megaReady) {
         this.megaReady = true;
         // Intro/outro auto skip (MegaPlay skips where it knows the times).
-        if (this.opts.autoskip?.()) this.megaSend({ cmd: 'SKP_DATA', auto: true });
+        if (this.opts.autoskip?.()) { this.megaSend({ cmd: 'SKP_DATA', auto: true }); this.autoSkipOn = true; }
         // Resume a few seconds before where you stopped.
         if (this.pendingSeek && playingAt < this.pendingSeek - 5) {
           const at = this.pendingSeek;

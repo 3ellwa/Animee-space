@@ -830,3 +830,61 @@ kbd { display: inline-block; min-width: 1.5em; padding: 0 5px; border-radius: 5p
 /* A movie has a single "episode": no episode list beside the player. */
 .watch-grid.is-movie > aside { display: none; }
 .watch-grid.is-movie { grid-template-columns: 1fr; }
+
+/* Next episode: the brand colour, glowing (lime on animee, red on cinemee). */
+.btn.next-glow { background: var(--lime); color: var(--ink); border-color: var(--lime); box-shadow: var(--glow); font-weight: 700; }
+.btn.next-glow:hover { background: var(--zest); box-shadow: var(--glow-lg); }
+.btn.next-glow:disabled { background: transparent; color: var(--fog-dim); border-color: var(--line); box-shadow: none; }
+/* Not working button under the servers */
+.servers .not-working { grid-column: 1 / -1; }
+/* Exit button in animee's own fullscreen; fades when the mouse is still */
+.pl-exit { display: none; position: absolute; top: 14px; right: 14px; z-index: 8; padding: 8px 14px; border-radius: 999px; border: 1px solid rgb(255 255 255 / .2); background: rgb(8 9 10 / .7); color: var(--paper); cursor: pointer; font-weight: 600; transition: opacity .4s; }
+.player:fullscreen .pl-exit { display: block; }
+.player.fs-idle .pl-exit { opacity: 0; pointer-events: none; }
+
+/* Save button on every poster, and its menu */
+.card .poster { position: relative; }
+.card-save { position: absolute; z-index: 3; top: 8px; right: 8px; width: 30px; height: 30px; border-radius: 50%; border: 1px solid rgb(255 255 255 / .25); background: rgb(8 9 10 / .7); color: var(--paper); font-weight: 800; cursor: pointer; opacity: 0; transition: opacity .2s, background-color .2s; }
+.card:hover .card-save, .card-save:focus-visible, .card-save.on { opacity: 1; }
+.card-save.on { background: var(--lime); color: var(--ink); border-color: var(--lime); }
+@media (hover: none) { .card-save { opacity: 1; } }
+.save-menu { position: absolute; z-index: 60; display: grid; gap: 2px; min-width: 200px; max-width: 260px; padding: 10px; border-radius: 14px; background: var(--ink-2); border: 1px solid var(--line); box-shadow: 0 16px 40px rgb(0 0 0 / .55); }
+.save-menu b { padding: 4px 8px 8px; font-size: 13px; color: var(--fog); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.save-menu button { text-align: left; padding: 8px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--paper); cursor: pointer; font: inherit; font-size: 14px; }
+.save-menu button:hover, .save-menu button.on { background: rgb(var(--lime-rgb) / .12); }
+/* My list: select mode, sub/dub counts */
+.list-tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.list-tools p { margin: 0 auto 0 0; }
+.selecting .card { cursor: pointer; }
+.selecting .card .poster { outline: 2px dashed rgb(255 255 255 / .18); outline-offset: -2px; }
+.selecting .card.picked .poster { outline: 3px solid var(--lime); box-shadow: var(--glow); }
+.selecting .card-save { display: none; }
+.badge.subdub { left: 8px; right: auto; bottom: 8px; top: auto; background: rgb(8 9 10 / .8); }
+.result-count { margin: 0 0 8px; }
+
+/* Browse: quick type chips, full filters behind a button */
+.type-chips { margin: 4px 0 10px; }
+.type-chips .chip.on { background: var(--lime); color: var(--ink); border-color: var(--lime); }
+.more-filters > summary { list-style: none; cursor: pointer; display: inline-flex; margin-bottom: 10px; }
+.more-filters > summary::-webkit-details-marker { display: none; }
+/* Schedule: bell on each row */
+.sched-row { position: relative; }
+.row-bell { order: 9; margin-left: auto; width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--line); background: transparent; cursor: pointer; font-size: 15px; flex: none; }
+.row-bell.on { border-color: var(--lime); box-shadow: var(--glow-sm); }
+/* Show page: links out */
+.out-links { display: flex; flex-wrap: wrap; gap: 10px; }
+.out-links a { color: var(--lime); }
+
+/* Account: delete */
+.danger-zone { margin-top: 18px; }
+.danger-zone > summary { cursor: pointer; }
+.danger-zone .input { max-width: 240px; }
+.btn.danger { background: #E5484D; border-color: #E5484D; color: #fff; }
+
+/* What's new bar and list */
+.news-bar { position: relative; z-index: 30; display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap; margin: 8px auto 0; max-width: 1240px; padding: 8px 14px; border-radius: 14px; background: rgb(var(--lime-rgb) / .08); border: 1px solid rgb(var(--lime-rgb) / .25); font-size: 14px; }
+.news-bar b { color: var(--lime); text-transform: uppercase; font-size: 12px; letter-spacing: .08em; margin-right: 6px; }
+.news-x { border: 0; background: transparent; color: var(--fog); cursor: pointer; font-size: 15px; }
+.news-dlg { position: fixed; inset: 0; z-index: 120; display: grid; place-items: center; padding: 16px; background: rgb(0 0 0 / .6); }
+.news-card { max-width: 460px; width: 100%; max-height: 80vh; overflow: auto; padding: 22px; border-radius: 20px; background: var(--ink-2); border: 1px solid var(--line); box-shadow: 0 30px 80px rgb(0 0 0 / .6); }
+.news-card h2 { margin: 0 0 6px; } .news-card h3 { margin: 14px 0 4px; color: var(--lime); font-size: 14px; } .news-card ul { margin: 0; padding-left: 20px; color: var(--fog); display: grid; gap: 3px; }

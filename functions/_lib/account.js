@@ -4,6 +4,7 @@
 //   POST /api/auth/login      { username, password }
 //   POST /api/auth/logout
 //   POST /api/auth/logout-all            (signs out every device)
+//   POST /api/auth/delete     { password } (deletes the account, its list and progress)
 //   GET  /api/auth/me                    -> { user } or { user: null }
 //   GET  /api/me/library                 -> { rows, prefs, now }
 //   POST /api/me/sync         { rows: [...], prefs? }  -> { rows (merged), prefs, now }
@@ -220,6 +221,29 @@ export async function handleAccount(context, parts) {
       if (action === 'me' && method === 'GET') {
         const user = await currentUser(request, env);
         return json({ user: user ? { id: user.id, name: user.name } : null });
+      }
+      // Delete the account and everything stored with it. The password is asked again, so a
+      // borrowed unlocked device can't do it by accident.
+      if (action === 'delete' && method === 'POST') {
+        const user = await currentUser(request, env);
+        if (!user) throw fail(401, 'Not signed in');
+        const body = await readBody(request);
+        await limit(env.LOGIN_LIMITER, ['ip:' + clientIp(request), 'user:' + user.name]);
+        const row = await env.DB.prepare('SELECT pass FROM users WHERE id = ?').bind(user.id).first();
+        if (!row || !(await verifyPassword(String(body.password || ''), row.pass))) throw fail(401, 'Wrong password');
+        await env.DB.batch([
+          env.DB.prepare('DELETE FROM library WHERE user_id = ?').bind(user.id),
+          env.DB.prepare('UPDATE requests SET user_id = NULL WHERE user_id = ?').bind(user.id),
+          env.DB.prepare('DELETE FROM users WHERE id = ?').bind(user.id),
+        ]).catch(async (err) => {
+          // The requests table may not exist yet; delete the rest without it.
+          if (!/no such table/i.test(String(err?.message))) throw err;
+          await env.DB.batch([
+            env.DB.prepare('DELETE FROM library WHERE user_id = ?').bind(user.id),
+            env.DB.prepare('DELETE FROM users WHERE id = ?').bind(user.id),
+          ]);
+        });
+        return json({ ok: true }, 200, { 'Set-Cookie': clearCookie() });
       }
       if (action === 'logout-all' && method === 'POST') {
         const user = await currentUser(request, env);

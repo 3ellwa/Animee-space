@@ -111,15 +111,20 @@ export function setFollow(anime, on, baseline = 0) {
   const e = entry(anime.id);
   e.s = (e.s & ~FOLLOW) | (on ? FOLLOW : 0);
   e.m = { ...(e.m || {}), ...metaOf(anime) };
-  if (on) e.fb = Math.max(e.fb || 0, Number(baseline) || 0);
+  // fbk: the baseline is known, even when it is 0 (an upcoming show: episode 1 will be new).
+  // Known when there's a real count, or when the show hasn't started (then 0 is right). Otherwise
+  // the inbox looks the count up first, so a long-running show never shows "Episode 1 is out".
+  if (on) { e.fb = Math.max(e.fb || 0, Number(baseline) || 0); e.fbk = e.fbk || Number(baseline) > 0 || anime.status === 'NOT_YET_RELEASED'; }
   touch(e);
   followListeners.forEach((fn) => { try { fn(followedIds()); } catch { /* ignore */ } });
 }
 export const followBaseline = (id) => lib[id]?.fb || 0;
+export const followBaselineKnown = (id) => Boolean(lib[id]?.fbk);
 export function setFollowBaseline(id, ep) {
   const e = lib[id];
-  if (!e || (e.fb || 0) >= ep) return;
-  e.fb = ep;
+  if (!e || ((e.fb || 0) >= ep && e.fbk)) return;
+  e.fb = Math.max(e.fb || 0, ep);
+  e.fbk = true;
   write('lib', lib);
 }
 
@@ -205,6 +210,19 @@ export function addHistory({ animeId, ep, title, cover }) {
   write('history', history);
 }
 export function clearHistory() { history = []; write('history', history); }
+/** Forget every saved position and watched tick (list statuses and favourites stay). */
+export function clearProgress() {
+  for (const e of Object.values(lib)) {
+    if (!e.ep && !e.w.length) continue;
+    e.ep = 0; e.t = 0; e.d = 0; e.w = [];
+    touch(e);
+  }
+}
+/** Signed-in: delete the account on the server, then sign out here. */
+export async function deleteAccount(password) {
+  await post('/auth/delete', { password });
+  sync.signedOut();
+}
 
 // ---------- import (MyAnimeList / AniList / backup) ----------
 // items: [{ id, status, title?, cover?, format?, episodes?, year?, watchedUpTo? }]
@@ -346,7 +364,7 @@ function adoptRow(row, local) {
   const w = [...new Set([...(local?.w || []), ...fromBits(row.w)])];
   if (local && local.u > row.u) { local.w = w; return; }
   if (row.deleted) { delete lib[row.a]; return; }
-  lib[row.a] = { a: row.a, s: row.s, ep: row.ep, t: row.t, d: row.d, w, u: row.u, m: local?.m || null, ...(local?.fb ? { fb: local.fb } : {}) };
+  lib[row.a] = { a: row.a, s: row.s, ep: row.ep, t: row.t, d: row.d, w, u: row.u, m: local?.m || null, ...(local?.fb ? { fb: local.fb } : {}), ...(local?.fbk ? { fbk: true } : {}) };
 }
 
 async function post(path, body, { keepalive = false } = {}) {

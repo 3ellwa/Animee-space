@@ -1,3 +1,12 @@
+## cinemee, and ideas from hianime
+
+- **cinemee** (cinemee.animee.space): the same site for movies and TV, in red, from TMDB, with its own accounts and database, `/movie/…` and `/tv/…` addresses and search pages. Plays through one server, Nova.
+- **Watch page:** glowing Next button (lime on animee, red on cinemee); "Not working? Try another server"; Auto skip intro switch on the bar; if no sub server plays, the dub with a note; ← → jump 10 seconds; resume where you stopped on 3ellwa with Start over; rewinding into a skipped intro pauses auto skip; Up next stays in fullscreen (MegaPlay's fullscreen handshake; phones keep their own); an Exit button in fullscreen that fades; phones turn sideways in our fullscreen; a break reminder after about 2 hours.
+- **Lists:** save any show from its poster (＋ menu); Select mode on My list; Undo after Not interested; Hide genres (Settings); sub/dub counts on My list cards; "Remind me when it starts" for upcoming shows.
+- **Pages:** "Newest: episode N" and "From episode 1" on show pages; MyAnimeList / AniList (or TMDB) links; title count, type chips and folding filters on Browse; Top 10 when one genre is picked; a bell on every schedule row; Picked for you on home; "A new episode should be out about now"; a What's new bar.
+- **Privacy:** delete your account (password asked again); clear history and every watched tick.
+- Broken artwork shows a quiet placeholder. Notification help mentions private windows.
+
 ## Short server names
 
 - Server buttons use short neutral names instead of the upstream sites: **3ellwa** (MegaPlay), **Kaze** (AnimeParadise), **JoJo** (VidNest), **Hoshi** (TryEmbed). Internal ids are unchanged, so saved preferences, reports and the admin page keep working.

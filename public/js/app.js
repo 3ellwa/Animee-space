@@ -64,8 +64,14 @@ const T = (a) => (store.getSettings().titles === 'japanese' && a?.titleRomaji ? 
 const unstarted = (list) => {
   const hidden = store.notInterestedIds();
   if (store.getSettings().hideStarted) for (const id of store.startedIds()) hidden.add(id);
-  return hidden.size ? list.filter((a) => !hidden.has(String(a.id))) : list;
+  return withoutHiddenGenres(hidden.size ? list.filter((a) => !hidden.has(String(a.id))) : list);
 };
+// Settings → Hide genres: shows in those genres stay out of rows, picks and browsing.
+function withoutHiddenGenres(list, except = []) {
+  const skip = (store.getSettings().hiddenGenres || []).filter((g) => !except.includes(g));
+  if (!skip.length) return list;
+  return list.filter((a) => !(a.genres || []).some((g) => skip.includes(g)));
+}
 // Reads a file the viewer picked as text.
 const readFile = (file) => new Promise((resolve, reject) => {
   const r = new FileReader();
@@ -80,9 +86,14 @@ function epsLabel(a) {
   return have || a.episodes || '?';
 }
 
+// Every card remembers its show, so the poster's save button can add it without another lookup.
+const cardShows = new Map();
 function card(a) {
-  return `<a class="card" href="${animeHref(a)}" title="${esc(T(a))}">
+  if (a?.id) cardShows.set(String(a.id), a);
+  const saved = store.getEntry(a.id);
+  return `<a class="card" href="${animeHref(a)}" title="${esc(T(a))}" data-card="${esc(a.id)}">
     <div class="poster" style="--c:${esc(a.color || '#1e1a2b')}">
+      <button class="card-save${saved?.status || saved?.favourite ? ' on' : ''}" type="button" data-save="${esc(a.id)}" aria-label="Save ${esc(T(a))}">${saved?.status || saved?.favourite ? '✓' : '＋'}</button>
       <img loading="lazy" src="${esc(a.cover)}" alt="${esc(T(a))} poster">
       ${a.score ? `<span class="badge score">★ ${score(a.score)}</span>` : ''}
       ${a.status === 'RELEASING' ? '<span class="badge airing">Airing</span>' : ''}
@@ -283,14 +294,24 @@ async function viewHome(alive) {
     }, alive);
   }
 
-  // Recommendations based on the most recently watched or listed show.
-  const recent = [...store.continueList(), ...Object.values(store.getList()).sort((x, y) => y.updated - x.updated)
-    .map((e) => ({ animeId: e.id, title: e.title }))].find((e) => e.title);
-  if (recent) api(`/anime/${recent.animeId}/extras`).then((x) => {
-    if (!alive() || !x.recommendations?.length) return;
-    const picked = document.getElementById('picked');
-    picked.innerHTML = shelf('shelf-picked', `Because you watched ${esc(recent.title)}`, 'picked from what you watched');
-    bindShelf('shelf-picked', async () => shelfCards(unstarted(x.recommendations).slice(0, 12)), alive);
+  // "Picked for you": recommendations from the last few shows you watched or saved, mixed, with
+  // anything already started or on your list left out. With one show it says which one.
+  const recentShows = [...store.continueList(), ...Object.values(store.getList()).sort((x, y) => y.updated - x.updated)
+    .map((e) => ({ animeId: e.id, title: e.title }))].filter((e) => e.title)
+    .filter((e, i, all) => all.findIndex((x) => String(x.animeId) === String(e.animeId)) === i).slice(0, 3);
+  if (recentShows.length) Promise.all(recentShows.map((r) => api(`/anime/${r.animeId}/extras`).catch(() => ({ recommendations: [] })))).then((extras) => {
+    if (!alive()) return;
+    const mine = new Set([...store.startedIds(), ...Object.keys(store.getList())].map(String));
+    const seen = new Set();
+    const mixed = [];
+    for (let i = 0; i < 12; i++) for (const x of extras) {
+      const rec = x.recommendations?.[i];
+      if (rec && !seen.has(String(rec.id)) && !mine.has(String(rec.id))) { seen.add(String(rec.id)); mixed.push(rec); }
+    }
+    if (!mixed.length) return;
+    const title = recentShows.length > 1 ? 'Picked for you' : `Because you watched ${esc(recentShows[0].title)}`;
+    document.getElementById('picked').innerHTML = shelf('shelf-picked', title, recentShows.length > 1 ? `from ${recentShows.map((r) => esc(r.title)).join(', ')}` : 'picked from what you watched');
+    bindShelf('shelf-picked', async () => shelfCards(unstarted(mixed).slice(0, 16)), alive);
   }).catch(() => {});
 
   api('/genres').then(({ genres }) => {
@@ -496,6 +517,12 @@ async function viewSearch(q, alive) {
         <input class="input q" name="q" placeholder="Search titles…" value="${esc(q.get('q') || '')}" aria-label="Search titles">
         <button class="btn primary" type="submit">Search</button>
       </div>
+      <nav class="chips type-chips" aria-label="Type">
+        <a class="chip${!q.get('type') ? ' on' : ''}" href="/search">All</a>
+        ${TYPE_OPTIONS.slice(0, IS_CINEMEE ? 2 : 5).map(([v, l]) => `<a class="chip${q.get('type') === v ? ' on' : ''}" href="/search?type=${v}">${esc(l)}${l.endsWith('s') ? '' : 's'}</a>`).join('')}
+      </nav>
+      <details class="more-filters"${[...q.keys()].some((k) => !['q', 'page', 'type'].includes(k)) ? ' open' : ''}>
+      <summary class="btn sm">⚙ Filters</summary>
       <div class="filter-grid">
         ${selectField('type', 'Type', TYPE_OPTIONS, q.get('type') || '', 'Any type')}
         ${selectField('status', 'Status', STATUS_OPTIONS, q.get('status') || '', 'Any status')}
@@ -508,6 +535,7 @@ async function viewSearch(q, alive) {
       <details class="genre-picker"${picked.length ? ' open' : ''}>
         <summary>Genres <small class="card-meta">${picked.length ? esc(picked.join(', ')) : `pick up to ${MAX_GENRES}`}</small></summary>
         <div class="chips">${genres.map((g) => `<label class="chip check"><input type="checkbox" name="genres" value="${esc(g)}"${picked.includes(g) ? ' checked' : ''}> ${esc(g)}</label>`).join('')}</div>
+      </details>
       </details>
       ${[...q.keys()].some((k) => k !== 'page') ? '<a class="link-btn" href="/search">Clear all filters</a>' : ''}
     </form>
@@ -550,8 +578,22 @@ async function viewSearch(q, alive) {
       <span>Page ${page}${info.lastPage ? ' of ' + info.lastPage : ''}</span>
       ${info.hasNextPage ? '<a class="btn sm" href="' + pageLink(page + 1) + '">Next ›</a>' : ''}
     </div>` : '';
-  document.getElementById('results').innerHTML = note +
-    '<div class="section">' + (d.results?.length ? grid(d.results) : '<div class="empty"><h2>No matches found</h2><p>Try a different title or fewer filters.</p></div>') + '</div>' + pager;
+  // Hidden genres stay out of browsing (not out of a title search, and not when that genre is picked).
+  const pickedGenres = (q.get('genres') || '').split(',').filter(Boolean);
+  const results = q.get('q') ? d.results || [] : withoutHiddenGenres(d.results || [], pickedGenres);
+  const count = info.total ? `<p class="card-meta result-count">${Number(info.total).toLocaleString()} title${info.total === 1 ? '' : 's'}</p>` : '';
+  document.getElementById('results').innerHTML = count + note +
+    '<div id="genre-top"></div>' +
+    '<div class="section">' + (results.length ? grid(results) : '<div class="empty"><h2>No matches found</h2><p>Try a different title or fewer filters.</p></div>') + '</div>' + pager;
+  // One genre and nothing else picked: the genre's Top 10 by score above the results.
+  const onlyGenre = pickedGenres.length === 1 && page === 1 && ![...q.keys()].some((k) => !['genres', 'genre'].includes(k));
+  if (onlyGenre) {
+    api(`/search?genres=${encodeURIComponent(pickedGenres[0])}&order=score`).then((top) => {
+      const box = document.getElementById('genre-top');
+      if (!box || !alive() || !top.results?.length) return;
+      box.innerHTML = `<section class="section"><div class="section-head"><h2>Top 10 ${esc(pickedGenres[0].toLowerCase())}</h2></div>${top10(top.results.slice(0, 10))}</section>`;
+    }).catch(() => {});
+  }
 }
 
 // ---------- ranked lists ----------
@@ -649,8 +691,10 @@ const canFollow = (a) => a.status === 'RELEASING' || a.status === 'NOT_YET_RELEA
 function followButton(a, small = false) {
   if (!canFollow(a)) return '';
   const on = store.isFollowing(a.id);
+  const upcoming = a.status === 'NOT_YET_RELEASED';
+  const label = upcoming ? (on ? '🔔 Reminder on' : '🔕 Remind me when it starts') : on ? '🔔 Following' : '🔕 Follow';
   return `<button class="btn${small ? ' sm' : ''}${on ? ' active' : ''}" id="follow-btn" type="button" aria-pressed="${on}"
-    title="Get new episodes in Notifications${'Notification' in window ? ' and as pop-ups' : ''}">${on ? '🔔 Following' : '🔕 Follow'}</button>`;
+    title="${upcoming ? 'Get told when episode 1 is out' : 'Get new episodes in Notifications'}${'Notification' in window ? ' (and as pop-ups)' : ''}">${label}</button>`;
 }
 function bindFollow(a, small = false) {
   const b = document.getElementById('follow-btn');
@@ -665,6 +709,86 @@ function bindFollow(a, small = false) {
       : 'Following. New episodes show up in <a href="/new">Notifications</a>.');
   };
 }
+// Broken artwork (a poster or cover that fails to load) becomes a quiet placeholder.
+const ART_PLACEHOLDER = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 225 318"><rect width="225" height="318" fill="#121417"/><path d="M78 168 L92 144 L106 168 M120 168 L134 144 L148 168" fill="none" stroke="#5B6169" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg>');
+window.addEventListener('error', (e) => {
+  const img = e.target;
+  if (!(img instanceof HTMLImageElement) || img.dataset.fallback || img.classList.contains('slide-art')) return;
+  img.dataset.fallback = '1';
+  img.src = ART_PLACEHOLDER;
+}, true);
+
+// A toast with an Undo button.
+function undoToast(text, undo) {
+  toastNote(`${esc(text)} <button class="link-btn" type="button" data-undo>Undo</button>`);
+  const b = document.querySelector('.toast [data-undo]');
+  if (b) b.onclick = () => { undo(); document.querySelector('.toast')?.remove(); };
+}
+
+// The poster save menu: list status, favourite, not interested.
+function openSaveMenu(button, a) {
+  closeSaveMenu();
+  const entry = store.getEntry(a.id) || {};
+  const menu = document.createElement('div');
+  menu.className = 'save-menu';
+  menu.setAttribute('role', 'menu');
+  menu.innerHTML = `<b>${esc(T(a))}</b>
+    ${store.LIST_STATUSES.filter(([k]) => k !== 'notinterested').map(([k, l]) => `<button type="button" data-status="${k}"${entry.status === k ? ' class="on"' : ''}>${entry.status === k ? '✓ ' : ''}${l}</button>`).join('')}
+    <button type="button" data-fav>${entry.favourite ? '♥ Favourite' : '♡ Favourite'}</button>
+    <button type="button" data-ni>Not interested</button>
+    ${entry.status ? '<button type="button" data-status="">Remove from list</button>' : ''}`;
+  document.body.appendChild(menu);
+  const r = button.getBoundingClientRect();
+  menu.style.top = `${Math.min(window.scrollY + r.bottom + 6, window.scrollY + innerHeight - menu.offsetHeight - 10)}px`;
+  menu.style.left = `${Math.max(10, Math.min(window.scrollX + r.left, window.scrollX + innerWidth - menu.offsetWidth - 10))}px`;
+  const refresh = () => {
+    const e2 = store.getEntry(a.id);
+    button.classList.toggle('on', Boolean(e2?.status || e2?.favourite));
+    button.textContent = e2?.status || e2?.favourite ? '✓' : '＋';
+  };
+  menu.onclick = (ev) => {
+    const b = ev.target.closest('button');
+    if (!b) return;
+    if ('status' in b.dataset) store.setEntry(a, b.dataset.status || null);
+    if ('fav' in b.dataset) store.setFavourite(a, !store.getEntry(a.id)?.favourite);
+    if ('ni' in b.dataset) {
+      const before = store.getEntry(a.id)?.status || null;
+      store.setEntry(a, 'notinterested');
+      const cardEl = button.closest('.card');
+      if (cardEl) cardEl.hidden = true;
+      undoToast('Hidden from rows and picks.', () => { store.setEntry(a, before); if (cardEl) cardEl.hidden = false; refresh(); });
+    }
+    refresh();
+    closeSaveMenu();
+  };
+  setTimeout(() => document.addEventListener('click', closeSaveMenu, { once: true }), 0);
+}
+function closeSaveMenu() { document.querySelector('.save-menu')?.remove(); }
+// Bells on schedule rows: follow or unfollow without opening the show.
+document.addEventListener('click', (e) => {
+  const b = e.target.closest?.('[data-follow]');
+  if (!b) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const a = cardShows.get(b.dataset.follow);
+  if (!a) return;
+  const on = !store.isFollowing(a.id);
+  store.setFollow(a, on, a.availableEpisodes || 0);
+  b.classList.toggle('on', on);
+  b.setAttribute('aria-pressed', String(on));
+  b.textContent = on ? '🔔' : '🔕';
+  toastNote(on ? `Following ${esc(T(a))}. New episodes show up in <a href="/new">Notifications</a>.` : `Stopped following ${esc(T(a))}.`);
+}, true);
+document.addEventListener('click', (e) => {
+  const b = e.target.closest?.('[data-save]');
+  if (!b) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const a = cardShows.get(b.dataset.save);
+  if (a) openSaveMenu(b, a);
+}, true);
+window.addEventListener('animee:navigate', closeSaveMenu);
+
 // A small message at the bottom of the screen that fades after a few seconds.
 function toastNote(html) {
   document.querySelector('.toast')?.remove();
@@ -702,11 +826,16 @@ function bindListButtons(a) {
     refreshListButtons(a);
   };
   ni.onclick = () => {
-    const isNi = store.getEntry(a.id)?.status === 'notinterested';
+    const before = store.getEntry(a.id)?.status || null;
+    const isNi = before === 'notinterested';
     store.setEntry(a, isNi ? null : 'notinterested');
-    refreshListButtons(a);
-    const sel = document.getElementById('list-status');
-    if (sel) { sel.outerHTML = listSelect(a); bindListSelect(a); }
+    const redraw = () => {
+      refreshListButtons(a);
+      const sel = document.getElementById('list-status');
+      if (sel) { sel.outerHTML = listSelect(a); bindListSelect(a); }
+    };
+    redraw();
+    if (!isNi) undoToast('Hidden from rows and picks. Find it again in My list, Not interested.', () => { store.setEntry(a, before); redraw(); });
   };
 }
 
@@ -745,11 +874,15 @@ async function viewAnime(id, alive, query = new URLSearchParams()) {
               : '<span class="btn" aria-disabled="true">Not released yet</span>'}
             ${listSelect(a)}
             ${followButton(a)}
+            ${canWatch && !isMovie(a) && a.availableEpisodes > 1 ? `<a class="btn" href="/watch/${a.id}?ep=${a.availableEpisodes}">Newest: episode ${a.availableEpisodes}</a>` : ''}
+            ${canWatch && prog && !isMovie(a) && prog.ep > 1 ? `<a class="btn" href="/watch/${a.id}?ep=1">From episode 1</a>` : ''}
             ${listButtons(a)}
             <button class="btn" id="share" type="button">Share</button>
             ${query.get('from') === 'random' ? '<a class="btn" href="/random">🎲 Another random</a>' : ''}
           </div>
-          ${a.status === 'RELEASING' && nextBroadcast(a.broadcast) ? `<p class="card-meta" style="margin-top:12px">Next episode ${localTime(nextBroadcast(a.broadcast))}, in ${fmtCountdown(Math.round((nextBroadcast(a.broadcast) - Date.now()) / 1000))}</p>` : ''}
+          ${a.status === 'RELEASING' && nextBroadcast(a.broadcast) ? (nextBroadcast(a.broadcast) - 7 * 86400e3 > Date.now() - 3 * 3600e3
+            ? '<p class="card-meta" style="margin-top:12px">A new episode should be out about now. Refresh in a little while if it isn\'t listed yet.</p>'
+            : `<p class="card-meta" style="margin-top:12px">Next episode ${localTime(nextBroadcast(a.broadcast))}, in ${fmtCountdown(Math.round((nextBroadcast(a.broadcast) - Date.now()) / 1000))}</p>`) : ''}
         </div>
       </div>
     </section>
@@ -778,6 +911,9 @@ async function viewAnime(id, alive, query = new URLSearchParams()) {
             ${a.source ? `<div><b>Source</b><span>${esc(a.source.replace(/_/g, ' ').toLowerCase())}</span></div>` : ''}
             ${a.popularity ? `<div><b>${IS_CINEMEE ? 'Votes' : 'Members'}</b><span>${a.popularity.toLocaleString()}</span></div>` : ''}
             ${a.synonyms.length ? `<div><b>Also</b><span>${esc(a.synonyms.slice(0, 3).join(', '))}</span></div>` : ''}
+            <div><b>Elsewhere</b><span class="out-links">${IS_CINEMEE && a.tmdbId
+              ? `<a href="https://www.themoviedb.org/${isMovie(a) ? 'movie' : 'tv'}/${esc(a.tmdbId)}" target="_blank" rel="noopener">TMDB ↗</a>`
+              : `<a href="https://myanimelist.net/anime/${esc(a.id)}" target="_blank" rel="noopener">MyAnimeList ↗</a> <a id="anilist-link" hidden target="_blank" rel="noopener">AniList ↗</a>`}</span></div>
           </div>
         </section>
         ${a.streamingLinks.length ? section('Official streams', `<div class="links">${a.streamingLinks.map((l) => `<a class="chip" href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.site)} ↗</a>`).join('')}</div>`) : ''}
@@ -786,6 +922,11 @@ async function viewAnime(id, alive, query = new URLSearchParams()) {
 
   bindListSelect(a);
   bindFollow(a);
+  // AniList link: its id is looked up in the browser (AniList refuses Cloudflare's servers).
+  if (!IS_CINEMEE) aniList.aniListIdFor(a.id).then((al) => {
+    const link = document.getElementById('anilist-link');
+    if (al && link) { link.href = `https://anilist.co/anime/${al}`; link.hidden = false; }
+  });
   bindListButtons(a);
   bindShare(a);
   loadExtras(a.id, alive, { chars: 'extras-chars', recs: 'extras-recs' });
@@ -884,7 +1025,8 @@ async function viewWatch(id, query, alive) {
           <div class="pl-bar">
             <label><input type="checkbox" id="opt-autoplay" ${settings.autoplay ? 'checked' : ''}> Auto next</label>
             ${fillerCount || recapCount ? `<label title="Auto next skips filler and recap episodes"><input type="checkbox" id="opt-skipfiller" ${settings.skipFiller ? 'checked' : ''}> Skip filler</label>` : ''}
-            <span class="card-meta player-hint">Pause, seek and quality controls are inside the player.<span class="keys-hint"> Keys: <kbd>N</kbd> next, <kbd>P</kbd> previous, <kbd>W</kbd> watched, <kbd>F</kbd> fullscreen.</span></span>
+            <label class="anime-only" title="Skips intros and outros where the player knows them (3ellwa server)"><input type="checkbox" id="opt-autoskip" ${settings.autoskip ? 'checked' : ''}> Auto skip intro</label>
+            <span class="card-meta player-hint">Pause, seek and quality controls are inside the player.<span class="keys-hint"> Keys: <kbd>N</kbd> next, <kbd>P</kbd> previous, <kbd>←</kbd><kbd>→</kbd> 10 s, <kbd>W</kbd> watched, <kbd>F</kbd> fullscreen.</span></span>
             <span class="spacer"></span>
             <button class="btn sm wide-btn" id="wide-toggle" type="button" aria-pressed="false">⤢ Wide player</button>
             <button class="btn sm" id="mark-seen" type="button">✓ Mark watched</button>
@@ -900,13 +1042,14 @@ async function viewWatch(id, query, alive) {
               </div>
             </details>
             <button class="btn sm" id="prev-ep">‹ Prev</button>
-            <button class="btn sm" id="next-ep">Next ›</button>
+            <button class="btn sm next-glow" id="next-ep">Next ›</button>
           </div>
         </div>
         <div class="servers">
           <div class="now">You are watching<b id="now-ep"></b>If one server doesn't work, try another.</div>
           <div class="resume-note" id="resume-note" hidden></div>
           <div id="server-list"></div>
+          <div class="not-working"><button class="btn sm" id="not-working" type="button">⚠ Not working? Try another server</button></div>
         </div>
         <section class="section">
           <div style="display:flex;gap:18px;align-items:flex-start">
@@ -982,6 +1125,7 @@ async function viewWatch(id, query, alive) {
     hasNext: () => !!nextAuto(),
     onNext: () => goTo(nextAuto()),
     onPause: () => store.sync.flush(),
+    onAutoSkipPaused: () => showNote('Auto skip is paused for this episode because you went back. It turns on again for the next one.'),
     // MegaPlay resumed at the saved time: say so, with a way back to the beginning.
     onResumed: (at) => showNote(`Picked up where you stopped, at <b>${clock(at)}</b>. <button class="btn sm" type="button">Start over</button>`, () => player.seekTo(0)),
     onFail: (message) => tryNextServer(message),
@@ -1036,6 +1180,29 @@ async function viewWatch(id, query, alive) {
   }));
 
   $('opt-autoplay').onchange = (e) => store.setSetting('autoplay', e.target.checked);
+  $('opt-autoskip').onchange = (e) => { store.setSetting('autoskip', e.target.checked); player.setAutoSkip(e.target.checked); };
+  // "Not working": note it for us, then move to the next server (or the other language).
+  $('not-working').onclick = () => {
+    report('video');
+    if (!tryNextServer("That server didn't work for you.")) player.msg('No other server is left for this episode. Try again later.');
+  };
+  // Break reminder: after about 2 hours of actual watching (a 30-minute pause starts the count again).
+  const BREAK_KEY = 'animee-space:break-off';
+  let watchedFor = 0, lastSeen = player.getCurrentTime(), quietFor = 0;
+  const breakTimer = setInterval(() => {
+    let off = false;
+    try { off = localStorage.getItem(BREAK_KEY) === '1'; } catch { /* ignore */ }
+    if (off || document.visibilityState !== 'visible') return;
+    const now = player.getCurrentTime();
+    if (now !== lastSeen) { watchedFor += 30; quietFor = 0; } else if ((quietFor += 30) >= 1800) watchedFor = 0;
+    lastSeen = now;
+    if (watchedFor >= 7200) {
+      watchedFor = 0;
+      showNote('You have been watching for about 2 hours. Maybe stretch, drink some water ^^. <button class="btn sm" type="button">Stop these reminders</button>',
+        () => { try { localStorage.setItem(BREAK_KEY, '1'); } catch { /* ignore */ } });
+    }
+  }, 30000);
+  onCleanup(() => clearInterval(breakTimer));
   if ($('opt-skipfiller')) $('opt-skipfiller').onchange = (e) => store.setSetting('skipFiller', e.target.checked);
   const applyWide = (on) => {
     app.querySelector('.watch-grid').classList.toggle('wide', on);
@@ -1065,8 +1232,14 @@ async function viewWatch(id, query, alive) {
   // Shortcuts work while focus is on the page. Clicking into the embedded player gives it the
   // keyboard, so they pause until you click back outside it.
   const onKey = (e) => {
-    if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.target.closest?.('input, select, textarea, [contenteditable]')) return;
+    // ← / → jump 10 seconds (they never change the episode: people press → to skip intros).
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      if (player.seekBy(e.key === 'ArrowRight' ? 10 : -10)) e.preventDefault();
+      return;
+    }
+    if (e.repeat) return;
     const key = e.key.toLowerCase();
     const actions = {
       n: () => $('next-ep').click(),
@@ -1191,14 +1364,22 @@ async function viewWatch(id, query, alive) {
     const failed = server;
     tried.add(failed.id);
     report('auto', failed);
-    const next = servers.find((s) => s.category === failed.category && !tried.has(s.id));
+    let next = servers.find((s) => s.category === failed.category && !tried.has(s.id));
+    let switchedLanguage = false;
+    // No sub server works: the dub beats a dead player (just for this episode; the choice isn't saved).
+    if (!next && failed.category === 'sub') {
+      next = servers.find((s) => s.category === 'dub' && !tried.has(s.id));
+      switchedLanguage = Boolean(next);
+    }
     if (!next) {
       player.msg(`${message} No other ${failed.category} server could play it either. You can report it below.`);
       return true;
     }
     server = { id: next.id, category: next.category };
     renderServers();
-    showNote(`${esc(serverName(failed))} didn't play, switched to <b>${esc(next.name)}</b>.`);
+    showNote(switchedLanguage
+      ? 'The subtitled copy of this episode isn\'t playing right now, so we switched you to the <b>dub</b>.'
+      : `${esc(serverName(failed))} didn't play, switched to <b>${esc(next.name)}</b>.`);
     note.dataset.sticky = '1'; // keep it up while the next server loads
     playSource(player.getCurrentTime(), { explicit: true });
     return true;
@@ -1290,6 +1471,43 @@ async function viewNew(alive) {
   const stale = Date.now() - inbox.inboxCheckedAt() > 60 * 1000;
   draw(inbox.inboxItems(), stale);
   if (stale) draw(await inbox.refreshInbox({ force: true }), false);
+}
+
+// ---------- what's new ----------
+// A small bar under the menu after an update, with the dated list one tap away. "Got it" hides it
+// until the next update (per browser).
+const NEWS = IS_CINEMEE ? [
+  ['Nov 21', ['Welcome to cinemee: movies and TV, with the same lists, sync and pop-ups as animee', 'Up next stays in fullscreen', 'Save any title from its poster', 'Hide genres you skip']],
+] : [
+  ['Nov 21', ['Resume where you stopped on 3ellwa, with Start over', 'Auto skip intros and outros', 'Up next stays in fullscreen', 'Save any show from its poster', 'Select mode on My list', 'Hide genres you skip', '← → jump 10 seconds', 'Follow shows from the schedule', 'Picked for you on the home page']],
+  ['Earlier', ['New-episode pop-ups', 'My Anime hub with Requests', 'Continue on any device', 'Short server names']],
+];
+const NEWS_VERSION = `${BRAND.name}-${NEWS[0][0]}`;
+function showNews() {
+  let seen = '';
+  try { seen = localStorage.getItem('animee-space:news') || ''; } catch { /* ignore */ }
+  if (seen === NEWS_VERSION || document.getElementById('news-bar')) return;
+  const bar = document.createElement('div');
+  bar.id = 'news-bar';
+  bar.className = 'news-bar';
+  bar.innerHTML = `<span><b>New</b> on ${BRAND.name}, updated ${esc(NEWS[0][0])}</span>
+    <button class="btn sm" type="button" data-news-open>See what's new</button>
+    <button class="news-x" type="button" aria-label="Got it" data-news-ok>✕</button>`;
+  document.querySelector('.nav')?.after(bar);
+  const done = () => { try { localStorage.setItem('animee-space:news', NEWS_VERSION); } catch { /* ignore */ } bar.remove(); document.querySelector('.news-dlg')?.remove(); };
+  bar.querySelector('[data-news-ok]').onclick = done;
+  bar.querySelector('[data-news-open]').onclick = () => {
+    const dlg = document.createElement('div');
+    dlg.className = 'news-dlg';
+    dlg.setAttribute('role', 'dialog');
+    dlg.innerHTML = `<div class="news-card"><h2>what's new on ${BRAND.name}</h2>
+      ${NEWS.map(([date, items]) => `<h3>${esc(date)}</h3><ul>${items.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>`).join('')}
+      <p class="card-meta">Got an idea? Send it from <a href="/requests">Requests</a>.</p>
+      <div class="actions"><button class="btn primary" type="button" data-news-ok>Got it</button></div></div>`;
+    document.body.appendChild(dlg);
+    dlg.querySelector('[data-news-ok]').onclick = done;
+    dlg.onclick = (e) => { if (e.target === dlg) dlg.remove(); };
+  };
 }
 
 // ---------- my anime hub ----------
@@ -1677,7 +1895,9 @@ function viewWatchlist(query) {
         ${selectField('sort', 'Sort by', LIST_SORTS, sort, 'Last changed first')}
       </div>
     </form>
-    ${shown.length ? `<p class="card-meta">${shown.length.toLocaleString()} show${shown.length === 1 ? '' : 's'}</p>${grid(shown.slice(0, LIST_PAGE).map(asCard))}
+    ${shown.length ? `<div class="list-tools"><p class="card-meta">${shown.length.toLocaleString()} show${shown.length === 1 ? '' : 's'}</p>
+      <button class="btn sm" id="select-mode" type="button">Select</button>
+      <button class="btn sm primary" id="remove-selected" type="button" hidden>Remove selected</button></div>${grid(shown.slice(0, LIST_PAGE).map(asCard))}
       ${shown.length > LIST_PAGE ? '<div class="pager"><button class="btn" id="list-more" type="button">Show more</button></div>' : ''}`
       : list.length ? '<div class="empty"><p>Nothing on your list matches.</p></div>'
       : `<div class="empty"><h2>Nothing here yet</h2><p>Add anime from any details page, or bring your list from AniList or MyAnimeList in <a href="/settings" style="color:var(--accent)">Settings</a>.</p><a class="btn" href="/search">Browse anime</a></div>`}
@@ -1705,6 +1925,61 @@ function viewWatchlist(query) {
   form.elements.q.oninput = () => { clearTimeout(timer); timer = setTimeout(apply, 350); };
   if (term) { const box = form.elements.q; box.focus(); box.setSelectionRange(box.value.length, box.value.length); }
   addHub(tab === 'favourites' ? 'favourites' : 'list');
+
+  // Select mode: tap cards to pick them, then remove them all at once.
+  const selectBtn = document.getElementById('select-mode');
+  const removeBtn = document.getElementById('remove-selected');
+  if (selectBtn) {
+    const picked = new Set();
+    const grid = app.querySelector('.grid');
+    const sync = () => {
+      removeBtn.hidden = !app.classList.contains('selecting');
+      removeBtn.textContent = picked.size ? `Remove ${picked.size} selected` : 'Remove selected';
+      removeBtn.disabled = !picked.size;
+    };
+    selectBtn.onclick = () => {
+      const on = !app.classList.contains('selecting');
+      app.classList.toggle('selecting', on);
+      selectBtn.textContent = on ? 'Cancel' : 'Select';
+      if (!on) { picked.clear(); grid.querySelectorAll('.card.picked').forEach((c) => c.classList.remove('picked')); }
+      sync();
+    };
+    grid.addEventListener('click', (e) => {
+      if (!app.classList.contains('selecting')) return;
+      const c = e.target.closest('.card');
+      if (!c) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const id = c.dataset.card;
+      if (picked.has(id)) picked.delete(id); else picked.add(id);
+      c.classList.toggle('picked', picked.has(id));
+      sync();
+    }, true);
+    removeBtn.onclick = () => {
+      const items = [...picked].map((id) => list.find((e) => String(e.id) === id)).filter(Boolean);
+      items.forEach((it) => (tab === 'favourites' ? store.setFavourite(it, false) : store.setEntry(it, null)));
+      toastNote(`Removed ${items.length} show${items.length === 1 ? '' : 's'}.`);
+      app.classList.remove('selecting');
+      route();
+    };
+    onCleanup(() => app.classList.remove('selecting'));
+  }
+
+  // Sub / dub episode counts on the first cards (anime; cached checks, a few at a time).
+  if (!IS_CINEMEE) {
+    const ids = shown.slice(0, 24).map((e) => String(e.id));
+    (async () => {
+      for (let i = 0; i < ids.length; i += 4) {
+        await Promise.all(ids.slice(i, i + 4).map(async (id) => {
+          const d = await api(`/anime/${id}/availability`).catch(() => null);
+          const poster = app.querySelector(`.card[data-card="${id}"] .poster`);
+          if (!d || !poster || (!d.sub && !d.dub) || poster.querySelector('.subdub')) return;
+          poster.insertAdjacentHTML('beforeend', `<span class="badge subdub">${d.sub ? `SUB ${d.sub}` : ''}${d.sub && d.dub ? ' · ' : ''}${d.dub ? `DUB ${d.dub}` : ''}</span>`);
+        }));
+        if (parseHash().parts[0] !== 'watchlist') return;
+      }
+    })();
+  }
 }
 
 // ---------- account ----------
@@ -1734,6 +2009,15 @@ function viewAccountPage(query) {
           <button class="btn" id="logout">Sign out</button>
           <button class="btn" id="logout-all">Sign out everywhere</button>
         </div>
+        <details class="danger-zone">
+          <summary class="card-meta">Delete my account</summary>
+          <p class="card-meta">This deletes your account and the list, progress and settings saved with it on our server. It can't be undone. What's saved in this browser stays until you clear it.</p>
+          <form id="delete-account" class="actions">
+            <input class="input" type="password" name="password" placeholder="Your password" autocomplete="current-password" required>
+            <button class="btn danger" type="submit">Delete my account</button>
+          </form>
+          <p class="card-meta" id="delete-result" role="status"></p>
+        </details>
         <label class="card-meta" style="display:flex;gap:8px;margin-top:14px;cursor:pointer">
           <input type="checkbox" id="clear-local"> Also clear the list and history saved in this browser when signing out
         </label>
@@ -1784,6 +2068,18 @@ function viewAccountPage(query) {
     };
     document.getElementById('logout').onclick = out(false);
     document.getElementById('logout-all').onclick = out(true);
+    document.getElementById('delete-account').onsubmit = async (e) => {
+      e.preventDefault();
+      const result = document.getElementById('delete-result');
+      if (!confirm('Delete your account for good? This cannot be undone.')) return;
+      try {
+        await store.deleteAccount(e.target.elements.password.value);
+        result.textContent = 'Your account is deleted.';
+        setTimeout(() => go('/'), 1200);
+      } catch (err) {
+        result.textContent = err.message;
+      }
+    };
     return;
   }
 
@@ -1825,7 +2121,10 @@ function viewAccountPage(query) {
 // ---------- schedule ----------
 const WEEK = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 function schedRow(a, note) {
+  if (a?.id) cardShows.set(String(a.id), a);
+  const following = store.isFollowing(a.id);
   return `<a class="sched-row" href="${animeHref(a)}">
+    <button class="row-bell${following ? ' on' : ''}" type="button" data-follow="${esc(a.id)}" aria-pressed="${following}" title="${following ? 'Following: tap to stop' : 'Tell me about new episodes'}">${following ? '🔔' : '🔕'}</button>
     ${IS_CINEMEE ? '<span class="sched-time"><b>new</b><small>episode</small></span>' : `<span class="sched-time"><b>${esc(a.broadcast?.time || '?')}</b><small>JST</small></span>`}
     <img src="${esc(a.cover)}" alt="${esc(T(a))} poster" loading="lazy">
     <span class="sched-info"><span class="t">${esc(T(a))}</span>
@@ -2046,6 +2345,10 @@ function viewSettings(alive) {
         ${toggle('showContinue', 'Show Continue watching on the home page', s.showContinue)}
         ${toggle('hideStarted', 'Hide shows I already started from the home rows and picks', s.hideStarted)}
       </section>
+      <section class="settings-group" id="hide-genres"><h2>Hide genres</h2>
+        <p class="card-meta">Shows in these genres stay out of the home rows, picks and browsing. Searching by name still finds them.</p>
+        <div class="chips" id="hide-genre-chips">${loader()}</div>
+      </section>
       <section class="settings-group"><h2>Player</h2>
         <div class="setting anime-only"><span>Audio I prefer</span><div class="chips">${radio('category', 'sub', 'Sub', s.category)}${radio('category', 'dub', 'Dub', s.category)}</div></div>
         ${toggle('autoplay', 'Play the next episode automatically', s.autoplay)}
@@ -2104,13 +2407,30 @@ function viewSettings(alive) {
 
     <section class="settings-group"><h2>Privacy</h2>
       <p class="card-meta">Your list, history and settings are kept in this browser. With an account, your list, progress and playback choices are also stored on our server so they sync. Watch history never leaves this browser. Clearing site data removes everything here.</p>
-      <button class="link-btn" id="clear-history" type="button">Clear watch history</button>
+      <div class="actions"><button class="btn sm" id="clear-history" type="button">Clear watch history</button>
+        <button class="btn sm" id="clear-progress" type="button">Clear history and every watched tick</button></div>
     </section>`;
+
+  // Hide genres: chips filled from the catalogue's genre list.
+  api('/genres').then(({ genres }) => {
+    const box = document.getElementById('hide-genre-chips');
+    if (!box) return;
+    const hidden = new Set(store.getSettings().hiddenGenres || []);
+    box.innerHTML = genres.map((g) => `<label class="chip check"><input type="checkbox" data-hide-genre value="${esc(g)}"${hidden.has(g) ? ' checked' : ''}> ${esc(g)}</label>`).join('');
+  }).catch(() => {});
+  document.getElementById('hide-genres').addEventListener('change', (e) => {
+    if (!e.target.matches('[data-hide-genre]')) return;
+    e.stopPropagation();
+    const set = new Set(store.getSettings().hiddenGenres || []);
+    if (e.target.checked) set.add(e.target.value); else set.delete(e.target.value);
+    store.setSetting('hiddenGenres', [...set]);
+  });
 
   // Settings apply as soon as they change.
   const form = document.getElementById('settings');
   form.onchange = (e) => {
     const el = e.target;
+    if (el.matches('[data-hide-genre]')) return; // handled above
     store.setSetting(el.name, el.type === 'checkbox' ? el.checked : el.value);
     if (el.name === 'alertsFor') { push.syncFollows(); inbox.refreshInbox({ force: true }).catch(() => {}); }
   };
@@ -2229,6 +2549,12 @@ function viewSettings(alive) {
     if (!confirm('Clear your watch history in this browser?')) return;
     store.clearHistory();
     e.target.textContent = 'History cleared';
+  };
+  document.getElementById('clear-progress').onclick = (e) => {
+    if (!confirm('Clear your watch history, Continue watching and every watched tick? Your list and favourites stay.')) return;
+    store.clearHistory();
+    store.clearProgress();
+    e.target.textContent = 'Cleared';
   };
   addHub('settings');
   if (location.hash) document.getElementById(location.hash.slice(1))?.scrollIntoView();
@@ -2364,6 +2690,7 @@ store.onSyncChange(({ user, synced, changed }) => {
 });
 
 route();
+showNews();
 store.initAccount().finally(() => setTimeout(() => {
   inbox.refreshInbox().catch(() => {});
   push.syncFollows(); // follows may have changed on another device

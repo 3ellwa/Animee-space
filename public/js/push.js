@@ -46,7 +46,7 @@ export async function enable() {
   const key = await serverKey();
   if (!key) throw new Error('Pop-ups aren’t set up on the server yet.');
   const answer = await Notification.requestPermission();
-  if (answer !== 'granted') throw new Error(`Notifications are blocked for ${BRAND.name}. Allow them in your browser’s site settings (the icon left of the address), then try again.`);
+  if (answer !== 'granted') throw new Error(`Notifications are blocked for ${BRAND.name}. Private and incognito windows always block them, so use a normal window. Allow them in your browser’s site settings (the icon left of the address), then try again.`);
   const reg = await navigator.serviceWorker.ready;
   let sub = await reg.pushManager.getSubscription();
   if (!sub) {

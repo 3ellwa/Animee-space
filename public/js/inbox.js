@@ -49,7 +49,7 @@ export function refreshInbox({ force = false } = {}) {
     const ids = [...new Set([...followed, ...libraryRows.filter((r) => r.status === 'watching').map((r) => r.id)])].slice(0, MAX_SHOWS);
     const watching = ids.map((id) => ({ id, air: byId[id]?.air }));
     // Airing status isn't always known locally (older entries, other devices): ask in batches of 6.
-    const unknown = watching.filter((e) => !e.air).map((e) => e.id);
+    const unknown = watching.filter((e) => !e.air || (followed.has(e.id) && e.air !== 'FINISHED')).map((e) => e.id);
     for (let i = 0; i < unknown.length; i += 6) {
       try {
         const { results } = await api('/batch?ids=' + unknown.slice(i, i + 6).join(','));
@@ -63,7 +63,7 @@ export function refreshInbox({ force = false } = {}) {
     await eachLimited(airing, 4, async (e) => {
       const watched = [...store.watchedSet(e.id)];
       let baseline = store.followBaseline(e.id);
-      if (!watched.length && !baseline) {
+      if (!watched.length && !baseline && !store.followBaselineKnown(e.id)) {
         // Followed but never watched, and no baseline on this device (e.g. followed on another
         // one): start from what's out now, so only episodes after today count as new.
         if (!followed.has(e.id)) return;
