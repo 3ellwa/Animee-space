@@ -714,3 +714,18 @@ button.tab { color: inherit; }
 .pl-spin { width: 38px; height: 38px; border-radius: 50%; border: 3px solid rgb(255 255 255 / .15); border-top-color: var(--lime); animation: pl-spin .8s linear infinite; }
 @keyframes pl-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .pl-spin { animation-duration: 2.4s; } }
+
+/* "Up next" card at the end of an episode */
+.pl-upnext { position: absolute; right: 16px; bottom: 16px; z-index: 7; max-width: min(340px, calc(100% - 32px)); }
+.pl-upnext[hidden] { display: none; }
+.un-card { display: grid; gap: 6px; padding: 14px 16px; border-radius: 16px; background: rgb(8 9 10 / .88); backdrop-filter: blur(8px); border: 1px solid rgb(255 255 255 / .12); box-shadow: 0 12px 40px rgb(0 0 0 / .5); }
+.un-kicker { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--lime); font-weight: 700; }
+.un-title { color: var(--paper); font: 700 16px/1.25 var(--font-display); }
+.un-label { color: var(--fog); font-size: 13px; }
+.un-label:empty { display: none; }
+.un-bar { height: 3px; border-radius: 3px; background: rgb(255 255 255 / .12); overflow: hidden; margin: 4px 0; }
+.un-bar i { display: block; height: 100%; width: 0; background: var(--lime); transition: width .1s linear; }
+.un-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+@media (max-width: 520px) { .pl-upnext { left: 10px; right: 10px; bottom: 10px; max-width: none; } .un-card { padding: 10px 12px; } }
+kbd { display: inline-block; min-width: 1.5em; padding: 0 5px; border-radius: 5px; border: 1px solid rgb(255 255 255 / .18); background: rgb(255 255 255 / .06); font: 600 11px/1.6 var(--font-body, inherit); text-align: center; color: var(--paper); }
+@media (hover: none) { .keys-hint { display: none; } }

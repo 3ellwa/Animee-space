@@ -776,7 +776,7 @@ async function viewWatch(id, query, alive) {
           <div class="pl-bar">
             <label><input type="checkbox" id="opt-autoplay" ${settings.autoplay ? 'checked' : ''}> Auto next</label>
             ${fillerCount || recapCount ? `<label title="Auto next skips filler and recap episodes"><input type="checkbox" id="opt-skipfiller" ${settings.skipFiller ? 'checked' : ''}> Skip filler</label>` : ''}
-            <span class="card-meta player-hint">Pause, seek and quality controls are inside the player.</span>
+            <span class="card-meta player-hint">Pause, seek and quality controls are inside the player.<span class="keys-hint"> Keys: <kbd>N</kbd> next, <kbd>P</kbd> previous, <kbd>W</kbd> watched, <kbd>F</kbd> fullscreen.</span></span>
             <span class="spacer"></span>
             <button class="btn sm wide-btn" id="wide-toggle" type="button" aria-pressed="false">⤢ Wide player</button>
             <button class="btn sm" id="mark-seen" type="button">✓ Mark watched</button>
@@ -843,6 +843,31 @@ async function viewWatch(id, query, alive) {
     return episodes.slice(idx() + 1).find((e) => playable(e) && !(skip && (e.isFiller || e.isRecap))) || null;
   };
 
+  // Keep the list status in step with what you actually watch:
+  //  - playing a show that's on "Plan to watch" or "On hold" moves it to Watching;
+  //  - finishing the last episode of a finished show marks it Completed.
+  // Each change shows a note with Undo. Dropped / Not interested / Completed are never touched
+  // by starting to watch, so rewatching a completed show leaves it alone.
+  function autoStatus(why) {
+    const status = store.getEntry(a.id)?.status || null;
+    const last = episodes[episodes.length - 1];
+    let next = null;
+    if (why === 'ended' && a.status === 'FINISHED' && current === last && status !== 'completed') next = 'completed';
+    else if (why === 'started' && (status === 'planning' || status === 'paused')) next = 'watching';
+    if (!next) return;
+    store.setEntry(a, next);
+    const redraw = () => {
+      const sel = document.getElementById('list-status');
+      if (sel) { sel.outerHTML = listSelect(a); bindListSelect(a); }
+    };
+    redraw();
+    const label = next === 'completed' ? 'Completed' : 'Watching';
+    showNote(`Moved to <b>${label}</b> on your list. <button class="btn sm" type="button">Undo</button>`, () => {
+      store.setEntry(a, status);
+      redraw();
+    });
+  }
+
   const player = new Player($('player'), {
     autoskip: () => store.getSettings().autoskip,
     hasNext: () => !!nextAuto(),
@@ -852,12 +877,22 @@ async function viewWatch(id, query, alive) {
     onEnded: () => {
       store.markWatched(a.id, current.number);
       watched.add(current.number);
+      autoStatus('ended');
       store.sync.flush();
-      if (store.getSettings().autoplay && nextAuto()) goTo(nextAuto());
-      else renderEpisodes();
+      const next = nextAuto();
+      renderEpisodes();
+      if (store.getSettings().autoplay && next) {
+        const skipped = next.number - current.number - 1;
+        player.upNext({
+          title: `Episode ${next.number}${next.title && !/^Episode \d+$/.test(next.title) ? ` · ${next.title}` : ''}`,
+          label: skipped > 0 ? `Skipping ${skipped} filler/recap episode${skipped > 1 ? 's' : ''}` : '',
+          onGo: () => goTo(next),
+        });
+      }
     },
     onProgress: ({ time, duration, ep }) => {
       store.saveProgress({ animeId: a.id, ep, time, duration, title: a.title, cover: a.cover });
+      if (time > 120) autoStatus('started');
       if (duration && time / duration > 0.85 && !watched.has(ep)) {
         store.markWatched(a.id, ep);
         watched.add(ep);
@@ -915,6 +950,24 @@ async function viewWatch(id, query, alive) {
     renderEpisodes();
   };
   $('prev-ep').onclick = () => idx() > 0 && goTo(episodes[idx() - 1]);
+  // Shortcuts work while focus is on the page. Clicking into the embedded player gives it the
+  // keyboard, so they pause until you click back outside it.
+  const onKey = (e) => {
+    if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+    if (e.target.closest?.('input, select, textarea, [contenteditable]')) return;
+    const key = e.key.toLowerCase();
+    const actions = {
+      n: () => $('next-ep').click(),
+      p: () => $('prev-ep').click(),
+      w: () => !$('mark-seen').disabled && $('mark-seen').click(),
+      f: () => player.enterFullscreen(),
+    };
+    if (!actions[key]) return;
+    e.preventDefault();
+    actions[key]();
+  };
+  document.addEventListener('keydown', onKey);
+  onCleanup(() => document.removeEventListener('keydown', onKey));
   $('next-ep').onclick = () => idx() < episodes.length - 1 && goTo(episodes[idx() + 1]);
 
   let range = Math.floor(idx() / CHUNK);
@@ -957,6 +1010,7 @@ async function viewWatch(id, query, alive) {
     if (!b) return;
     server = { id: b.dataset.id, category: b.dataset.cat };
     tried.delete(server.id);
+    store.setShowCategory(a.id, server.category);
     store.setSetting('category', server.category);
     store.setSetting('provider', server.id);
     renderServers();
@@ -1059,7 +1113,8 @@ async function viewWatch(id, query, alive) {
       if (!alive() || ep !== current) return;
       servers = data.servers;
       const prefs = store.getSettings();
-      const pref = prefs.category;
+      // This show's own sub/dub choice wins over the general setting.
+      const pref = store.showCategory(a.id) || prefs.category;
       const preferredProvider = prefs.provider || 'megaplay';
       const s = servers.find((x) => x.id === preferredProvider && x.category === pref)
         || servers.find((x) => x.category === pref)

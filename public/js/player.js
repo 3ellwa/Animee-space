@@ -41,12 +41,14 @@ export class Player {
       IFRAME_HTML +
       '<button class="pl-btn next" type="button" hidden>Next episode ▶</button>' +
       '<div class="pl-msg" hidden></div>' +
+      '<div class="pl-upnext" hidden role="status" aria-live="polite"></div>' +
       '</div><div class="player-tools"><button class="btn sm fullscreen" type="button" hidden>Fullscreen ⛶</button></div>';
     this.video = root.querySelector('video');
     this.iframe = root.querySelector('iframe');
     this.fullscreenBtn = root.querySelector('.fullscreen');
     this.nextBtn = root.querySelector('.next');
     this.msgEl = root.querySelector('.pl-msg');
+    this.upNextEl = root.querySelector('.pl-upnext');
 
     this.fullscreenBtn.onclick = () => this.enterFullscreen();
     this.nextBtn.onclick = () => this.opts.onNext?.();
@@ -103,6 +105,44 @@ export class Player {
     this.busyShown = true;
   }
 
+  // "Up next" card with a countdown when an episode ends. Play now / Cancel; the countdown
+  // pauses while the tab is hidden so nobody comes back three episodes later.
+  upNext({ title, label, seconds = 5, onGo }) {
+    if (!this.upNextEl.hidden) return; // the embed can report "complete" more than once
+    const el = this.upNextEl;
+    el.innerHTML = '<div class="un-card"><span class="un-kicker">Up next</span><b class="un-title"></b>' +
+      '<span class="un-label"></span><div class="un-bar"><i></i></div>' +
+      '<div class="un-actions"><button class="btn sm primary un-go" type="button"></button>' +
+      '<button class="btn sm un-cancel" type="button">Cancel</button></div></div>';
+    el.querySelector('.un-title').textContent = title;
+    el.querySelector('.un-label').textContent = label || '';
+    const go = el.querySelector('.un-go');
+    const bar = el.querySelector('.un-bar i');
+    el.hidden = false;
+    let left = seconds * 10; // tenths of a second
+    const tick = () => {
+      if (document.visibilityState === 'hidden') return;
+      left--;
+      go.textContent = `▶ Play now (${Math.ceil(left / 10)})`;
+      bar.style.width = `${100 - (left / (seconds * 10)) * 100}%`;
+      if (left <= 0) { this.cancelUpNext(); onGo(); }
+    };
+    go.textContent = `▶ Play now (${seconds})`;
+    this.upNextTimer = setInterval(tick, 100);
+    go.onclick = () => { this.cancelUpNext(); onGo(); };
+    el.querySelector('.un-cancel').onclick = () => {
+      this.cancelUpNext();
+      this.nextBtn.hidden = !this.opts.hasNext?.();
+    };
+    go.focus({ preventScroll: true });
+  }
+
+  cancelUpNext() {
+    clearInterval(this.upNextTimer);
+    this.upNextTimer = null;
+    if (this.upNextEl) { this.upNextEl.hidden = true; this.upNextEl.innerHTML = ''; }
+  }
+
   // Playback failed: let the page try another server; show the message only if it can't.
   fail(message) {
     clearTimeout(this.frameTimer);
@@ -120,6 +160,7 @@ export class Player {
     this.fullscreenBtn.hidden = true;
     this.nextBtn.hidden = true;
     this.msg('');
+    this.cancelUpNext();
     clearTimeout(this.frameTimer);
     this.loadToken = (this.loadToken || 0) + 1;
     this.freshIframe();

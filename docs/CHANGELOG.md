@@ -1,3 +1,11 @@
+## Up next, per-show audio, automatic list status, shortcuts
+
+- "Up next" card when an episode ends: a 5-second countdown, then the next episode plays (Play now / Cancel). It follows Auto next and Skip filler, says how many filler episodes it skips, and pauses while the tab is hidden.
+- Sub or dub is remembered per show (One Piece in dub, Frieren in sub); the general setting is used for shows you haven't chosen for. Stored in two spare bits of the existing library row, so no extra storage.
+- List status follows what you watch: 2 minutes into a "Plan to watch" or "On hold" show it moves to Watching; finishing the last episode of a finished show marks it Completed. Each change shows a note with Undo.
+- Watch page keys: N next, P previous, W mark watched, F fullscreen (not while the embedded player has focus).
+- Sync fix: a change made while an upload was in flight (in the same second) could be overwritten by the upload's reply. Uploads now compare what was sent with what's there now.
+
 ## Continue on any device, safer sign-in, self-healing player
 
 - Switch devices mid-episode: the leaving device uploads right away (pause, episode end, leaving the page, switching apps), and the arriving one downloads before choosing the episode and whenever the tab comes back. A page left open on another device offers "Continue there". Sub/dub and the preferred server sync too, and change times use the server's clock so a phone with a wrong clock can't lose newer progress. Storage is unchanged: still one small row per show, overwritten in place.

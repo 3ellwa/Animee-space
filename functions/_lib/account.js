@@ -63,13 +63,14 @@ const int = (v, min, max) => {
   return Number.isFinite(n) ? Math.min(Math.max(n, min), max) : min;
 };
 
-// s packs two things: the list status in the low 3 bits (0 none, 1 watching, 2 planning,
-// 3 completed, 4 on hold, 5 dropped, 6 not interested) and a favourite flag (8).
-const FAVOURITE = 8;
+// s packs the list status in the low 3 bits (0 none, 1 watching, 2 planning, 3 completed,
+// 4 on hold, 5 dropped, 6 not interested), a favourite flag (8), and the show's own audio
+// choice: 16 = chosen, 32 = dub.
+const FLAGS = 8 | 16 | 32;
 export function cleanStatus(value) {
-  const s = int(value, 0, 15);
+  const s = int(value, 0, 63);
   const status = s & 7;
-  return (status <= 6 ? status : 0) | (s & FAVOURITE);
+  return (status <= 6 ? status : 0) | (s & FLAGS);
 }
 
 function cleanRow(r) {

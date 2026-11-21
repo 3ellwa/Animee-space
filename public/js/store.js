@@ -39,6 +39,10 @@ export const LIST_STATUSES = [
 const CODE = { watching: 1, planning: 2, completed: 3, paused: 4, dropped: 5, notinterested: 6 };
 const NAME = Object.fromEntries(Object.entries(CODE).map(([k, v]) => [v, k]));
 const FAVOURITE = 8;
+// Bits 16 and 32 remember this show's audio: 16 = a choice was made, 32 = dub (else sub).
+const LANG_SET = 16, LANG_DUB = 32;
+const KEEP = FAVOURITE | LANG_SET | LANG_DUB; // bits a list-status change leaves alone
+const ON_LIST = 7 | FAVOURITE;
 const statusOf = (e) => NAME[e.s & 7] || null;
 const isFav = (e) => !!(e.s & FAVOURITE);
 
@@ -63,23 +67,34 @@ function touch(e) {
 export function getList() {
   const out = {};
   for (const e of Object.values(lib)) {
-    if (e.s) out[e.a] = { id: e.a, ...(e.m || {}), status: statusOf(e), favourite: isFav(e), updated: e.u };
+    if (e.s & ON_LIST) out[e.a] = { id: e.a, ...(e.m || {}), status: statusOf(e), favourite: isFav(e), updated: e.u };
   }
   return out;
 }
 export const getEntry = (id) => {
   const e = lib[id];
-  return e?.s ? { status: statusOf(e), favourite: isFav(e) } : null;
+  return e && (e.s & ON_LIST) ? { status: statusOf(e), favourite: isFav(e) } : null;
 };
 export function setEntry(anime, status) {
   const e = entry(anime.id);
-  e.s = (CODE[status] || 0) | (e.s & FAVOURITE);
+  e.s = (CODE[status] || 0) | (e.s & KEEP);
   e.m = metaOf(anime);
+  touch(e);
+}
+// Sub or dub for one show (null when never chosen; the global setting applies then).
+export const showCategory = (id) => {
+  const s = lib[id]?.s || 0;
+  return s & LANG_SET ? (s & LANG_DUB ? 'dub' : 'sub') : null;
+};
+export function setShowCategory(id, category) {
+  if (showCategory(id) === category) return;
+  const e = entry(id);
+  e.s = (e.s & ~(LANG_SET | LANG_DUB)) | LANG_SET | (category === 'dub' ? LANG_DUB : 0);
   touch(e);
 }
 export function setFavourite(anime, on) {
   const e = entry(anime.id);
-  e.s = (e.s & 7) | (on ? FAVOURITE : 0);
+  e.s = (e.s & ~FAVOURITE) | (on ? FAVOURITE : 0);
   e.m = metaOf(anime);
   touch(e);
 }
@@ -138,14 +153,14 @@ export function clearHistory() { history = []; write('history', history); }
 // mode 'add' keeps shows already on the list; 'replace' clears list statuses first (progress is kept).
 export function importEntries(items, mode = 'add') {
   // Replacing clears list statuses but keeps favourites.
-  if (mode === 'replace') for (const e of Object.values(lib)) if (e.s & 7) { e.s &= FAVOURITE; touch(e); }
+  if (mode === 'replace') for (const e of Object.values(lib)) if (e.s & 7) { e.s &= KEEP; touch(e); }
   let added = 0;
   for (const item of items) {
     const id = String(item.id || '');
     if (!/^\d{1,12}$/.test(id) || !CODE[item.status]) continue;
     const e = entry(id);
     if (mode === 'add' && (e.s & 7)) continue;
-    e.s = CODE[item.status] | (e.s & FAVOURITE);
+    e.s = CODE[item.status] | (e.s & KEEP);
     if (item.title) e.m = { ...(e.m || {}), ...metaOf({ title: item.title, cover: item.cover || e.m?.cover || null, format: item.format || null, episodes: item.episodes ?? null, year: item.year ?? null }) };
     const upTo = Math.min(Number(item.watchedUpTo) || 0, 3000);
     if (upTo > 0) e.w = [...new Set([...e.w, ...Array.from({ length: upTo }, (_, i) => i + 1)])];
@@ -174,7 +189,7 @@ export function restoreBackup(data, mode = 'add') {
     // In "add" mode, a show already on the list (or with progress) keeps its newer local copy.
     if (current && mode === 'add' && (current.s || current.ep) && current.u >= (raw.u || 0)) continue;
     lib[id] = {
-      a: id, s: ((Number(raw.s) & 7) <= 6 ? Number(raw.s) & 15 : Number(raw.s) & FAVOURITE) || 0, ep: Number(raw.ep) || 0, t: Number(raw.t) || 0, d: Number(raw.d) || 0,
+      a: id, s: ((Number(raw.s) & 7) <= 6 ? Number(raw.s) & 63 : Number(raw.s) & KEEP) || 0, ep: Number(raw.ep) || 0, t: Number(raw.t) || 0, d: Number(raw.d) || 0,
       w: Array.isArray(raw.w) ? raw.w.filter((n) => Number.isInteger(n) && n > 0 && n <= 8000) : [],
       u: now(), m: raw.m && typeof raw.m === 'object' ? metaOf(raw.m) : null,
     };
@@ -299,12 +314,16 @@ export const sync = {
     this.busy = true;
     try {
       const rows = ids.map((id) => (lib[id] ? toRow(lib[id]) : { a: id, s: 0, ep: 0, t: 0, d: 0, w: null, u: now() }));
-      const sentU = new Map(rows.map((r) => [r.a, lib[r.a]?.u]));
+      // What was sent, so a change made while the request is in flight (even within the same
+      // second) is neither overwritten by the reply nor dropped from the next upload.
+      const stateOf = (id) => (lib[id] ? JSON.stringify(toRow(lib[id])) : 'gone');
+      const sent = new Map(rows.map((r) => [r.a, stateOf(r.a)]));
       const res = await post('/me/sync', { rows, ...(sendPrefs ? { prefs: prefsBits() } : {}) }, { keepalive });
       // only clear what didn't change again while the request was in flight
-      ids.forEach((id) => { if (lib[id]?.u === sentU.get(id)) dirty.delete(id); });
+      const changed = new Set(ids.filter((id) => stateOf(id) !== sent.get(id)));
+      ids.forEach((id) => { if (!changed.has(id)) dirty.delete(id); });
       learnClock(res.now);
-      res.rows.forEach(adopt);
+      res.rows.forEach((row) => { if (!changed.has(String(row.a))) adopt(row); });
       if (sendPrefs) write('settingsDirty', false);
       saveLib();
       this.lastSync = Date.now();
