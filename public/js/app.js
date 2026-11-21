@@ -324,7 +324,8 @@ async function viewHome(alive) {
 // For shows where the last opened episode is finished, check whether the next one is out.
 function checkNewEpisodes(cont, alive) {
   for (const p of cont) {
-    if (!store.watchedSet(p.animeId).has(p.ep)) continue;
+    // Only when this episode is (nearly) finished: it gets a tick as soon as it starts playing.
+    if (!p.duration || p.time / p.duration < 0.85) continue;
     const next = p.ep + 1;
     api(`/anime/${p.animeId}/available?ep=${next}`).then((d) => {
       if (!alive() || !(d.sub || d.dub)) return;
@@ -1129,7 +1130,17 @@ async function viewWatch(id, query, alive) {
     // MegaPlay resumed at the saved time: say so, with a way back to the beginning.
     onResumed: (at) => showNote(`Picked up where you stopped, at <b>${clock(at)}</b>. <button class="btn sm" type="button">Start over</button>`, () => player.seekTo(0)),
     onFail: (message) => tryNextServer(message),
-    onStarted: () => { if (server) store.setGoodServer(a.id, server.category, server.id); },
+    onStarted: () => {
+      if (server) store.setGoodServer(a.id, server.category, server.id);
+      // An episode counts as watched as soon as it starts playing (it gets its tick in the list,
+      // Continue watching and New episodes move on), like tapping "Mark watched".
+      if (!watched.has(current.number)) {
+        store.markWatched(a.id, current.number);
+        watched.add(current.number);
+        showSeen();
+        renderEpisodes();
+      }
+    },
     onEnded: () => {
       store.markWatched(a.id, current.number);
       watched.add(current.number);
