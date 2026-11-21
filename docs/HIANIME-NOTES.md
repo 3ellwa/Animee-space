@@ -6,8 +6,9 @@ TryEmbed), so their player tricks apply directly. Everything here is in our own 
 code; nothing of theirs is copied into animee.
 
 **Scope note.** Their robots.txt blocks AI crawlers (including Anthropic's) and sets
-`ai-train=no, use=reference`. So this study stopped at the few pages already open and the three
-scripts those pages load, used as reference only. No site-wide crawl.
+`ai-train=no, use=reference`. So this was a reference look, not a crawl: the three scripts their
+pages load, plus one page of each main type (home, show, watch, browse, schedule, My Anime)
+viewed in a normal browser.
 
 ## Already done in animee
 
@@ -45,11 +46,18 @@ scripts those pages load, used as reference only. No site-wide crawl.
 17. **Clear all watch history and watched ticks**, and **delete your account** (privacy).
 18. **"Remind me when it starts"** for shows that haven't aired yet (follow before the premiere).
 
+**Show, browse and schedule pages**
+19. **Show page buttons:** "Start with episode 1", **"Newest: episode N"** and "All episodes" side by side.
+20. **Sub N / Dub N counts** on show pages and on every poster.
+21. **Links out to MyAnimeList and AniList** on show pages.
+22. **Browse:** a title count ("7,973 titles"), quick type chips (All, TV, Movies…) with the full filters behind a "Filters" button, and a **sub/dub language filter**.
+23. **Schedule:** a 🔔 on every row to follow that show, and the episode number on each row.
+
 **Site**
-19. **"What's new" popup:** a dated list of new features, shown once per session with "Got it".
-20. **Top 10 on genre pages.**
-21. **Notification troubleshooting text** for private/incognito windows (Firefox, Chrome) and iPhone.
-22. **Broken artwork fallbacks:** missing backdrop → poster → placeholder.
+24. **"What's new" popup:** a dated list of new features, shown once per session with "Got it".
+25. **Top 10 on genre pages.**
+26. **Notification troubleshooting text** for private/incognito windows (Firefox, Chrome) and iPhone.
+27. **Broken artwork fallbacks:** missing backdrop → poster → placeholder.
 
 ## Seen but not for us
 
