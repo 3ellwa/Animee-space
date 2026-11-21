@@ -1,4 +1,4 @@
-// "New for you": airing shows on your Watching list whose next episode is out.
+// Notifications: new episodes of airing shows you follow (🔔) or have on your Watching list.
 // Worked out in the browser from your list and watched episodes; the server is only asked
 // whether an episode plays (an edge-cached check), so nothing new is stored on Cloudflare.
 
@@ -42,7 +42,12 @@ export function refreshInbox({ force = false } = {}) {
   if (!force && Date.now() - inboxCheckedAt() < STALE_MS) return Promise.resolve(inboxItems());
   if (running) return running;
   running = (async () => {
-    const watching = Object.values(store.getList()).filter((e) => e.status === 'watching').slice(0, MAX_SHOWS);
+    const followed = new Set(store.followedIds());
+    const libraryRows = store.libraryRows();
+    const byId = Object.fromEntries(libraryRows.map((r) => [r.id, r]));
+    // Followed shows first, then the rest of Watching.
+    const ids = [...new Set([...followed, ...libraryRows.filter((r) => r.status === 'watching').map((r) => r.id)])].slice(0, MAX_SHOWS);
+    const watching = ids.map((id) => ({ id, air: byId[id]?.air }));
     // Airing status isn't always known locally (older entries, other devices): ask in batches of 6.
     const unknown = watching.filter((e) => !e.air).map((e) => e.id);
     for (let i = 0; i < unknown.length; i += 6) {
@@ -51,19 +56,32 @@ export function refreshInbox({ force = false } = {}) {
         results.forEach((a) => store.rememberMeta(a));
       } catch { /* try again next time */ }
     }
-    const list = store.getList();
-    const airing = watching.map((e) => list[e.id]).filter((e) => e?.air === 'RELEASING');
+    const rows = Object.fromEntries(store.libraryRows().map((r) => [r.id, r]));
+    const airing = ids.map((id) => rows[id]).filter((e) => e?.air === 'RELEASING');
     const items = [];
-    const preferred = store.getSettings().category;
+    const alertsFor = store.getSettings().alertsFor || 'both';
     await eachLimited(airing, 4, async (e) => {
       const watched = [...store.watchedSet(e.id)];
-      if (!watched.length) return; // not started yet, so nothing is "new"
-      const next = Math.max(...watched) + 1;
-      if (e.episodes && next > e.episodes) return;
+      let baseline = store.followBaseline(e.id);
+      if (!watched.length && !baseline) {
+        // Followed but never watched, and no baseline on this device (e.g. followed on another
+        // one): start from what's out now, so only episodes after today count as new.
+        if (!followed.has(e.id)) return;
+        try {
+          const a = await api(`/anime/${e.id}`);
+          baseline = a.availableEpisodes || 0;
+          store.setFollowBaseline(e.id, baseline);
+        } catch { return; }
+        return;
+      }
+      // Next episode: after the last one watched (or, for a followed show not started yet, after
+      // what was out when it was followed), and after one you dismissed, so next week's shows up.
+      const dismissedEp = Number((read(DISMISSED, []).find((k) => k.startsWith(`${e.id}:`)) || ':0').split(':')[1]) || 0;
+      const next = Math.max(watched.length ? Math.max(...watched) : baseline, dismissedEp) + 1;
       try {
         const d = await api(`/anime/${e.id}/available?ep=${next}`);
-        const cat = store.showCategory(e.id) || preferred;
-        if (d[cat] || d.sub || d.dub) items.push({ id: e.id, ep: next, title: e.title, cover: e.cover, cat: d[cat] ? cat : d.sub ? 'sub' : 'dub' });
+        const ok = alertsFor === 'sub' ? d.sub : alertsFor === 'dub' ? d.dub : d.sub || d.dub;
+        if (ok) items.push({ id: e.id, ep: next, title: e.title, cover: e.cover, cat: alertsFor === 'dub' || (!d.sub && d.dub) ? 'dub' : 'sub', followed: followed.has(e.id) });
       } catch { /* skip this one */ }
     });
     write(KEY, { checked: Date.now(), items });

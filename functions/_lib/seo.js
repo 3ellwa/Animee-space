@@ -38,7 +38,7 @@ const STATIC = {
   pick: ['Help me pick an anime', 'Answer a few questions and get an anime to watch tonight.', 'monthly', '0.5'],
 };
 // Personal pages: useful for people, nothing for search results.
-const PRIVATE = new Set(['watchlist', 'settings', 'account', 'random', 'new', 'stats']);
+const PRIVATE = new Set(['watchlist', 'settings', 'account', 'random', 'new', 'stats', 'me', 'requests', 'admin']);
 const SHORTCUTS = new Set(['tv', 'movies', 'ova', 'ona', 'specials', 'airing', 'upcoming']);
 
 const WEBSITE_LD = {
@@ -183,6 +183,11 @@ export function robots() {
     'Disallow: /settings',
     'Disallow: /account',
     'Disallow: /random',
+    'Disallow: /me',
+    'Disallow: /new',
+    'Disallow: /stats',
+    'Disallow: /requests',
+    'Disallow: /admin',
     '',
     `Sitemap: ${ORIGIN}/sitemap.xml`,
     '',

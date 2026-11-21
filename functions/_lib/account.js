@@ -66,10 +66,10 @@ const int = (v, min, max) => {
 
 // s packs the list status in the low 3 bits (0 none, 1 watching, 2 planning, 3 completed,
 // 4 on hold, 5 dropped, 6 not interested), a favourite flag (8), and the show's own audio
-// choice: 16 = chosen, 32 = dub.
-const FLAGS = 8 | 16 | 32;
+// choice: 16 = chosen, 32 = dub, and 64 = following (new-episode alerts).
+const FLAGS = 8 | 16 | 32 | 64;
 export function cleanStatus(value) {
-  const s = int(value, 0, 63);
+  const s = int(value, 0, 127);
   const status = s & 7;
   return (status <= 6 ? status : 0) | (s & FLAGS);
 }

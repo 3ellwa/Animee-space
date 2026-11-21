@@ -72,6 +72,24 @@ Pages use real paths (`/anime/:id/:slug`, `/watch/:id?ep=N`, `/top/:list`). `wor
 
 To index faster on Bing and Yandex, submit URLs through IndexNow using the key file in `public/` (a `<key>.txt` file whose content is the key). Google needs the site added in Google Search Console with the sitemap `https://animee.space/sitemap.xml`.
 
+## One-time setup for pop-ups and the admin page
+
+Two optional features need Worker secrets. Run these once from this folder (after `npx wrangler login`):
+
+```bash
+node scripts/setup-push.mjs
+```
+
+Makes the Web Push key pair (VAPID) and stores it as the `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` secrets, so people can turn on new-episode pop-ups in Settings. The private key is never printed. Without it, Settings says pop-ups aren't switched on yet.
+
+```bash
+node scripts/set-admin-key.mjs
+```
+
+Makes a random key, stores it as `ADMIN_KEY`, and prints it once. Use it at `/admin` to answer requests and see playback reports.
+
+For local development, put the same names in `.dev.vars` (git-ignored). `wrangler dev --test-scheduled` lets you run the new-episode check with `curl "http://localhost:8787/__scheduled"`.
+
 ## Local development
 
 ```bash

@@ -27,3 +27,13 @@ simple = { limit = 3, period = 60 }
 name = "REPORT_LIMITER"
 namespace_id = "41003"
 simple = { limit = 20, period = 60 }
+
+[[ratelimits]]
+name = "REQUEST_LIMITER"
+namespace_id = "41004"
+simple = { limit = 3, period = 60 }
+
+# New-episode pop-ups (functions/_lib/push.js): check followed shows every 10 minutes.
+# Needs the VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY secrets: run `node scripts/setup-push.mjs` once.
+[triggers]
+crons = ["*/10 * * * *"]

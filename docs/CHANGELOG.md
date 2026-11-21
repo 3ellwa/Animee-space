@@ -1,3 +1,13 @@
+## My anime hub, follow + pop-ups, requests
+
+- **My anime** (`/me`, nav "My Anime" with a new-episode badge): one hub with tabs for Continue, My list, Favourites, History, Notifications, Requests, Stats, Settings and Account, plus a "Five things to know" panel that can be hidden. Settings left the top nav; it lives in the hub.
+- **My list filters**: genre, year and airing status next to type and sort. Missing details for older entries are fetched in the background, 6 at a time.
+- **🔔 Follow** on airing and upcoming shows (show page and watch page). Followed shows feed Notifications; synced as one more spare bit of the library row. Settings → Episode alerts for: sub and dub, sub only, dub only.
+- **Pop-ups (Web Push)**: Settings → Pop-ups on this device (turn on/off, send a test). A scheduled Worker run every 10 minutes checks a few followed shows (one small request each) and wakes followers' devices. Pushes carry no data; the service worker asks the server what's new. Small tables (`push_subs`, `push_follows`, `push_shows`), created automatically; dead devices are removed. Needs `node scripts/setup-push.mjs` once.
+- **Requests** (`/requests`): ask for an anime, share an idea or report a problem; answers show up in the same tab (by a per-browser id, and across devices when signed in). Bounded `requests` table (5,000 rows, answered ones kept 90 days), 3 per minute per address.
+- **Admin** (`/admin`, hidden): answer or delete requests and see 7 days of playback reports. Locked with the `ADMIN_KEY` secret (`node scripts/set-admin-key.mjs`).
+- Notifications: the next episode comes after the last one watched (or, for followed shows not started yet, after what was out when followed), and dismissing moves on to the next one.
+
 ## New episodes inbox, airing calendar, stats, clearer loading
 
 - **New for you** (`/new`, nav badge): airing shows on your Watching list whose next episode after the last one you watched is out. Worked out in the browser from your list; the server is only asked the existing edge-cached "does episode N play" question. Checked at most every 30 minutes in the background, with Dismiss and Check now.

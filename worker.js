@@ -1,6 +1,7 @@
 import { onRequest } from "./functions/api/[[path]].js";
 import { ASSETS } from "./worker-assets.js";
 import * as seo from "./functions/_lib/seo.js";
+import { runPushCheck } from "./functions/_lib/push.js";
 
 const TYPES = {".html":"text/html; charset=utf-8",".css":"text/css; charset=utf-8",".js":"text/javascript; charset=utf-8",".svg":"image/svg+xml",".txt":"text/plain; charset=utf-8",".png":"image/png",".webmanifest":"application/manifest+json",".woff2":"font/woff2",".xml":"application/xml; charset=utf-8"};
 // Images and fonts are stored in worker-assets.js as { b64 } (see scripts/build-assets.mjs).
@@ -89,5 +90,10 @@ export default {
     if (key !== "/index.html" && key in ASSETS) return respond(file(key));
     if (/\.[a-z0-9]+$/i.test(key) && key !== "/index.html") return new Response("Not found", { status: 404, headers: { "X-Robots-Tag": "noindex" } });
     return respond(await page(request, url, ctx));
+  },
+  // Every 10 minutes (wrangler.toml [triggers]): look for new episodes of followed shows and
+  // wake the devices that asked for pop-ups.
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(runPushCheck(env).catch((err) => console.error("push check failed", err)));
   },
 };

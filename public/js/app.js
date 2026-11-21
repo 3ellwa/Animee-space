@@ -3,6 +3,7 @@ import * as store from './store.js';
 import { Player } from './player.js';
 import './fx.js';
 import * as inbox from './inbox.js';
+import * as push from './push.js';
 
 const app = document.getElementById('app');
 let cleanups = [];
@@ -171,7 +172,8 @@ async function route() {
   const token = ++navToken;
   const alive = () => token === navToken;
   const { parts, query } = parseHash();
-  setActiveNav(parts[0] || 'home');
+  const HUB_PAGES = ['me', 'watchlist', 'new', 'requests', 'stats', 'settings', 'account'];
+  setActiveNav(HUB_PAGES.includes(parts[0]) ? 'me' : parts[0] || 'home');
   document.title = 'animee space';
   window.dispatchEvent(new Event('animee:navigate'));
   window.scrollTo(0, 0);
@@ -193,6 +195,9 @@ async function route() {
       case 'watchlist': return viewWatchlist(query);
       case 'schedule': return await viewSchedule(query, alive);
       case 'new': return await viewNew(alive);
+      case 'me': return viewMe();
+      case 'requests': return await viewRequests(alive);
+      case 'admin': return viewAdmin();
       case 'stats': return viewStats();
       case 'account': return viewAccount(query);
       default: return viewNotFound();
@@ -605,6 +610,39 @@ function bindListSelect(a) {
   };
 }
 
+// 🔔 Follow: airing and upcoming shows only.
+const canFollow = (a) => a.status === 'RELEASING' || a.status === 'NOT_YET_RELEASED';
+function followButton(a, small = false) {
+  if (!canFollow(a)) return '';
+  const on = store.isFollowing(a.id);
+  return `<button class="btn${small ? ' sm' : ''}${on ? ' active' : ''}" id="follow-btn" type="button" aria-pressed="${on}"
+    title="Get new episodes in Notifications${'Notification' in window ? ' and as pop-ups' : ''}">${on ? '🔔 Following' : '🔕 Follow'}</button>`;
+}
+function bindFollow(a, small = false) {
+  const b = document.getElementById('follow-btn');
+  if (!b) return;
+  b.onclick = () => {
+    const on = !store.isFollowing(a.id);
+    store.setFollow(a, on, a.availableEpisodes || 0);
+    b.outerHTML = followButton(a, small);
+    bindFollow(a, small);
+    if (on) toastNote(push.supported() && push.permission() !== 'granted'
+      ? 'Following. New episodes show up in <a href="/new">Notifications</a>. <a href="/settings#alerts">Turn on pop-ups</a> to get them even when animee is closed.'
+      : 'Following. New episodes show up in <a href="/new">Notifications</a>.');
+  };
+}
+// A small message at the bottom of the screen that fades after a few seconds.
+function toastNote(html) {
+  document.querySelector('.toast')?.remove();
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.setAttribute('role', 'status');
+  el.innerHTML = html;
+  document.body.appendChild(el);
+  setTimeout(() => el.classList.add('out'), 6000);
+  setTimeout(() => el.remove(), 6600);
+}
+
 // Favourite and Not interested buttons on the detail page.
 function listButtons(a) {
   const entry = store.getEntry(a.id);
@@ -672,6 +710,7 @@ async function viewAnime(id, alive, query = new URLSearchParams()) {
               ? `<a class="btn primary" href="/watch/${a.id}${prog ? `?ep=${prog.ep}` : ''}">▶ ${prog ? `Continue EP ${prog.ep}` : 'Watch now'}</a>`
               : '<span class="btn" aria-disabled="true">Not released yet</span>'}
             ${listSelect(a)}
+            ${followButton(a)}
             ${listButtons(a)}
             <button class="btn" id="share" type="button">Share</button>
             ${query.get('from') === 'random' ? '<a class="btn" href="/random">🎲 Another random</a>' : ''}
@@ -709,6 +748,7 @@ async function viewAnime(id, alive, query = new URLSearchParams()) {
     </div>`;
 
   bindListSelect(a);
+  bindFollow(a);
   bindListButtons(a);
   bindShare(a);
   loadExtras(a.id, alive, { chars: 'extras-chars', recs: 'extras-recs' });
@@ -839,7 +879,7 @@ async function viewWatch(id, query, alive) {
                 <span class="chip">${STATUS[a.status] || ''}</span>
               </div>
               <div class="desc clamp">${esc(a.description || '')}</div>
-              <div style="margin-top:12px">${listSelect(a)}</div>
+              <div style="margin-top:12px;display:flex;flex-wrap:wrap;gap:8px;align-items:center">${listSelect(a)}${followButton(a, true)}</div>
             </div>
           </div>
         </section>
@@ -863,6 +903,7 @@ async function viewWatch(id, query, alive) {
     </div>`;
 
   bindListSelect(a);
+  bindFollow(a, true);
   const $ = (sel) => document.getElementById(sel);
   const idx = () => episodes.indexOf(current);
   // Next episode for auto next: playable, and not filler or recap when "Skip filler" is on.
@@ -1175,7 +1216,7 @@ async function viewNew(alive) {
     if (!alive()) return;
     const when = inbox.inboxCheckedAt();
     app.innerHTML = `
-      <div class="section-head" style="margin-top:22px"><h1 class="page-title" style="margin:0">new for you</h1>
+      <div class="section-head"><h2 class="hub-sub" style="margin:0">notifications</h2>
         <button class="btn sm" id="inbox-refresh" type="button"${checking ? ' disabled' : ''}>${checking ? 'Checking…' : '↻ Check now'}</button></div>
       <p class="card-meta">New episodes of airing shows on your <a href="/watchlist?tab=watching">Watching</a> list, after the last one you watched.
         ${when ? `Checked ${new Date(when).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}.` : ''}</p>
@@ -1191,6 +1232,7 @@ async function viewNew(alive) {
         </div>`).join('')}</div>`
         : `<div class="empty"><h2>${checking ? 'Checking your shows…' : 'All caught up ^^.'}</h2>
           <p>${checking ? '' : 'When an airing show on your Watching list gets a new episode, it shows up here.'}</p></div>`}`;
+    addHub('alerts');
     document.getElementById('inbox-refresh').onclick = async () => {
       draw(inbox.inboxItems(), true);
       draw(await inbox.refreshInbox({ force: true }), false);
@@ -1204,6 +1246,225 @@ async function viewNew(alive) {
   const stale = Date.now() - inbox.inboxCheckedAt() > 60 * 1000;
   draw(inbox.inboxItems(), stale);
   if (stale) draw(await inbox.refreshInbox({ force: true }), false);
+}
+
+// ---------- my anime hub ----------
+// One place for everything personal, like a dashboard: each tab is its own page, sharing this header.
+const HUB_TABS = [
+  ['me', '/me', 'Continue'],
+  ['list', '/watchlist', 'My list'],
+  ['favourites', '/watchlist?tab=favourites', '♥ Favourites'],
+  ['history', '/watchlist?tab=history', 'History'],
+  ['alerts', '/new', 'Notifications'],
+  ['requests', '/requests', 'Requests'],
+  ['stats', '/stats', 'Stats'],
+  ['settings', '/settings', 'Settings'],
+  ['account', '/account', 'Account'],
+];
+const HOW_KEY = 'animee-space:how-hidden';
+function hubHead(active) {
+  let hidden = false;
+  try { hidden = localStorage.getItem(HOW_KEY) === '1'; } catch { /* ignore */ }
+  const alerts = inbox.inboxItems().length;
+  return `<div class="hub-head">
+    <div class="hub-title"><div><h1 class="page-title" style="margin:0">my anime</h1>
+      <p class="card-meta" style="margin:4px 0 0">Your list, your progress and your alerts. Saved in this browser, no sign-up; sign in to sync devices.</p></div>
+      <button class="btn sm" type="button" id="how-toggle">${hidden ? 'ⓘ How it works' : 'Hide tips'}</button></div>
+    <div class="how card-box" id="how"${hidden ? ' hidden' : ''}>
+      <b>Five things to know</b>
+      <ol>
+        <li><b>Save</b> any show with <i>Add to list</i> on its page. Your list starts right then.</li>
+        <li><b>Watch</b> as usual. Episodes you finish get a tick, and the show waits for you under <a href="/me">Continue</a>, at the exact second.</li>
+        <li><b>Follow</b> an airing show with the 🔔 bell, and every new episode lands in <a href="/new">Notifications</a> (and as a pop-up, if you allow it in <a href="/settings#alerts">Settings</a>).</li>
+        <li><b>Carry it over</b> with a free <a href="/account">account</a>: sign in on another phone or computer and the same list, progress and settings are there.</li>
+        <li><b>Bring an old list</b> from MyAnimeList or AniList in <a href="/settings#import">Settings</a>.</li>
+      </ol>
+    </div>
+    <nav class="tabs hub-tabs" aria-label="My anime">${HUB_TABS.map(([k, href, label]) =>
+      `<a class="tab${k === active ? ' on' : ''}" href="${href}">${label}${k === 'alerts' && alerts ? ` <small class="hub-dot">${alerts}</small>` : ''}</a>`).join('')}</nav>
+  </div>`;
+}
+// Puts the hub header at the top of the current page (views call this after drawing).
+function addHub(active) {
+  app.querySelector('.hub-head')?.remove();
+  app.insertAdjacentHTML('afterbegin', hubHead(active));
+  document.getElementById('how-toggle').onclick = () => {
+    const box = document.getElementById('how');
+    box.hidden = !box.hidden;
+    try { localStorage.setItem(HOW_KEY, box.hidden ? '1' : '0'); } catch { /* ignore */ }
+    document.getElementById('how-toggle').textContent = box.hidden ? 'ⓘ How it works' : 'Hide tips';
+  };
+}
+
+// Continue tab: everything in progress, newest first, with remove buttons.
+function viewMe() {
+  document.title = 'My anime · animee space';
+  const cont = store.continueList().filter((p) => p.title);
+  app.innerHTML = `<h2 class="hub-sub">continue watching</h2>
+    ${cont.length ? `<div class="cont-grid">${cont.map(contCard).join('')}</div>`
+      : '<div class="empty"><p>Nothing here yet. Play any episode and it waits for you here, at the exact episode and second.</p><a class="btn" href="/">Find something to watch</a></div>'}`;
+  addHub('me');
+  app.querySelectorAll('.cont .x').forEach((b) => b.onclick = (e) => {
+    e.preventDefault();
+    store.removeProgress(b.dataset.id);
+    b.closest('.cont').remove();
+  });
+  checkNewEpisodes(cont, () => parseHash().parts[0] === 'me');
+}
+
+// ---------- requests ----------
+// A random id made once per browser, so answers come back here without an account.
+function requesterId() {
+  const key = 'animee-space:who';
+  try {
+    let id = localStorage.getItem(key);
+    if (!id) {
+      const abc = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+      id = [...crypto.getRandomValues(new Uint8Array(18))].map((b) => abc[b & 63]).join('');
+      localStorage.setItem(key, id);
+    }
+    return id;
+  } catch { return null; }
+}
+const KIND_LABEL = { anime: 'An anime you want added', idea: 'An idea for the site', broken: 'Something is broken', other: 'Something else' };
+const fmtWhen = (sec) => new Date(sec * 1000).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+async function viewRequests(alive) {
+  document.title = 'Requests · animee space';
+  const who = requesterId();
+  app.innerHTML = `<h2 class="hub-sub">ask us something</h2>
+    <p class="card-meta">A missing anime, an idea or a problem: we read every message, and the answer shows up right here.</p>
+    <form class="req-form card-box" id="req-form">
+      <fieldset class="chips"><legend class="card-meta">It is about</legend>
+        ${Object.entries(KIND_LABEL).map(([k, l], i) => `<label class="chip check"><input type="radio" name="kind" value="${k}"${i === 0 ? ' checked' : ''}> ${l}</label>`).join('')}
+      </fieldset>
+      <label class="field" id="req-anime-field"><span>Anime name</span><input class="input" name="anime" maxlength="120" autocomplete="off"></label>
+      <label class="field"><span>Message</span><textarea class="input" name="message" rows="4" maxlength="1000" placeholder="Anything that helps: season, episode, what went wrong…"></textarea></label>
+      <div class="actions"><button class="btn primary" type="submit">Send</button><span class="card-meta" id="req-status" role="status"></span></div>
+    </form>
+    <h2 class="hub-sub" style="margin-top:26px">your messages</h2>
+    <div id="req-list">${loader()}</div>`;
+  addHub('requests');
+  const form = document.getElementById('req-form');
+  const animeField = document.getElementById('req-anime-field');
+  const syncKind = () => { animeField.hidden = form.elements.kind.value !== 'anime'; };
+  form.querySelectorAll('input[name=kind]').forEach((r) => r.onchange = syncKind);
+  syncKind();
+
+  const drawList = async () => {
+    const box = document.getElementById('req-list');
+    if (!box) return;
+    if (!who) { box.innerHTML = '<p class="card-meta">Your browser is blocking storage, so answers can\'t be shown here.</p>'; return; }
+    try {
+      const r = await fetch('/api/requests?who=' + encodeURIComponent(who), { credentials: 'same-origin' });
+      const { requests = [], error } = await r.json();
+      if (!alive()) return;
+      if (error) throw new Error(error);
+      box.innerHTML = requests.length ? requests.map((q) => `
+        <div class="req-item card-box">
+          <div class="card-meta">${esc(KIND_LABEL[q.kind] || q.kind)} · ${fmtWhen(q.created)}${q.anime ? ` · <b>${esc(q.anime)}</b>` : ''}</div>
+          <p>${esc(q.message)}</p>
+          ${q.answer ? `<div class="req-answer"><span class="card-meta">Our answer · ${fmtWhen(q.answered)}</span><p>${esc(q.answer)}</p></div>`
+            : '<span class="card-meta">Waiting for an answer.</span>'}
+        </div>`).join('') : '<p class="card-meta">Nothing sent yet.</p>';
+    } catch (err) {
+      box.innerHTML = `<p class="card-meta">Couldn't load your messages: ${esc(err.message)}</p>`;
+    }
+  };
+  drawList();
+
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    const status = document.getElementById('req-status');
+    const btn = form.querySelector('button[type=submit]');
+    btn.disabled = true;
+    status.textContent = 'Sending…';
+    try {
+      const r = await fetch('/api/requests', {
+        method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ who, kind: form.elements.kind.value, anime: form.elements.anime.value, message: form.elements.message.value }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || 'Sending failed');
+      form.reset();
+      syncKind();
+      status.textContent = 'Sent, thanks! The answer will show up below.';
+      drawList();
+    } catch (err) {
+      status.textContent = err.message;
+    } finally {
+      btn.disabled = false;
+    }
+  };
+}
+
+// ---------- admin (hidden; needs the ADMIN_KEY secret) ----------
+function viewAdmin() {
+  document.title = 'Admin · animee space';
+  const KEY = 'animee-space:admin-key';
+  const getKey = () => { try { return sessionStorage.getItem(KEY) || ''; } catch { return ''; } };
+  const forget = () => { try { sessionStorage.removeItem(KEY); } catch { /* ignore */ } };
+  const call = async (path, body) => {
+    const r = await fetch('/api/admin/' + path, {
+      method: body ? 'POST' : 'GET',
+      headers: { 'X-Admin-Key': getKey(), ...(body ? { 'Content-Type': 'application/json' } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw Object.assign(new Error(d.error || `Failed (${r.status})`), { status: r.status });
+    return d;
+  };
+  const askKey = (message = '') => {
+    app.innerHTML = `<div class="auth-box"><h1 class="page-title" style="margin-top:0">admin</h1>
+      <form id="admin-login"><label class="field"><span>Admin key</span><input class="input" type="password" name="key" autocomplete="off" required></label>
+      <div class="actions"><button class="btn primary">Open</button></div><p class="card-meta">${esc(message)}</p></form></div>`;
+    document.getElementById('admin-login').onsubmit = (e) => {
+      e.preventDefault();
+      try { sessionStorage.setItem(KEY, e.target.elements.key.value); } catch { /* ignore */ }
+      load();
+    };
+  };
+  const REASONS = ['auto switch', 'won\'t play', 'wrong episode', 'subtitles', 'audio', 'other'];
+  const load = async () => {
+    if (!getKey()) return askKey();
+    app.innerHTML = loader();
+    let data;
+    try { data = await call('requests'); } catch (err) {
+      if (err.status === 401 || err.status === 429) forget();
+      return askKey(err.message);
+    }
+    const open = data.requests.filter((r) => !r.answer).length;
+    app.innerHTML = `<h1 class="page-title">admin</h1>
+      <p class="card-meta">${open} open request${open === 1 ? '' : 's'} · ${data.requests.length} shown. <button class="link-btn" id="admin-out" type="button">Forget key</button></p>
+      <section class="section"><div class="section-head"><h2>playback reports (7 days)</h2></div>
+        ${data.reports.length ? `<table class="admin-table"><tr><th>Server</th><th>Audio</th><th>Reason</th><th>Count</th></tr>
+          ${data.reports.map((r) => `<tr><td>${esc(r.provider)}</td><td>${r.cat ? 'dub' : 'sub'}</td><td>${REASONS[r.reason] || r.reason}</td><td>${r.n}</td></tr>`).join('')}</table>`
+          : '<p class="card-meta">No reports in the last 7 days.</p>'}</section>
+      <section class="section"><div class="section-head"><h2>requests</h2></div>
+        ${data.requests.map((q) => `<div class="req-item card-box" data-id="${q.id}">
+          <div class="card-meta">#${q.id} · ${esc(KIND_LABEL[q.kind] || q.kind)} · ${fmtWhen(q.created)}${q.anime ? ` · <b>${esc(q.anime)}</b>` : ''}</div>
+          <p>${esc(q.message)}</p>
+          <textarea class="input" rows="2" maxlength="2000" placeholder="Your answer (shown to them)">${esc(q.answer || '')}</textarea>
+          <div class="actions"><button class="btn sm primary" data-act="answer" type="button">${q.answer ? 'Update answer' : 'Send answer'}</button>
+            <button class="btn sm" data-act="delete" type="button">Delete</button><span class="card-meta" data-out></span></div>
+        </div>`).join('') || '<p class="card-meta">No requests yet.</p>'}</section>`;
+    document.getElementById('admin-out').onclick = () => { forget(); askKey(); };
+    app.querySelectorAll('.req-item [data-act]').forEach((b) => b.onclick = async () => {
+      const item = b.closest('.req-item');
+      const id = Number(item.dataset.id);
+      const out = item.querySelector('[data-out]');
+      try {
+        if (b.dataset.act === 'delete') {
+          if (!confirm('Delete this request?')) return;
+          await call('delete', { id });
+          item.remove();
+        } else {
+          await call('answer', { id, answer: item.querySelector('textarea').value });
+          out.textContent = 'Saved ✓';
+        }
+      } catch (err) { out.textContent = err.message; }
+    });
+  };
+  load();
 }
 
 // ---------- stats ----------
@@ -1244,7 +1505,7 @@ function viewStats() {
   const summary = `My anime stats on animee: ${episodes} episodes watched (${fmtHours(minutes)}), ${count('completed')} shows completed${genres[0] ? `, favourite genre ${genres[0][0]}` : ''}.`;
 
   app.innerHTML = `
-    <h1 class="page-title">my stats</h1>
+    <h2 class="hub-sub">my stats</h2>
     ${!rows.length ? `<div class="empty"><h2>Nothing yet ^^.</h2><p>Watch something and your stats start here.</p><a class="btn primary" href="/">Find something to watch</a></div>` : `
     <div class="stats stat-grid">
       <div><b>${episodes}</b><span>episodes watched</span></div>
@@ -1265,6 +1526,7 @@ function viewStats() {
       <p class="card-meta">Longest streak: <b>${best} day${best === 1 ? '' : 's'}</b> in a row · ${thisYear} episodes opened in ${year}. Based on history in this browser.</p></section>` : ''}
     <div class="actions" style="margin-top:22px"><button class="btn" id="stats-copy" type="button">Copy a summary to share</button></div>`}`;
 
+  addHub('stats');
   const copy = document.getElementById('stats-copy');
   if (copy) copy.onclick = async () => {
     try { await navigator.clipboard.writeText(summary); copy.textContent = 'Copied ✓'; } catch { copy.textContent = summary; }
@@ -1298,7 +1560,7 @@ function viewWatchlist(query) {
   const inAll = (e) => e.status && e.status !== 'notinterested';
   const favCount = list.filter((e) => e.favourite).length;
   const opened = store.getHistory();
-  const tabs = `<p class="card-meta" style="margin:0 0 10px"><a href="/stats">📊 My stats</a> · <a href="/new">New episodes</a></p><div class="tabs">
+  const tabs = `<div class="tabs list-status-tabs">
       <a class="tab${tab === 'all' ? ' on' : ''}" href="/watchlist">All <small>${list.filter(inAll).length}</small></a>
       ${store.LIST_STATUSES.map(([k, l]) => `<a class="tab${tab === k ? ' on' : ''}" href="/watchlist?tab=${k}">${l} <small>${count(k)}</small></a>`).join('')}
       <a class="tab${tab === 'favourites' ? ' on' : ''}" href="/watchlist?tab=favourites">♥ Favourites <small>${favCount}</small></a>
@@ -1307,7 +1569,7 @@ function viewWatchlist(query) {
   const signInNote = !store.currentUser() ? '<p class="card-meta" style="text-align:center;margin-top:24px"><a href="/account" style="color:var(--accent)">Sign in</a> to sync your list across devices.</p>' : '';
 
   if (tab === 'history') {
-    app.innerHTML = `<h1 class="page-title">My watchlist</h1>${tabs}
+    app.innerHTML = `<h2 class="hub-sub">watch history</h2>
       <p class="card-meta">Every episode you opened in this browser, newest first. History stays on this device.</p>
       ${opened.length ? `<div class="sched">${opened.map((h) => `
         <a class="sched-row" href="/watch/${h.animeId}?ep=${h.ep}">
@@ -1319,11 +1581,15 @@ function viewWatchlist(query) {
         : '<div class="empty"><h2>No history yet</h2><p>Episodes you open show up here.</p></div>'}`;
     const clear = document.getElementById('clear-history');
     if (clear) clear.onclick = () => { if (confirm('Clear your watch history in this browser?')) { store.clearHistory(); route(); } };
+    addHub('history');
     return;
   }
 
   const term = (query.get('q') || '').trim().toLowerCase();
   const type = query.get('type') || '';
+  const genre = query.get('genre') || '';
+  const year = query.get('year') || '';
+  const air = query.get('air') || '';
   const sort = LIST_SORTS.some(([k]) => k === query.get('sort')) ? query.get('sort') : 'recent';
   const sorters = {
     recent: (x, y) => y.updated - x.updated,
@@ -1332,17 +1598,38 @@ function viewWatchlist(query) {
     year: (x, y) => (y.year || 0) - (x.year || 0),
   };
   const shown = list
-    .filter((e) => (tab === 'all' ? inAll(e) : tab === 'favourites' ? e.favourite : e.status === tab) && (!type || String(e.format || '').toLowerCase() === type) && (!term || String(e.title).toLowerCase().includes(term)))
+    .filter((e) => (tab === 'all' ? inAll(e) : tab === 'favourites' ? e.favourite : e.status === tab)
+      && (!type || String(e.format || '').toLowerCase() === type)
+      && (!genre || (e.genres || []).includes(genre))
+      && (!year || String(e.year || '') === year)
+      && (!air || e.air === air)
+      && (!term || String(e.title).toLowerCase().includes(term)))
     .sort(sorters[sort]);
   const types = [...new Set(list.map((e) => String(e.format || '').toLowerCase()).filter(Boolean))].sort();
+  const genreOpts = [...new Set(list.flatMap((e) => e.genres || []))].sort().map((g) => [g, g]);
+  const yearOpts = [...new Set(list.map((e) => e.year).filter(Boolean))].sort((x, y) => y - x).map((y) => [String(y), String(y)]);
+  const airOpts = [['RELEASING', 'Airing now'], ['FINISHED', 'Finished'], ['NOT_YET_RELEASED', 'Not aired yet']];
+  // Older entries have no genres or airing status saved: fill them in (6 at a time) and redraw once.
+  const needMeta = list.filter((e) => !e.genres || !e.air).map((e) => e.id).slice(0, 60);
+  if (needMeta.length && !viewWatchlist.filling) {
+    viewWatchlist.filling = true;
+    (async () => {
+      for (let i = 0; i < needMeta.length; i += 6) {
+        try { (await api('/batch?ids=' + needMeta.slice(i, i + 6).join(','))).results.forEach((a) => store.rememberMeta(a)); } catch { /* skip */ }
+      }
+      if (parseHash().parts[0] === 'watchlist' && !document.activeElement?.closest?.('#list-filters')) route();
+    })();
+  }
 
   app.innerHTML = `
-    <h1 class="page-title">My watchlist</h1>
-    ${tabs}
+    ${tab === 'favourites' ? '<h2 class="hub-sub">favourites</h2>' : tabs}
     <form class="filters list-filters" id="list-filters">
       <div class="filter-row"><input class="input q" type="search" name="q" placeholder="Search my list…" value="${esc(query.get('q') || '')}" aria-label="Search my list"></div>
       <div class="filter-grid">
         ${selectField('type', 'Type', types.map((t) => [t, FORMAT[t.toUpperCase()] || t]), type, 'Any type')}
+        ${selectField('genre', 'Genre', genreOpts, genre, 'Any genre')}
+        ${selectField('year', 'Year', yearOpts, year, 'Any year')}
+        ${selectField('air', 'Airing', airOpts, air, 'Any status')}
         ${selectField('sort', 'Sort by', LIST_SORTS, sort, 'Last changed first')}
       </div>
     </form>
@@ -1373,10 +1660,15 @@ function viewWatchlist(query) {
   let timer;
   form.elements.q.oninput = () => { clearTimeout(timer); timer = setTimeout(apply, 350); };
   if (term) { const box = form.elements.q; box.focus(); box.setSelectionRange(box.value.length, box.value.length); }
+  addHub(tab === 'favourites' ? 'favourites' : 'list');
 }
 
 // ---------- account ----------
 function viewAccount(query) {
+  viewAccountPage(query);
+  addHub('account');
+}
+function viewAccountPage(query) {
   document.title = 'Account · animee space';
   const user = store.currentUser();
 
@@ -1694,7 +1986,7 @@ function viewSettings(alive) {
   const user = store.currentUser();
   const radio = (name, value, label, current) => `<label class="chip check"><input type="radio" name="${name}" value="${value}"${current === value ? ' checked' : ''}> ${label}</label>`;
   const toggle = (name, label, on) => `<label class="setting-toggle"><input type="checkbox" name="${name}"${on ? ' checked' : ''}> ${label}</label>`;
-  app.innerHTML = `<h1 class="page-title">Settings</h1>
+  app.innerHTML = `<h2 class="hub-sub">settings</h2>
     <p class="card-meta">Saved in this browser.${user ? ` Signed in as <b>${esc(user.name)}</b>: your list and playback choices also sync to your account.` : ' <a href="/account" style="color:var(--accent)">Sign in</a> to sync your list across devices.'}</p>
     <form id="settings" class="settings">
       <section class="settings-group"><h2>Display</h2>
@@ -1710,7 +2002,18 @@ function viewSettings(alive) {
         ${toggle('skipFiller', 'Skip filler and recap episodes when playing the next one', !!s.skipFiller)}
         ${toggle('wide', 'Use the wide player', !!s.wide)}
       </section>
+      <section class="settings-group" id="alerts"><h2>Notifications</h2>
+        <div class="setting"><span>Episode alerts for</span><div class="chips">${radio('alertsFor', 'both', 'Sub and dub', s.alertsFor || 'both')}${radio('alertsFor', 'sub', 'Sub only', s.alertsFor)}${radio('alertsFor', 'dub', 'Dub only', s.alertsFor)}</div></div>
+        <p class="card-meta">New episodes of shows you follow with 🔔 (and of airing shows on your Watching list) show up in <a href="/new">Notifications</a>.</p>
+      </section>
     </form>
+
+    <section class="settings-group" id="push-group"><h2>Pop-ups on this device</h2>
+      <p class="card-meta">Get a pop-up when a show you follow gets a new episode, even when animee is closed.</p>
+      <p class="card-meta" id="push-status" role="status">Checking…</p>
+      <div class="actions"><button class="btn" id="push-toggle" type="button" hidden></button>
+        <button class="btn" id="push-test" type="button" hidden>Send a test pop-up</button></div>
+    </section>
 
     <section class="settings-group" id="install-group"><h2>Install the app</h2>
       <p class="card-meta">Add animee space to your phone or computer and open it like an app, full screen and one tap away. No app store needed.</p>
@@ -1718,7 +2021,7 @@ function viewSettings(alive) {
       <p class="card-meta" id="install-note"></p>
     </section>
 
-    <section class="settings-group"><h2>Bring your list</h2>
+    <section class="settings-group" id="import"><h2>Bring your list</h2>
       <p class="card-meta">Shows that aren't in the catalogue, or are adult-rated, are skipped. Your choice of “add” or “replace” only changes list statuses; watch progress is kept.</p>
       <form id="import-anilist" class="filter-row import-row">
         <input class="input" name="user" placeholder="AniList username" aria-label="AniList username" required pattern="[A-Za-z0-9_]{2,20}">
@@ -1758,7 +2061,44 @@ function viewSettings(alive) {
   form.onchange = (e) => {
     const el = e.target;
     store.setSetting(el.name, el.type === 'checkbox' ? el.checked : el.value);
+    if (el.name === 'alertsFor') { push.syncFollows(); inbox.refreshInbox({ force: true }).catch(() => {}); }
   };
+
+  // Pop-ups on this device.
+  const pushStatus = document.getElementById('push-status');
+  const pushToggle = document.getElementById('push-toggle');
+  const pushTest = document.getElementById('push-test');
+  const drawPush = async () => {
+    if (!push.supported()) { pushStatus.textContent = 'This browser can\'t show pop-ups.'; return; }
+    if (!(await push.serverKey())) { pushStatus.textContent = 'Pop-ups aren\'t switched on for animee yet.'; return; }
+    const on = await push.isOn();
+    const perm = push.permission();
+    const following = store.followedIds().length;
+    pushStatus.textContent = on
+      ? `On. You follow ${following} show${following === 1 ? '' : 's'}; each new episode pops up here.`
+      : perm === 'denied'
+        ? 'Your browser is blocking notifications for animee. Click the icon left of the address, set Notifications to Allow, then press Turn on.'
+        : push.needsInstall() ? 'On iPhone and iPad, add animee to your Home Screen first (Share → Add to Home Screen), then turn pop-ups on from there.'
+          : 'Off on this device.';
+    pushToggle.hidden = false;
+    pushToggle.textContent = on ? 'Turn off' : 'Turn on pop-ups';
+    pushTest.hidden = !on;
+  };
+  pushToggle.onclick = async () => {
+    pushToggle.disabled = true;
+    try {
+      if (await push.isOn()) await push.disable(); else await push.enable();
+      await drawPush();
+    } catch (err) { pushStatus.textContent = err.message; } finally { pushToggle.disabled = false; }
+  };
+  pushTest.onclick = async () => {
+    pushTest.disabled = true;
+    try {
+      const r = await push.test();
+      pushStatus.textContent = r.ok ? 'Test sent. It should pop up in a few seconds.' : 'The push service didn\'t accept it. Try turning pop-ups off and on.';
+    } catch (err) { pushStatus.textContent = err.message; } finally { pushTest.disabled = false; }
+  };
+  drawPush();
 
   // Install: browsers that support it fire beforeinstallprompt; iPhone and iPad need the Share menu.
   const installBtn = document.getElementById('install');
@@ -1838,6 +2178,8 @@ function viewSettings(alive) {
     store.clearHistory();
     e.target.textContent = 'History cleared';
   };
+  addHub('settings');
+  if (location.hash) document.getElementById(location.hash.slice(1))?.scrollIntoView();
 }
 
 // MyAnimeList's export: <anime><series_animedb_id/><series_title/><series_type/><series_episodes/><my_watched_episodes/><my_status/></anime>
@@ -1970,4 +2312,7 @@ store.onSyncChange(({ user, synced, changed }) => {
 });
 
 route();
-store.initAccount().finally(() => setTimeout(() => inbox.refreshInbox().catch(() => {}), 1500));
+store.initAccount().finally(() => setTimeout(() => {
+  inbox.refreshInbox().catch(() => {});
+  push.syncFollows(); // follows may have changed on another device
+}, 1500));

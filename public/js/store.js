@@ -41,7 +41,9 @@ const NAME = Object.fromEntries(Object.entries(CODE).map(([k, v]) => [v, k]));
 const FAVOURITE = 8;
 // Bits 16 and 32 remember this show's audio: 16 = a choice was made, 32 = dub (else sub).
 const LANG_SET = 16, LANG_DUB = 32;
-const KEEP = FAVOURITE | LANG_SET | LANG_DUB; // bits a list-status change leaves alone
+// Bit 64: following the show (🔔): new episodes go to Notifications and, if allowed, pop-ups.
+const FOLLOW = 64;
+const KEEP = FAVOURITE | LANG_SET | LANG_DUB | FOLLOW; // bits a list-status change leaves alone
 const ON_LIST = 7 | FAVOURITE;
 const statusOf = (e) => NAME[e.s & 7] || null;
 const isFav = (e) => !!(e.s & FAVOURITE);
@@ -98,6 +100,28 @@ export function setEntry(anime, status) {
   e.m = { ...(e.m || {}), ...metaOf(anime) };
   touch(e);
 }
+// ---------- following ----------
+export const isFollowing = (id) => !!((lib[id]?.s || 0) & FOLLOW);
+export const followedIds = () => Object.values(lib).filter((e) => e.s & FOLLOW).map((e) => e.a);
+const followListeners = new Set();
+export const onFollowChange = (fn) => { followListeners.add(fn); return () => followListeners.delete(fn); };
+// baseline: episodes already out when you followed, so only later ones count as new.
+export function setFollow(anime, on, baseline = 0) {
+  const e = entry(anime.id);
+  e.s = (e.s & ~FOLLOW) | (on ? FOLLOW : 0);
+  e.m = { ...(e.m || {}), ...metaOf(anime) };
+  if (on) e.fb = Math.max(e.fb || 0, Number(baseline) || 0);
+  touch(e);
+  followListeners.forEach((fn) => { try { fn(followedIds()); } catch { /* ignore */ } });
+}
+export const followBaseline = (id) => lib[id]?.fb || 0;
+export function setFollowBaseline(id, ep) {
+  const e = lib[id];
+  if (!e || (e.fb || 0) >= ep) return;
+  e.fb = ep;
+  write('lib', lib);
+}
+
 // Sub or dub for one show (null when never chosen; the global setting applies then).
 export const showCategory = (id) => {
   const s = lib[id]?.s || 0;
@@ -222,7 +246,7 @@ export function restoreBackup(data, mode = 'add') {
     // In "add" mode, a show already on the list (or with progress) keeps its newer local copy.
     if (current && mode === 'add' && (current.s || current.ep) && current.u >= (raw.u || 0)) continue;
     lib[id] = {
-      a: id, s: ((Number(raw.s) & 7) <= 6 ? Number(raw.s) & 63 : Number(raw.s) & KEEP) || 0, ep: Number(raw.ep) || 0, t: Number(raw.t) || 0, d: Number(raw.d) || 0,
+      a: id, s: ((Number(raw.s) & 7) <= 6 ? Number(raw.s) & 127 : Number(raw.s) & KEEP) || 0, ep: Number(raw.ep) || 0, t: Number(raw.t) || 0, d: Number(raw.d) || 0,
       w: Array.isArray(raw.w) ? raw.w.filter((n) => Number.isInteger(n) && n > 0 && n <= 8000) : [],
       u: now(), m: raw.m && typeof raw.m === 'object' ? metaOf(raw.m) : null,
     };
@@ -265,7 +289,8 @@ export const startedIds = () => new Set(Object.values(lib).filter((e) => e.ep ||
 // ---------- settings ----------
 // titles: 'english' or 'japanese' (romaji). showContinue / hideStarted control the home page.
 // Only autoplay, autoskip and category sync to an account; the rest stay in this browser.
-let settings = { autoplay: true, autoskip: false, category: 'sub', provider: 'megaplay', titles: 'english', showContinue: true, hideStarted: false, ...read('settings', {}) };
+// alertsFor: which new episodes count for Notifications and pop-ups: 'both', 'sub' or 'dub'.
+let settings = { autoplay: true, autoskip: false, category: 'sub', provider: 'megaplay', titles: 'english', showContinue: true, hideStarted: false, alertsFor: 'both', ...read('settings', {}) };
 export const getSettings = () => ({ ...settings });
 export function setSetting(key, value) {
   settings = { ...settings, [key]: value };
@@ -320,7 +345,7 @@ function adoptRow(row, local) {
   const w = [...new Set([...(local?.w || []), ...fromBits(row.w)])];
   if (local && local.u > row.u) { local.w = w; return; }
   if (row.deleted) { delete lib[row.a]; return; }
-  lib[row.a] = { a: row.a, s: row.s, ep: row.ep, t: row.t, d: row.d, w, u: row.u, m: local?.m || null };
+  lib[row.a] = { a: row.a, s: row.s, ep: row.ep, t: row.t, d: row.d, w, u: row.u, m: local?.m || null, ...(local?.fb ? { fb: local.fb } : {}) };
 }
 
 async function post(path, body, { keepalive = false } = {}) {

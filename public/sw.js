@@ -15,3 +15,36 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(fetch(event.request).catch(() =>
     new Response(OFFLINE, { headers: { 'Content-Type': 'text/html; charset=utf-8' } })));
 });
+
+// New-episode pop-ups. Pushes carry no payload: ask the server what's new, then show it.
+self.addEventListener('push', (event) => {
+  event.waitUntil((async () => {
+    let items = [];
+    try {
+      const sub = await self.registration.pushManager.getSubscription();
+      if (sub) items = (await (await fetch('/api/push/pending?endpoint=' + encodeURIComponent(sub.endpoint))).json()).items || [];
+    } catch { /* show the generic one below */ }
+    if (!items.length) items = [{ title: 'New episodes are out', body: 'Open animee to see what’s new.', url: '/new' }];
+    await Promise.all(items.slice(0, 3).map((it) => self.registration.showNotification(
+      it.test ? it.title : `${it.title}`,
+      {
+        body: it.test || it.body ? it.body : `Episode ${it.ep} is out. Tap to watch.`,
+        icon: it.cover || '/icons/icon-192.png',
+        badge: '/icons/icon-192.png',
+        tag: it.id ? `ep-${it.id}` : 'animee',
+        data: { url: it.url || (it.id ? `/watch/${it.id}?ep=${it.ep}` : '/new') },
+      },
+    )));
+  })());
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = new URL(event.notification.data?.url || '/', self.location.origin).href;
+  event.waitUntil((async () => {
+    const tabs = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const open = tabs.find((t) => t.url.startsWith(self.location.origin));
+    if (open) { await open.focus(); return open.navigate(url); }
+    return self.clients.openWindow(url);
+  })());
+});
