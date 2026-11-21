@@ -8,11 +8,15 @@
 //
 // Needs the TMDB_TOKEN secret (TMDB's "API Read Access Token"); call useToken(env) per request.
 
+import * as tvmaze from './tvmaze.js';
+import * as omdb from './omdb.js';
+
 const API = 'https://api.themoviedb.org/3';
 const IMG = 'https://image.tmdb.org/t/p/';
 const fail = (status, message) => Object.assign(new Error(message), { status });
 let token = '';
-export function useToken(env) { token = String(env?.TMDB_TOKEN || ''); }
+let omdbKey = '';
+export function useToken(env) { token = String(env?.TMDB_TOKEN || ''); omdbKey = String(env?.OMDB_KEY || ''); }
 
 // ---------- ids ----------
 export const TYPE_DIGIT = { movie: 1, tv: 2 };
@@ -171,7 +175,7 @@ async function details(rawId) {
   if (hit && hit.expires > Date.now()) return hit.value;
   const append = type === 'movie'
     ? 'videos,credits,recommendations,watch/providers,release_dates'
-    : 'videos,credits,recommendations,watch/providers,content_ratings';
+    : 'videos,credits,recommendations,watch/providers,content_ratings,external_ids';
   const pending = request(`/${type}/${tmdb}`, { append_to_response: append }).then((raw) => ({ raw, type }));
   detailCache.set(key, { value: pending, expires: Date.now() + DETAIL_MS });
   if (detailCache.size > 500) detailCache.delete(detailCache.keys().next().value);
@@ -182,6 +186,28 @@ export async function getAnime(rawId) {
   const { raw, type } = await details(rawId);
   const title = normalize(raw, type);
   if (!title) throw fail(404, 'Title not found');
+  if (type === 'tv' && stillAiring(raw)) applyAirtimes(title, raw, await tvmaze.airtimes(raw));
+  return title;
+}
+
+// ---------- real air times (TVmaze) ----------
+const stillAiring = (raw) => Boolean(raw.next_episode_to_air) || ['Returning Series', 'In Production', 'Planned'].includes(raw.status);
+const sameEpisode = (t, e) => Boolean(t && e) && t.season === Number(e.season_number ?? e.season) && t.episode === Number(e.episode_number ?? e.episode);
+/** The next episode's exact time, from TVmaze; still null when it isn't due (that's for sure). */
+function upcoming(times, now = Date.now()) { return times?.next && times.next.at > now ? times.next : null; }
+/**
+ * TMDB treats an episode as out from the start of its air date (and in its own time zone);
+ * TVmaze knows the hour. An episode later today isn't counted as out yet, and the next
+ * episode gets its exact time (`nextAiring.airingAt`, ms).
+ */
+export function applyAirtimes(title, raw, times, now = Date.now()) {
+  const next = upcoming(times, now);
+  if (!next) return title;
+  if (sameEpisode(next, raw.last_episode_to_air) && title.availableEpisodes > 0) title.availableEpisodes -= 1;
+  title.nextAiring = {
+    airDate: new Date(next.at).toISOString().slice(0, 10),
+    season: next.season, episode: next.episode, airingAt: next.at,
+  };
   return title;
 }
 export const getAnimeWithCount = getAnime; // TMDB already says how many episodes have aired
@@ -193,7 +219,11 @@ export async function getExtras(rawId) {
     name: c.name, role: c.character || '', image: img(c.profile_path, 'w185'), va: null,
   })).filter((c) => c.name);
   const recommendations = list(raw.recommendations, type).slice(0, 12);
-  return { characters, recommendations };
+  // Scores from OMDb when OMDB_KEY is set; the IMDb link either way.
+  const imdbId = type === 'movie' ? raw.imdb_id : raw.external_ids?.imdb_id;
+  const scores = imdbId ? await omdb.ratings(imdbId, omdbKey) : null;
+  const ratings = imdbId ? { imdbUrl: `https://www.imdb.com/title/${imdbId}/`, ...(scores || {}) } : null;
+  return { characters, recommendations, ratings };
 }
 
 // Movie collections (e.g. every film in a series) take the place of anime "seasons".
@@ -242,13 +272,22 @@ export async function getEpisodes(rawId) {
         });
       }
     }
-    return { animeId: id, total: episodes.length, episodes };
+    // An episode dated today that hasn't actually aired yet (TVmaze knows the hour) isn't out.
+    let until = Date.now() + 30 * 60 * 1000;
+    if (stillAiring(raw)) {
+      const next = upcoming(await tvmaze.airtimes(raw));
+      if (next && sameEpisode(next, episodes[episodes.length - 1])) {
+        episodes.pop();
+        until = Math.min(until, next.at + 60e3);
+      }
+    }
+    return { animeId: id, total: episodes.length, episodes, until };
   })();
   episodeCache.set(id, { value: pending, expires: Date.now() + 30 * 60 * 1000 });
   if (episodeCache.size > 300) episodeCache.delete(episodeCache.keys().next().value);
   try {
-    const value = await pending;
-    episodeCache.set(id, { value, expires: Date.now() + 30 * 60 * 1000 });
+    const { until, ...value } = await pending;
+    episodeCache.set(id, { value, expires: until || Date.now() + 30 * 60 * 1000 });
     return value;
   } catch (error) { episodeCache.delete(id); throw error; }
 }
@@ -377,6 +416,17 @@ export async function getSchedule(rawDay) {
   }).catch(() => null)));
   const seen = new Set();
   const results = pages.flatMap((p) => list(p, 'tv')).filter((t) => !seen.has(t.id) && seen.add(t.id));
+  // Exact times from TVmaze's US TV and streaming schedules, matched by title.
+  // The countries these shows come from, most common first (TVmaze schedules are per country).
+  const counts = new Map();
+  for (const p of pages) for (const r of p?.results || []) { const c = r.origin_country?.[0]; if (c) counts.set(c, (counts.get(c) || 0) + 1); }
+  const countries = [...counts].sort((x, y) => y[1] - x[1]).map(([c]) => c).slice(0, 6);
+  const times = await tvmaze.daySchedule(iso, countries.length ? countries : ['US']);
+  for (const t of results) {
+    const keys = [t.title, t.titleRomaji].map(tvmaze.titleKey).filter(Boolean);
+    const at = keys.map((k) => times.get(k)).find(Boolean);
+    if (at) t.airingAt = at;
+  }
   return { day, date: iso, results };
 }
 

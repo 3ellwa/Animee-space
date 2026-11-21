@@ -6,6 +6,7 @@ import * as animeparadise from './animeparadise.js';
 import * as vidnest from './vidnest.js';
 import * as tryembed from './tryembed.js';
 import * as tmdb from './tmdb.js';
+import { demotedServers } from '../ranking.js';
 
 const BUILTIN_ID = 'megaplay';
 const ID_RE = /^[a-z0-9][a-z0-9_-]{0,39}$/;
@@ -83,15 +84,20 @@ export function getProviderList(env = {}) {
   ];
 }
 
+// Buttons keep the chosen order. A server that keeps failing for this episode or show (from
+// the "didn't play" reports, see ranking.js) is flagged `struggling`: automatic picks and the
+// fallback try it last.
 export async function getServers(rawId, rawEpisode, env = {}) {
   const id = validAnimeId(rawId);
-  episodeNumber(rawEpisode);
+  const episode = episodeNumber(rawEpisode);
+  const demoted = await demotedServers(env, id, episode);
   return getProviderList(env).flatMap(provider => provider.categories.map(category => ({
     id: provider.id,
     provider: provider.id,
     name: provider.name,
     category,
     available: true,
+    ...(demoted.has(`${provider.id}:${category}`) ? { struggling: true } : {}),
   })));
 }
 
@@ -156,7 +162,9 @@ export async function getFallbackSource(rawId, rawEpisode, rawPreferred, rawCate
   if (hit) fallbackCache.delete(key);
 
   const candidates = (await getServers(id, episode, env)).filter(item => item.category === category);
-  candidates.sort((a, b) => Number(b.id === preferred) - Number(a.id === preferred));
+  // Healthy servers first (the chosen one leading), servers that keep failing here last.
+  candidates.sort((a, b) => Number(Boolean(a.struggling)) - Number(Boolean(b.struggling))
+    || Number(b.id === preferred) - Number(a.id === preferred));
   const failures = [];
 
   const started = Date.now();

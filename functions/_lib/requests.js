@@ -5,6 +5,7 @@
 //   GET  /api/admin/requests      (X-Admin-Key)                    -> { requests, reports }
 //   POST /api/admin/answer        (X-Admin-Key) { id, answer }     -> { ok }
 //   POST /api/admin/delete        (X-Admin-Key) { id }             -> { ok }
+//   POST /api/admin/notice        (X-Admin-Key) { text, level, link, hours } -> { notice } (see notice.js)
 //
 // `who` is a random id the browser makes once and keeps, so answers come back to the same
 // browser without an account; signed-in people also see their requests on every device.
@@ -12,6 +13,7 @@
 // The admin key is the ADMIN_KEY secret (16+ characters); without it the admin API is off.
 
 import { currentUser } from './auth.js';
+import { currentNotice, setNotice } from './notice.js';
 
 export const KINDS = ['anime', 'idea', 'broken', 'other'];
 const MAX_ROWS = 5000;
@@ -136,7 +138,8 @@ async function adminList(env) {
       `SELECT provider, cat, reason, SUM(n) AS n FROM reports WHERE day > ? GROUP BY provider, cat, reason ORDER BY n DESC`,
     ).bind(Math.floor(Date.now() / 86400000) - 7).all());
   } catch { /* no reports yet */ }
-  return json({ requests: results.map((r) => ({ ...r, kind: KINDS[r.kind] || 'other' })), reports });
+  const notice = await currentNotice(env).catch(() => null);
+  return json({ requests: results.map((r) => ({ ...r, kind: KINDS[r.kind] || 'other' })), reports, notice });
 }
 
 export async function handleRequests(ctx, parts) {
@@ -158,6 +161,9 @@ export async function handleRequests(ctx, parts) {
         if (!Number.isInteger(b.id) || !answer) throw fail(400, 'Need an id and an answer');
         await run(env, () => env.DB.prepare('UPDATE requests SET answer = ?, answered = ? WHERE id = ?').bind(answer, now(), b.id).run());
         return json({ ok: true });
+      }
+      if (action === 'notice' && request.method === 'POST') {
+        return json({ notice: await setNotice(env, await body(request)) });
       }
       if (action === 'delete' && request.method === 'POST') {
         const b = await body(request);

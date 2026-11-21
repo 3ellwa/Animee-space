@@ -5,6 +5,7 @@ import { handleAccount } from '../_lib/account.js';
 import { handleReport } from '../_lib/reports.js';
 import { handleCalendar } from '../_lib/calendar.js';
 import { handleRequests } from '../_lib/requests.js';
+import { handleNotice } from '../_lib/notice.js';
 import { handlePush } from '../_lib/push.js';
 import { importAniList } from '../_lib/importers.js';
 import * as megaplay from '../_lib/providers/megaplay.js';
@@ -62,6 +63,7 @@ export async function onRequest(ctx) {
   if (parts[0] === 'auth' || parts[0] === 'me') return handleAccount(ctx, parts);
   if (parts[0] === 'requests' || parts[0] === 'admin') return handleRequests(ctx, parts);
   if (parts[0] === 'push') return handlePush(ctx, parts);
+  if (parts[0] === 'notice' && parts.length === 1) return handleNotice(ctx);
   if (parts[0] === 'cal' && parts.length === 2) {
     try { return await handleCalendar(ctx, parts[1]); } catch (err) {
       console.error(err);

@@ -1,3 +1,12 @@
+## Servers that sort themselves, TV air times, scores, history, site notice
+
+- **Servers that sort themselves** (`functions/_lib/ranking.js`): 2+ "didn't play" reports for one episode in 3 days, or failures on 3+ episodes of a show within 2 days, mark that server `struggling` there. Buttons keep their order (with a small ! and a tooltip); the first automatic pick, the fallback and auto-switching try struggling servers last. Read from the reports table by show, kept 10 minutes.
+- **Real TV air times on cinemee** (`providers/tvmaze.js`, TVmaze, no key): the next episode's exact time on title pages ("in 2d 3h"), times on the schedule (sorted by time), and an episode that airs later today no longer counts as out (fixes early "new episode" alerts and unplayable newest episodes). The airing calendar now works on cinemee: one event for each show's next episode. Footer credits TVmaze.
+- **Scores on cinemee** (`providers/omdb.js`): IMDb, Rotten Tomatoes and Metacritic at the top of the info box when the `OMDB_KEY` secret is set; the IMDb link always.
+- **History** (My list → History): grouped by day, search, remove one item or clear all, each with Undo.
+- **Site notice**: set on /admin (text, info or warning, optional link, optional hours); shown as a banner on every page of that site until it expires or the visitor closes it. `GET /api/notice`.
+- API_VERSION 8.
+
 ## cinemee, and ideas from hianime
 
 - **cinemee** (cinemee.animee.space): the same site for movies and TV, in red, from TMDB, with its own accounts and database, `/movie/…` and `/tv/…` addresses and search pages. Plays through one server, Nova.

@@ -40,7 +40,8 @@ export const CINEMEE_RED = { hex: '#FF3D52', rgb: '255,61,82' };
 
 // TMDB's terms ask every site using its API to show this notice.
 const TMDB_CREDIT = '<p class="footer-credit">Movie and TV data from <a href="https://www.themoviedb.org/" target="_blank" rel="noopener">TMDB</a>. '
-  + 'This product uses the TMDB API but is not endorsed or certified by TMDB.</p>';
+  + 'This product uses the TMDB API but is not endorsed or certified by TMDB. '
+  + 'TV air times from <a href="https://www.tvmaze.com/" target="_blank" rel="noopener">TVmaze</a>.</p>';
 
 /** index.html with the site's own name, wordmark and wording (animee's shell is the default). */
 export function brandShell(html, site) {

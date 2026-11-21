@@ -210,6 +210,21 @@ export function addHistory({ animeId, ep, title, cover }) {
   write('history', history);
 }
 export function clearHistory() { history = []; write('history', history); }
+/** Removes entries (all episodes of a show when ep is omitted); returns what was removed, for undo. */
+export function removeHistory(animeId, ep) {
+  const id = String(animeId);
+  const gone = history.filter((h) => h.animeId === id && (ep === undefined || h.ep === ep));
+  history = history.filter((h) => !gone.includes(h));
+  write('history', history);
+  return gone;
+}
+/** Puts removed entries back (undo), keeping newest first. */
+export function restoreHistory(items) {
+  const keys = new Set(history.map((h) => `${h.animeId}:${h.ep}`));
+  history = [...history, ...items.filter((h) => !keys.has(`${h.animeId}:${h.ep}`))]
+    .sort((x, y) => y.at - x.at).slice(0, HISTORY_MAX);
+  write('history', history);
+}
 /** Forget every saved position and watched tick (list statuses and favourites stay). */
 export function clearProgress() {
   for (const e of Object.values(lib)) {

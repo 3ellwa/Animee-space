@@ -36,8 +36,31 @@ function firstOnWeekday(from, weekday) {
   return d;
 }
 
+const utcStamp = (d) => d.toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
+
+/** cinemee: one event for a TV show's next episode, at its exact time (from TVmaze). */
+export function episodeEvent(show, origin, now = new Date()) {
+  const next = show?.nextAiring;
+  if (!next?.airingAt || next.airingAt < now.getTime() - 86400e3) return null;
+  const minutes = Math.min(Math.max(Number(show.duration) || 45, 5), 240);
+  const url = `${origin}/anime/${show.id}`;
+  const label = `S${next.season} E${next.episode}`;
+  return [
+    'BEGIN:VEVENT',
+    `UID:cinemee-${show.id}-s${next.season}e${next.episode}@animee.space`,
+    `DTSTAMP:${utcStamp(now)}`,
+    `DTSTART:${utcStamp(new Date(next.airingAt))}`,
+    `DURATION:PT${minutes}M`,
+    `SUMMARY:${escapeText(`${show.title} · ${label}`)}`,
+    `DESCRIPTION:${escapeText(`New episode of ${show.title} (${label}). Watch: ${url}`)}`,
+    `URL:${url}`,
+    'END:VEVENT',
+  ];
+}
+
 /** One VEVENT for a show, or null when it has no usable weekly broadcast slot. */
 export function showEvent(anime, origin, now = new Date()) {
+  if (anime?.nextAiring?.airingAt) return episodeEvent(anime, origin, now);
   if (!['RELEASING', 'NOT_YET_RELEASED'].includes(anime?.status)) return null;
   const day = String(anime.broadcast?.day || '').toLowerCase().replace(/s$/, '');
   const time = String(anime.broadcast?.time || '').match(/^(\d{1,2}):(\d{2})$/);
@@ -80,7 +103,7 @@ export function buildCalendar(shows, origin, now = new Date()) {
     'PRODID:-//animee space//airing calendar//EN',
     'CALSCALE:GREGORIAN',
     'METHOD:PUBLISH',
-    'X-WR-CALNAME:animee: my airing shows',
+    `X-WR-CALNAME:${/\/\/cinemee\./.test(origin) ? 'cinemee' : 'animee'}: my airing shows`,
     'X-PUBLISHED-TTL:PT6H',
     'REFRESH-INTERVAL;VALUE=DURATION:PT6H',
     'BEGIN:VTIMEZONE',
@@ -122,7 +145,7 @@ export async function handleCalendar(ctx, file) {
   for (const row of results) {
     if (shows.length >= MAX_SHOWS) break;
     try {
-      // cinemee titles come from TMDB, which has no weekly broadcast slot, so they add no events.
+      // cinemee: TV shows get their next episode at its real time (TVmaze); movies add nothing.
       if (env.SITE === 'cinemee') tmdb.useToken(env);
       const anime = await (env.SITE === 'cinemee' ? tmdb : tenrai).getAnime(String(row.a));
       if (anime.status === 'RELEASING' || anime.status === 'NOT_YET_RELEASED') shows.push(anime);

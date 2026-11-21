@@ -665,6 +665,17 @@ function loadExtras(id, alive, slots) {
         ${c.va ? `<div><img src="${esc(c.va.image)}" alt="${esc(c.va.name)}" loading="lazy"><span>${esc(c.va.name)}<small>Japanese</small></span></div>` : ''}
       </div>`).join('')}</div>`);
     const recs = slots.recs && document.getElementById(slots.recs);
+    // cinemee: IMDb / Rotten Tomatoes / Metacritic scores at the top of the info box.
+    const box = slots.ratings && document.getElementById(slots.ratings);
+    const r = x.ratings;
+    if (box && r?.imdbUrl) {
+      const parts = [
+        `<a href="${esc(r.imdbUrl)}" target="_blank" rel="noopener">IMDb${r.imdb ? ` <b class="rate">${r.imdb.score.toFixed(1)}</b>` : ''}</a>${r.imdb?.votes ? ` <small>(${r.imdb.votes.toLocaleString()})</small>` : ''}`,
+        r.rottenTomatoes ? `Rotten Tomatoes <b class="rate">${esc(r.rottenTomatoes)}</b>` : '',
+        r.metacritic ? `Metacritic <b class="rate">${r.metacritic}</b>` : '',
+      ].filter(Boolean);
+      box.insertAdjacentHTML('afterbegin', `<div class="ratings"><b>Ratings</b><span>${parts.join(' · ')}</span></div>`);
+    }
     if (recs && x.recommendations?.length) recs.innerHTML = section('You might also like', grid(store.notInterestedIds().size ? x.recommendations.filter((r) => !store.notInterestedIds().has(String(r.id))).slice(0, slots.limit || 12) : x.recommendations.slice(0, slots.limit || 12)));
   }).catch(() => {});
 }
@@ -884,6 +895,7 @@ async function viewAnime(id, alive, query = new URLSearchParams()) {
           ${a.status === 'RELEASING' && nextBroadcast(a.broadcast) ? (nextBroadcast(a.broadcast) - 7 * 86400e3 > Date.now() - 3 * 3600e3
             ? '<p class="card-meta" style="margin-top:12px">A new episode should be out about now. Refresh in a little while if it isn\'t listed yet.</p>'
             : `<p class="card-meta" style="margin-top:12px">Next episode ${localTime(nextBroadcast(a.broadcast))}, in ${fmtCountdown(Math.round((nextBroadcast(a.broadcast) - Date.now()) / 1000))}</p>`) : ''}
+          ${IS_CINEMEE && a.nextAiring?.airingAt > Date.now() ? `<p class="card-meta" style="margin-top:12px">Next episode (S${a.nextAiring.season} · E${a.nextAiring.episode}) ${localTime(a.nextAiring.airingAt)} your time, in ${fmtCountdown(Math.round((a.nextAiring.airingAt - Date.now()) / 1000))}</p>` : ''}
         </div>
       </div>
     </section>
@@ -902,10 +914,10 @@ async function viewAnime(id, alive, query = new URLSearchParams()) {
       </div>
       <aside>
         <section class="section" style="margin-top:12px">
-          <div class="info-box">
+          <div class="info-box" id="info-box">
             ${isMovie(a) ? `<div><b>Released</b><span>${fmtDate(a.startDate)}</span></div>`
               : `<div><b>Aired</b><span>${fmtDate(a.startDate)} – ${a.status === 'RELEASING' ? 'now' : fmtDate(a.endDate)}</span></div>`}
-            ${IS_CINEMEE && a.nextAiring?.airDate ? `<div><b>Next episode</b><span>S${a.nextAiring.season} · E${a.nextAiring.episode}, ${new Date(a.nextAiring.airDate + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}</span></div>` : ''}
+            ${IS_CINEMEE && a.nextAiring?.airDate ? `<div><b>Next episode</b><span>S${a.nextAiring.season} · E${a.nextAiring.episode}, ${a.nextAiring.airingAt ? new Date(a.nextAiring.airingAt).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : new Date(a.nextAiring.airDate + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}</span></div>` : ''}
             ${IS_CINEMEE && a.rating ? `<div><b>Rated</b><span>${esc(a.rating)}</span></div>` : ''}
             ${a.season ? `<div><b>Season</b><span>${SEASON[a.season]} ${a.year || ''}</span></div>` : ''}
             ${a.studios.length ? `<div><b>${IS_CINEMEE && !isMovie(a) ? 'Network' : 'Studio'}</b><span>${(a.studioLinks?.length ? a.studioLinks.map((st) => `<a href="/search?studio=${st.id}&studioName=${encodeURIComponent(st.name)}">${esc(st.name)}</a>`) : a.studios.map(esc)).join(', ')}</span></div>` : ''}
@@ -930,7 +942,7 @@ async function viewAnime(id, alive, query = new URLSearchParams()) {
   });
   bindListButtons(a);
   bindShare(a);
-  loadExtras(a.id, alive, { chars: 'extras-chars', recs: 'extras-recs' });
+  loadExtras(a.id, alive, { chars: 'extras-chars', recs: 'extras-recs', ratings: 'info-box' });
   // How many episodes actually stream, in sub and dub.
   if (canWatch) api(`/anime/${a.id}/availability`).then((d) => {
     const chip = document.getElementById('avail-chip');
@@ -1298,7 +1310,7 @@ async function viewWatch(id, query, alive) {
       const list = servers.filter((s) => s.category === cat);
       if (!list.length) return '';
       return `<div class="srv-row"><span class="lab">${IS_CINEMEE ? 'play' : cat}</span><div class="srv-btns">${list.map((s) => `
-        <button class="srv${server && server.id === s.id && server.category === cat ? ' on' : ''}" data-id="${esc(s.id)}" data-cat="${cat}"${playable(current, cat) ? '' : ` disabled title="Not out in ${cat} for this episode yet"`}>${esc(s.name)}</button>`).join('')}</div></div>`;
+        <button class="srv${server && server.id === s.id && server.category === cat ? ' on' : ''}" data-id="${esc(s.id)}" data-cat="${cat}"${playable(current, cat) ? (s.struggling ? ' title="Has had trouble with this episode lately"' : '') : ` disabled title="Not out in ${cat} for this episode yet"`}>${esc(s.name)}${s.struggling ? ' <span class="srv-warn" aria-label="has had trouble lately">!</span>' : ''}</button>`).join('')}</div></div>`;
     }).join('');
     $('server-list').innerHTML = groups || '<span class="card-meta">No servers available.</span>';
     // One server (cinemee): nothing to switch to, so no "try another" hint or button.
@@ -1380,11 +1392,14 @@ async function viewWatch(id, query, alive) {
     const failed = server;
     tried.add(failed.id);
     report('auto', failed);
-    let next = servers.find((s) => s.category === failed.category && !tried.has(s.id));
+    // Servers that keep failing on this episode lately (struggling) are tried last.
+    const untried = (cat) => servers.filter((s) => s.category === cat && !tried.has(s.id))
+      .sort((x, y) => Number(Boolean(x.struggling)) - Number(Boolean(y.struggling)))[0];
+    let next = untried(failed.category);
     let switchedLanguage = false;
     // No sub server works: the dub beats a dead player (just for this episode; the choice isn't saved).
     if (!next && failed.category === 'sub') {
-      next = servers.find((s) => s.category === 'dub' && !tried.has(s.id));
+      next = untried('dub');
       switchedLanguage = Boolean(next);
     }
     if (!next) {
@@ -1430,7 +1445,9 @@ async function viewWatch(id, query, alive) {
       const pref = store.showCategory(a.id) || prefs.category;
       // The server that last played this show wins over the general preference.
       const preferredProvider = store.goodServer(a.id, pref) || prefs.provider || 'megaplay';
-      const s = servers.find((x) => x.id === preferredProvider && x.category === pref)
+      // A server that keeps failing on this episode lately is skipped for the first try.
+      const s = servers.find((x) => x.id === preferredProvider && x.category === pref && !x.struggling)
+        || servers.find((x) => x.category === pref && !x.struggling)
         || servers.find((x) => x.category === pref)
         || servers[0];
       server = s ? { id: s.id, category: s.category } : null;
@@ -1495,8 +1512,10 @@ async function viewNew(alive) {
 // A small bar under the menu after an update, with the dated list one tap away. "Got it" hides it
 // until the next update (per browser).
 const NEWS = IS_CINEMEE ? [
+  ['Nov 22', ['Real air times for TV: schedule, title pages and calendar', 'IMDb and Rotten Tomatoes scores', 'Servers that keep failing are tried last', 'Search and remove items in History']],
   ['Nov 21', ['Welcome to cinemee: movies and TV, with the same lists, sync and pop-ups as animee', 'Up next stays in fullscreen', 'Save any title from its poster', 'Hide genres you skip']],
 ] : [
+  ['Nov 22', ['Servers that keep failing on an episode are tried last', 'Search and remove items in History, with Undo']],
   ['Nov 21', ['Resume where you stopped on 3ellwa, with Start over', 'Auto skip intros and outros', 'Up next stays in fullscreen', 'Save any show from its poster', 'Select mode on My list', 'Hide genres you skip', '← → jump 10 seconds', 'Follow shows from the schedule', 'Picked for you on the home page']],
   ['Earlier', ['New-episode pop-ups', 'My Anime hub with Requests', 'Continue on any device', 'Short server names']],
 ];
@@ -1715,6 +1734,17 @@ function viewAdmin() {
     const open = data.requests.filter((r) => !r.answer).length;
     app.innerHTML = `<h1 class="page-title">admin</h1>
       <p class="card-meta">${open} open request${open === 1 ? '' : 's'} · ${data.requests.length} shown. <button class="link-btn" id="admin-out" type="button">Forget key</button></p>
+      <section class="section"><div class="section-head"><h2>site notice</h2></div>
+        <form class="card-box" id="notice-form">
+          <p class="card-meta">A banner on every page of ${esc(BRAND.title)} until it expires or the visitor closes it. Leave the text empty and save to remove it.${data.notice ? ` <b>Showing now${data.notice.until ? `, until ${new Date(data.notice.until * 1000).toLocaleString()}` : ''}.</b>` : ' Nothing is showing.'}</p>
+          <label class="field"><span>Text</span><textarea class="input" name="text" rows="2" maxlength="280" placeholder="e.g. Server 3ellwa is having trouble tonight, use JoJo.">${esc(data.notice?.text || '')}</textarea></label>
+          <div class="filter-row">
+            <label class="field"><span>Style</span><select class="input" name="level"><option value="info">Info</option><option value="warn"${data.notice?.level === 'warn' ? ' selected' : ''}>Warning</option></select></label>
+            <label class="field"><span>Link (optional)</span><input class="input" name="link" placeholder="/requests or https://…" value="${esc(data.notice?.link || '')}"></label>
+            <label class="field"><span>Hide after (hours, empty = never)</span><input class="input" name="hours" type="number" min="0" step="1" inputmode="numeric"></label>
+          </div>
+          <div class="actions"><button class="btn sm primary" type="submit">Save notice</button><span class="card-meta" data-out></span></div>
+        </form></section>
       <section class="section"><div class="section-head"><h2>playback reports (7 days)</h2></div>
         ${data.reports.length ? `<table class="admin-table"><tr><th>Server</th><th>Audio</th><th>Reason</th><th>Count</th></tr>
           ${data.reports.map((r) => `<tr><td>${esc(r.provider)}</td><td>${r.cat ? 'dub' : 'sub'}</td><td>${REASONS[r.reason] || r.reason}</td><td>${r.n}</td></tr>`).join('')}</table>`
@@ -1728,6 +1758,15 @@ function viewAdmin() {
             <button class="btn sm" data-act="delete" type="button">Delete</button><span class="card-meta" data-out></span></div>
         </div>`).join('') || '<p class="card-meta">No requests yet.</p>'}</section>`;
     document.getElementById('admin-out').onclick = () => { forget(); askKey(); };
+    document.getElementById('notice-form').onsubmit = async (e) => {
+      e.preventDefault();
+      const f = e.target.elements;
+      const out = e.target.querySelector('[data-out]');
+      try {
+        const { notice } = await call('notice', { text: f.text.value, level: f.level.value, link: f.link.value, hours: f.hours.value ? Number(f.hours.value) : null });
+        out.textContent = notice ? 'Saved ✓ (visitors see it within a minute)' : 'Removed ✓';
+      } catch (err) { out.textContent = err.message; }
+    };
     app.querySelectorAll('.req-item [data-act]').forEach((b) => b.onclick = async () => {
       const item = b.closest('.req-item');
       const id = Number(item.dataset.id);
@@ -1849,18 +1888,57 @@ function viewWatchlist(query) {
   const signInNote = !store.currentUser() ? '<p class="card-meta" style="text-align:center;margin-top:24px"><a href="/account" style="color:var(--accent)">Sign in</a> to sync your list across devices.</p>' : '';
 
   if (tab === 'history') {
+    // Grouped by day, searchable; each row (or the whole history) can be removed, with Undo.
+    const hq = (query.get('q') || '').trim().toLowerCase();
+    const shownHistory = hq ? opened.filter((h) => String(h.title || '').toLowerCase().includes(hq)) : opened;
+    const dayLabel = (at) => {
+      const d = new Date(at); const today = new Date();
+      const diff = Math.round((new Date(today.toDateString()) - new Date(d.toDateString())) / 86400e3);
+      return diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : d.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: d.getFullYear() === today.getFullYear() ? undefined : 'numeric' });
+    };
+    const groups = [];
+    for (const h of shownHistory) {
+      const label = dayLabel(h.at);
+      if (groups[groups.length - 1]?.label !== label) groups.push({ label, items: [] });
+      groups[groups.length - 1].items.push(h);
+    }
+    const epText = (h) => (IS_CINEMEE && String(h.animeId).endsWith('1') ? 'Movie' : `Episode ${h.ep}`);
     app.innerHTML = `<h2 class="hub-sub">watch history</h2>
       <p class="card-meta">Every episode you opened in this browser, newest first. History stays on this device.</p>
-      ${opened.length ? `<div class="sched">${opened.map((h) => `
-        <a class="sched-row" href="/watch/${h.animeId}?ep=${h.ep}">
-          <img src="${esc(h.cover)}" alt="${esc(h.title)} poster" loading="lazy">
-          <span class="sched-info"><span class="t">${esc(h.title)}</span>
-            <span class="card-meta">Episode ${h.ep} · ${new Date(h.at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</span></span>
-        </a>`).join('')}</div>
+      ${opened.length ? `<form class="filter-row" id="hist-find"><input class="input" type="search" name="q" value="${esc(hq)}" placeholder="Search your history…" aria-label="Search your history"></form>
+        ${groups.length ? groups.map((g) => `<h3 class="hist-day">${esc(g.label)}</h3><div class="sched">${g.items.map((h) => `
+        <div class="hist-row">
+          <a class="sched-row" href="/watch/${h.animeId}?ep=${h.ep}">
+            <img src="${esc(h.cover)}" alt="${esc(h.title)} poster" loading="lazy">
+            <span class="sched-info"><span class="t">${esc(h.title)}</span>
+              <span class="card-meta">${epText(h)} · ${new Date(h.at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}</span></span>
+          </a>
+          <button class="hist-x" type="button" data-id="${esc(h.animeId)}" data-ep="${h.ep}" aria-label="Remove ${esc(h.title)} ${epText(h)} from history" title="Remove from history">✕</button>
+        </div>`).join('')}</div>`).join('') : `<p class="card-meta">Nothing in your history matches “${esc(hq)}”.</p>`}
         <p style="margin-top:16px"><button class="link-btn" id="clear-history" type="button">Clear history</button></p>`
         : '<div class="empty"><h2>No history yet</h2><p>Episodes you open show up here.</p></div>'}`;
+    const find = document.getElementById('hist-find');
+    if (find) {
+      find.onsubmit = (e) => e.preventDefault();
+      find.q.oninput = () => {
+        const v = find.q.value.trim();
+        history.replaceState(null, '', `/watchlist?tab=history${v ? `&q=${encodeURIComponent(v)}` : ''}`);
+        clearTimeout(find.t);
+        find.t = setTimeout(() => { route(); document.querySelector('#hist-find input')?.focus(); const i = document.querySelector('#hist-find input'); if (i) i.setSelectionRange(i.value.length, i.value.length); }, 200);
+      };
+    }
+    app.querySelectorAll('.hist-x').forEach((b) => b.onclick = () => {
+      const gone = store.removeHistory(b.dataset.id, Number(b.dataset.ep));
+      route();
+      undoToast('Removed from history.', () => { store.restoreHistory(gone); route(); });
+    });
     const clear = document.getElementById('clear-history');
-    if (clear) clear.onclick = () => { if (confirm('Clear your watch history in this browser?')) { store.clearHistory(); route(); } };
+    if (clear) clear.onclick = () => {
+      const all = store.getHistory();
+      store.clearHistory();
+      route();
+      undoToast('History cleared.', () => { store.restoreHistory(all); route(); });
+    };
     addHub('history');
     return;
   }
@@ -2040,9 +2118,9 @@ function viewAccountPage(query) {
           <input type="checkbox" id="clear-local"> Also clear the list and history saved in this browser when signing out
         </label>
       </div>
-      <div class="auth-box cal-box anime-only">
+      <div class="auth-box cal-box">
         <h2 style="margin:0 0 6px">airing calendar</h2>
-        <p class="card-meta">Subscribe in Google Calendar, Apple Calendar or Outlook to see when the airing shows on your Watching and Plan to watch lists get new episodes (Japanese broadcast time, shown in your time zone). It updates every few hours. The link is private: "Sign out everywhere" turns it off.</p>
+        <p class="card-meta">Subscribe in Google Calendar, Apple Calendar or Outlook to see when the airing shows on your Watching and Plan to watch lists get new episodes (${IS_CINEMEE ? 'the next episode of each TV show, at its real air time' : 'Japanese broadcast time'}, shown in your time zone). It updates every few hours. The link is private: "Sign out everywhere" turns it off.</p>
         <div class="actions"><button class="btn" id="cal-get" type="button">Get my calendar link</button></div>
         <div id="cal-out" hidden>
           <input class="cal-url" id="cal-url" readonly aria-label="Calendar link">
@@ -2143,7 +2221,7 @@ function schedRow(a, note) {
   const following = store.isFollowing(a.id);
   return `<a class="sched-row" href="${animeHref(a)}">
     <button class="row-bell${following ? ' on' : ''}" type="button" data-follow="${esc(a.id)}" aria-pressed="${following}" title="${following ? 'Following: tap to stop' : 'Tell me about new episodes'}">${following ? '🔔' : '🔕'}</button>
-    ${IS_CINEMEE ? '<span class="sched-time"><b>new</b><small>episode</small></span>' : `<span class="sched-time"><b>${esc(a.broadcast?.time || '?')}</b><small>JST</small></span>`}
+    ${IS_CINEMEE ? (a.airingAt ? `<span class="sched-time"><b>${new Date(a.airingAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}</b><small>your time</small></span>` : '<span class="sched-time"><b>new</b><small>episode</small></span>') : `<span class="sched-time"><b>${esc(a.broadcast?.time || '?')}</b><small>JST</small></span>`}
     <img src="${esc(a.cover)}" alt="${esc(T(a))} poster" loading="lazy">
     <span class="sched-info"><span class="t">${esc(T(a))}</span>
       <span class="card-meta">${[FORMAT[a.format], a.score ? `★ ${score(a.score)}` : '', note].filter(Boolean).join(' · ')}</span></span>
@@ -2167,7 +2245,7 @@ async function viewSchedule(query, alive) {
   const myIds = new Set(store.libraryIds());
 
   app.innerHTML = `<h1 class="page-title">Airing schedule</h1>
-    <p class="card-meta">${IS_CINEMEE ? 'TV shows with a new episode out on each day.' : 'Days follow Japan time. Each show also lists when it airs where you are.'}</p>
+    <p class="card-meta">${IS_CINEMEE ? 'TV shows with a new episode out on each day, at your local time when it’s known.' : 'Days follow Japan time. Each show also lists when it airs where you are.'}</p>
     <form class="filter-row sched-find" id="sched-find">
       <input class="input" type="search" name="q" placeholder="Find a show's next episode…" aria-label="Find a show's next episode">
       <button class="btn" type="submit">Find</button>
@@ -2196,8 +2274,12 @@ async function viewSchedule(query, alive) {
   if (!alive()) return;
   const rows = d.results
     .filter((a) => !mine || myIds.has(String(a.id)))
-    .sort((x, y) => String(x.broadcast?.time || '99').localeCompare(String(y.broadcast?.time || '99')));
+    .sort((x, y) => (IS_CINEMEE
+      ? (x.airingAt || Infinity) - (y.airingAt || Infinity)
+      : String(x.broadcast?.time || '99').localeCompare(String(y.broadcast?.time || '99'))));
   document.getElementById('sched').innerHTML = rows.length ? `<div class="sched">${rows.map((a) => {
+    // cinemee: exact times from TVmaze where it knows the show.
+    if (IS_CINEMEE) return schedRow(a, !a.airingAt ? '' : a.airingAt < Date.now() ? 'aired' : `in ${fmtCountdown(Math.round((a.airingAt - Date.now()) / 1000))}`);
     const at = nextBroadcast(a.broadcast);
     // A show from earlier today has its next airing a week away.
     const airedToday = offset === 0 && at && at - Date.now() > 6 * 86400e3;
@@ -2707,8 +2789,33 @@ store.onSyncChange(({ user, synced, changed }) => {
   }
 });
 
+// A notice from the site owner (set on /admin), until it expires or you close it.
+const NOTICE_KEY = 'animee-space:notice-closed';
+function showNotice() {
+  fetch('/api/notice').then((r) => (r.ok ? r.json() : null)).then((d) => {
+    const n = d?.notice;
+    let closed = '';
+    try { closed = localStorage.getItem(NOTICE_KEY) || ''; } catch { /* ignore */ }
+    document.getElementById('site-notice')?.remove();
+    if (!n || closed === n.id) return;
+    const el = document.createElement('div');
+    el.id = 'site-notice';
+    el.className = `site-notice ${n.level === 'warn' ? 'warn' : ''}`;
+    el.setAttribute('role', 'status');
+    const safeLink = n.link && (/^\/(?!\/)/.test(n.link) || /^https:\/\//.test(n.link)) ? n.link : '';
+    el.innerHTML = `<span>${n.level === 'warn' ? '⚠ ' : ''}${esc(n.text)}${safeLink ? ` <a href="${esc(safeLink)}"${safeLink.startsWith('https:') ? ' target="_blank" rel="noopener"' : ''}>More</a>` : ''}</span>
+      <button type="button" aria-label="Close this notice">✕</button>`;
+    el.querySelector('button').onclick = () => {
+      try { localStorage.setItem(NOTICE_KEY, n.id); } catch { /* ignore */ }
+      el.remove();
+    };
+    app.before(el);
+  }).catch(() => {});
+}
+
 route();
 showNews();
+showNotice();
 store.initAccount().finally(() => setTimeout(() => {
   inbox.refreshInbox().catch(() => {});
   push.syncFollows(); // follows may have changed on another device

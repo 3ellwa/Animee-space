@@ -35,10 +35,14 @@ functions/_lib/
   push.js                       Web Push (VAPID, payload-less pushes, 10-min cron)
   requests.js                   Requests + hidden /admin API (ADMIN_KEY)
   reports.js                    "didn't play" counters
-  calendar.js                   private .ics feed (anime only; TMDB has no air times)
+  ranking.js                    servers that keep failing are tried last (from reports)
+  notice.js                     the site notice banner (set on /admin)
+  calendar.js                   private .ics feed (anime: weekly JST slot; cinemee: next episode via TVmaze)
   providers/
     tenrai.js                   anime catalogue
     tmdb.js                     movie/TV catalogue + cinemee player addresses
+    tvmaze.js                   exact TV air times (next episode, day schedules), no key
+    omdb.js                     IMDb / RT / Metacritic scores (OMDB_KEY)
     registry.js                 server lists, fallback order, neutral names, deadlines/breaker
     megaplay.js, animeparadise.js, vidnest.js, tryembed.js, anilist.js
 public/
@@ -93,7 +97,8 @@ VidLink-style `PLAYER_EVENT`; vidnext/VidNest `source:'vidnest-player'`; EmbedMa
 | `SESSION_SECRET` | signs login cookies | `npx.cmd wrangler secret put SESSION_SECRET` |
 | `TMDB_TOKEN` | TMDB "API Read Access Token" for cinemee | `npx.cmd wrangler secret put TMDB_TOKEN` |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | Web Push | `node scripts/setup-push.mjs` (`--force` replaces; devices must re-enable) |
-| `ADMIN_KEY` | /admin page | `node scripts/set-admin-key.mjs` — **rotate it**: the current key was pasted into a chat on Nov 21 |
+| `ADMIN_KEY` | /admin page | `node scripts/set-admin-key.mjs` (rotated Nov 21) |
+| `OMDB_KEY` | optional: IMDb / RT / Metacritic scores on cinemee | free key from omdbapi.com, then `npx.cmd wrangler secret put OMDB_KEY` |
 
 On Windows PowerShell use `npx.cmd` (the `npx.ps1` wrapper is blocked by the execution policy).
 Local development reads the same names from `.dev.vars` (git-ignored).
@@ -139,9 +144,9 @@ npx wrangler dev --port 8787 --test-scheduled
 
 ## Ideas not built yet (from docs/HIANIME-NOTES.md and conversations)
 
-- Reorder servers per episode from the reports table (scheduled job).
 - Arabic subtitles we supply ourselves (SubDL / OpenSubtitles → VTT → Atlas's `sub_url[]`). Low priority: Orion, Nova and Vega already have them.
-- TVmaze for real TV air times on cinemee's schedule and calendar; OMDb for IMDb/RT scores.
+- "Continue on cinemee" on animee (and back) for people signed in on both.
+- Error counts per server/page in /admin (today only in the Worker logs).
 - vidsrc options (default subtitle language, resume) once its docs can be read.
 - Light theme / accent colours were declined (dark only).
 
