@@ -12,9 +12,9 @@ const CATEGORIES = new Set(['sub', 'dub']);
 const BUILTIN_PROVIDERS = [
   // `name` is what visitors see on the server buttons: short neutral names, not the upstream
   // sites. `id` stays the real one, used in saved settings, reports, logs and the admin page.
-  { id: 'megaplay', name: 'Sora', categories: ['sub', 'dub'] },
+  { id: 'megaplay', name: '3ellwa', categories: ['sub', 'dub'] },
   { id: 'animeparadise', name: 'Kaze', categories: ['sub'] },
-  { id: 'vidnest', name: 'Nami', categories: ['sub', 'dub'] },
+  { id: 'vidnest', name: 'JoJo', categories: ['sub', 'dub'] },
   { id: 'tryembed', name: 'Hoshi', categories: ['sub', 'dub'] },
 ];
 

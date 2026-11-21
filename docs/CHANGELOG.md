@@ -1,6 +1,6 @@
 ## Short server names
 
-- Server buttons use short neutral names instead of the upstream sites: **Sora** (MegaPlay), **Kaze** (AnimeParadise), **Nami** (VidNest), **Hoshi** (TryEmbed). Internal ids are unchanged, so saved preferences, reports and the admin page keep working.
+- Server buttons use short neutral names instead of the upstream sites: **3ellwa** (MegaPlay), **Kaze** (AnimeParadise), **JoJo** (VidNest), **Hoshi** (TryEmbed). Internal ids are unchanged, so saved preferences, reports and the admin page keep working.
 - When nothing plays, visitors see a plain "No server could play this episode" message; the per-server reasons (which name the upstream sites) go to the Worker logs. A single chosen server that fails says "<name> couldn't play this episode."
 
 ## VidNest and TryEmbed servers; AniList lookups from the browser

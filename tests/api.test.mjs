@@ -297,11 +297,11 @@ test('playback registry returns real provider IDs and routes sources to the sele
   assert.deepEqual(
     servers.servers.map(s => [s.id, s.name, s.category]),
     [
-      ['megaplay', 'Sora', 'sub'],
-      ['megaplay', 'Sora', 'dub'],
+      ['megaplay', '3ellwa', 'sub'],
+      ['megaplay', '3ellwa', 'dub'],
       ['animeparadise', 'Kaze', 'sub'],
-      ['vidnest', 'Nami', 'sub'],
-      ['vidnest', 'Nami', 'dub'],
+      ['vidnest', 'JoJo', 'sub'],
+      ['vidnest', 'JoJo', 'dub'],
       ['tryembed', 'Hoshi', 'sub'],
       ['tryembed', 'Hoshi', 'dub'],
       ['backup-one', 'Backup One', 'sub'],

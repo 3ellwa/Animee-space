@@ -8,7 +8,7 @@ Strict safe-for-work filtering is enabled using `sfw-strict=true` on catalogue r
 
 ## Built-in playback providers
 
-Visitors see short neutral server names instead of the upstream sites: **Sora** (MegaPlay), **Kaze** (AnimeParadise), **Nami** (VidNest) and **Hoshi** (TryEmbed). They are set in `BUILTIN_PROVIDERS` in `functions/_lib/providers/registry.js`. The real ids stay in saved settings, reports, Worker logs and the admin page. Error messages shown to visitors use the short names; the detailed upstream reasons go to the Worker logs.
+Visitors see short neutral server names instead of the upstream sites: **3ellwa** (MegaPlay), **Kaze** (AnimeParadise), **JoJo** (VidNest) and **Hoshi** (TryEmbed). They are set in `BUILTIN_PROVIDERS` in `functions/_lib/providers/registry.js`. The real ids stay in saved settings, reports, Worker logs and the admin page. Error messages shown to visitors use the short names; the detailed upstream reasons go to the Worker logs.
 
 ### MegaPlay
 
