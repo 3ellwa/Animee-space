@@ -67,6 +67,12 @@ async function sitemap(url, ctx) {
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    // One address per page: plain http goes to https (search engines had indexed the http copy).
+    // Local development (localhost) stays on http.
+    if (url.protocol === "http:" && !/^(localhost|127\.0\.0\.1|\[::1\])$|\.localhost$/.test(url.hostname)) {
+      url.protocol = "https:";
+      return Response.redirect(url.toString(), 301);
+    }
     if (url.pathname === "/api" || url.pathname.startsWith("/api/")) {
       const path = url.pathname.slice(4).split("/").filter(Boolean);
       const response = await onRequest({ request, env, params: { path }, waitUntil: p => ctx.waitUntil(p) });
