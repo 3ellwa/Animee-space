@@ -2,6 +2,7 @@ import { api } from './api.js';
 import * as store from './store.js';
 import { Player } from './player.js';
 import './fx.js';
+import * as inbox from './inbox.js';
 
 const app = document.getElementById('app');
 let cleanups = [];
@@ -191,6 +192,8 @@ async function route() {
       case 'watch': return await viewWatch(parts[1], query, alive);
       case 'watchlist': return viewWatchlist(query);
       case 'schedule': return await viewSchedule(query, alive);
+      case 'new': return await viewNew(alive);
+      case 'stats': return viewStats();
       case 'account': return viewAccount(query);
       default: return viewNotFound();
     }
@@ -640,6 +643,7 @@ async function viewAnime(id, alive, query = new URLSearchParams()) {
   const a = await api(`/anime/${id}`);
   if (!alive()) return;
   document.title = `${a.title} · animee space`;
+  store.rememberMeta(a);
   // Old or slug-less links settle on the show's one canonical address.
   if (location.pathname !== animeHref(a)) history.replaceState(null, '', animeHref(a) + location.search);
   const prog = store.getProgress(a.id);
@@ -738,11 +742,35 @@ async function viewAnime(id, alive, query = new URLSearchParams()) {
 // ---------- watch ----------
 async function viewWatch(id, query, alive) {
   if (!id) return viewNotFound();
+  // Show the page's shape straight away (player, episode panel) with what is being loaded,
+  // using the poster this browser already knows, instead of a bare spinner.
+  const known = store.getList()[id] || store.getProgress(id) || {};
+  app.innerHTML = `
+    <div class="watch-skel" aria-busy="true">
+      <div class="crumbs card-meta">${known.title ? esc(known.title) : 'Loading…'}</div>
+      <div class="watch-grid"><div>
+        <div class="player skel-player"${known.cover ? ` style="--poster:url('${esc(known.cover)}')"` : ''}>
+          <div class="pl-msg busy"><span class="pl-spin" aria-hidden="true"></span><span id="skel-step" role="status">Getting the show…</span></div>
+        </div>
+        <div class="skel-bar"></div>
+      </div>
+      <aside><div class="ep-box skel-eps">${'<i></i>'.repeat(24)}</div></aside></div>
+    </div>`;
+  const step = (text) => { const el = document.getElementById('skel-step'); if (el && alive()) el.textContent = text; };
+  // The server list for the likely episode is fetched in parallel, so it's cached by the time it's needed.
+  const guessEp = Number(query.get('ep')) || store.getProgress(id)?.ep || 1;
+  api(`/episode/${encodeURIComponent(`${id}:${guessEp}`)}/servers`).catch(() => {});
+
   // Fetch the latest progress from the account alongside the show, so another device's
   // episode and position are used (never waits more than a couple of seconds).
-  const [a, epData] = await Promise.all([api(`/anime/${id}`), api(`/anime/${id}/episodes`), store.sync.freshen()]);
+  const showP = api(`/anime/${id}`);
+  const epsP = api(`/anime/${id}/episodes`);
+  showP.then(() => step('Loading the episode list…'), () => {});
+  epsP.then((d) => step(`Found ${d.episodes?.length || 0} episodes. Syncing your progress…`), () => {});
+  const [a, epData] = await Promise.all([showP, epsP, store.sync.freshen()]);
   if (!alive()) return;
   document.title = `Watch ${a.title} · animee space`;
+  store.rememberMeta(a);
   const episodes = epData.episodes;
 
   if (!episodes.length) {
@@ -874,6 +902,7 @@ async function viewWatch(id, query, alive) {
     onNext: () => goTo(nextAuto()),
     onPause: () => store.sync.flush(),
     onFail: (message) => tryNextServer(message),
+    onStarted: () => { if (server) store.setGoodServer(a.id, server.category, server.id); },
     onEnded: () => {
       store.markWatched(a.id, current.number);
       watched.add(current.number);
@@ -1115,7 +1144,8 @@ async function viewWatch(id, query, alive) {
       const prefs = store.getSettings();
       // This show's own sub/dub choice wins over the general setting.
       const pref = store.showCategory(a.id) || prefs.category;
-      const preferredProvider = prefs.provider || 'megaplay';
+      // The server that last played this show wins over the general preference.
+      const preferredProvider = store.goodServer(a.id, pref) || prefs.provider || 'megaplay';
       const s = servers.find((x) => x.id === preferredProvider && x.category === pref)
         || servers.find((x) => x.category === pref)
         || servers[0];
@@ -1138,6 +1168,121 @@ async function viewWatch(id, query, alive) {
   }
 }
 
+// ---------- new for you ----------
+async function viewNew(alive) {
+  document.title = 'New episodes · animee space';
+  const draw = (items, checking) => {
+    if (!alive()) return;
+    const when = inbox.inboxCheckedAt();
+    app.innerHTML = `
+      <div class="section-head" style="margin-top:22px"><h1 class="page-title" style="margin:0">new for you</h1>
+        <button class="btn sm" id="inbox-refresh" type="button"${checking ? ' disabled' : ''}>${checking ? 'Checking…' : '↻ Check now'}</button></div>
+      <p class="card-meta">New episodes of airing shows on your <a href="/watchlist?tab=watching">Watching</a> list, after the last one you watched.
+        ${when ? `Checked ${new Date(when).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}.` : ''}</p>
+      ${items.length ? `<div class="inbox">${items.map((it) => `
+        <div class="inbox-item">
+          <a href="/watch/${esc(it.id)}?ep=${it.ep}"><img src="${esc(it.cover || '')}" alt="" loading="lazy"></a>
+          <div class="inbox-body">
+            <a class="inbox-title" href="/watch/${esc(it.id)}?ep=${it.ep}">${esc(it.title || 'Untitled')}</a>
+            <span class="card-meta">Episode ${it.ep} is out${it.cat === 'dub' ? ' · dub' : ''}</span>
+            <div class="actions"><a class="btn sm primary" href="/watch/${esc(it.id)}?ep=${it.ep}">▶ Watch episode ${it.ep}</a>
+              <button class="btn sm" type="button" data-dismiss="${esc(it.id)}:${it.ep}">Dismiss</button></div>
+          </div>
+        </div>`).join('')}</div>`
+        : `<div class="empty"><h2>${checking ? 'Checking your shows…' : 'All caught up ^^.'}</h2>
+          <p>${checking ? '' : 'When an airing show on your Watching list gets a new episode, it shows up here.'}</p></div>`}`;
+    document.getElementById('inbox-refresh').onclick = async () => {
+      draw(inbox.inboxItems(), true);
+      draw(await inbox.refreshInbox({ force: true }), false);
+    };
+    app.querySelectorAll('[data-dismiss]').forEach((b) => b.onclick = () => {
+      const [id, ep] = b.dataset.dismiss.split(':');
+      inbox.dismiss({ id, ep: Number(ep) });
+      draw(inbox.inboxItems(), false);
+    });
+  };
+  const stale = Date.now() - inbox.inboxCheckedAt() > 60 * 1000;
+  draw(inbox.inboxItems(), stale);
+  if (stale) draw(await inbox.refreshInbox({ force: true }), false);
+}
+
+// ---------- stats ----------
+// Everything is worked out from what this browser knows (your library, plus history opened here).
+function viewStats() {
+  document.title = 'My stats · animee space';
+  const rows = store.libraryRows();
+  const history = store.getHistory();
+  const episodes = rows.reduce((n, r) => n + r.watched, 0);
+  const minutes = rows.reduce((n, r) => n + r.watched * (r.duration || 24), 0);
+  const count = (k) => rows.filter((r) => r.status === k).length;
+  const fmtHours = (m) => (m >= 1440 ? `${(m / 1440).toFixed(1)} days` : `${Math.round(m / 60)} hours`);
+
+  // Genres, weighted by episodes watched.
+  const genreMin = new Map();
+  for (const r of rows) for (const g of r.genres || []) genreMin.set(g, (genreMin.get(g) || 0) + r.watched);
+  const genres = [...genreMin].filter(([, n]) => n > 0).sort((x, y) => y[1] - x[1]).slice(0, 8);
+  const topGenre = genres[0]?.[1] || 1;
+  const missingGenres = rows.filter((r) => r.watched && !r.genres).length;
+
+  const top = rows.filter((r) => r.watched && r.title).sort((x, y) => y.watched - x.watched).slice(0, 6);
+
+  // Activity from history (this browser only): busiest weekday, longest streak, this year.
+  const days = new Set(history.map((h) => new Date(h.at).toDateString()));
+  let streak = 0, best = 0, prev = null;
+  for (const d of [...days].map((x) => new Date(x)).sort((x, y) => x - y)) {
+    streak = prev && (d - prev) / 86400e3 === 1 ? streak + 1 : 1;
+    best = Math.max(best, streak);
+    prev = d;
+  }
+  const weekdays = Array(7).fill(0);
+  history.forEach((h) => weekdays[new Date(h.at).getDay()]++);
+  const maxDay = Math.max(1, ...weekdays);
+  const dayNames = [...Array(7)].map((_, i) => new Date(2024, 0, 7 + i).toLocaleDateString(undefined, { weekday: 'short' }));
+  const year = new Date().getFullYear();
+  const thisYear = history.filter((h) => new Date(h.at).getFullYear() === year).length;
+
+  const summary = `My anime stats on animee: ${episodes} episodes watched (${fmtHours(minutes)}), ${count('completed')} shows completed${genres[0] ? `, favourite genre ${genres[0][0]}` : ''}.`;
+
+  app.innerHTML = `
+    <h1 class="page-title">my stats</h1>
+    ${!rows.length ? `<div class="empty"><h2>Nothing yet ^^.</h2><p>Watch something and your stats start here.</p><a class="btn primary" href="/">Find something to watch</a></div>` : `
+    <div class="stats stat-grid">
+      <div><b>${episodes}</b><span>episodes watched</span></div>
+      <div><b>${fmtHours(minutes)}</b><span>of anime (about)</span></div>
+      <div><b>${count('completed')}</b><span>completed</span></div>
+      <div><b>${count('watching')}</b><span>watching</span></div>
+      <div><b>${count('planning')}</b><span>plan to watch</span></div>
+      <div><b>${rows.filter((r) => r.favourite).length}</b><span>favourites</span></div>
+    </div>
+    ${genres.length ? `<section class="section"><div class="section-head"><h2>top genres</h2></div>
+      <div class="bars">${genres.map(([g, n]) => `<div class="bar-row"><span>${esc(g)}</span><div class="bar"><i style="width:${Math.round((n / topGenre) * 100)}%"></i></div><b>${n}</b></div>`).join('')}</div>
+      <p class="card-meta">Weighted by episodes watched.${missingGenres ? ` Loading genres for ${missingGenres} more show${missingGenres > 1 ? 's' : ''}…` : ''}</p></section>`
+      : missingGenres ? '<p class="card-meta">Loading genres…</p>' : ''}
+    ${top.length ? `<section class="section"><div class="section-head"><h2>most watched</h2></div>
+      <div class="grid">${top.map((r) => `<a class="card" href="/anime/${esc(r.id)}"><div class="poster"><img loading="lazy" src="${esc(r.cover || '')}" alt=""><span class="badge eps">${r.watched} eps</span></div><div class="card-title">${esc(r.title)}</div></a>`).join('')}</div></section>` : ''}
+    ${history.length ? `<section class="section"><div class="section-head"><h2>when you watch</h2></div>
+      <div class="week">${weekdays.map((n, i) => `<div class="week-col" title="${n} episodes opened"><i style="height:${Math.round((n / maxDay) * 100)}%"></i><span>${dayNames[i]}</span></div>`).join('')}</div>
+      <p class="card-meta">Longest streak: <b>${best} day${best === 1 ? '' : 's'}</b> in a row · ${thisYear} episodes opened in ${year}. Based on history in this browser.</p></section>` : ''}
+    <div class="actions" style="margin-top:22px"><button class="btn" id="stats-copy" type="button">Copy a summary to share</button></div>`}`;
+
+  const copy = document.getElementById('stats-copy');
+  if (copy) copy.onclick = async () => {
+    try { await navigator.clipboard.writeText(summary); copy.textContent = 'Copied ✓'; } catch { copy.textContent = summary; }
+  };
+  // Older library entries have no genres saved: fetch them (6 at a time) and redraw once.
+  const need = rows.filter((r) => r.watched && !r.genres).sort((x, y) => y.watched - x.watched).slice(0, 30).map((r) => r.id);
+  if (need.length && !viewStats.filling) {
+    viewStats.filling = true;
+    (async () => {
+      for (let i = 0; i < need.length; i += 6) {
+        try { (await api('/batch?ids=' + need.slice(i, i + 6).join(','))).results.forEach((a) => store.rememberMeta(a)); } catch { /* skip */ }
+      }
+      viewStats.filling = false;
+      if (parseHash().parts[0] === 'stats') viewStats();
+    })();
+  }
+}
+
 // ---------- watchlist ----------
 // Long lists (for example after an import) are shown 60 at a time.
 const LIST_PAGE = 60;
@@ -1153,7 +1298,7 @@ function viewWatchlist(query) {
   const inAll = (e) => e.status && e.status !== 'notinterested';
   const favCount = list.filter((e) => e.favourite).length;
   const opened = store.getHistory();
-  const tabs = `<div class="tabs">
+  const tabs = `<p class="card-meta" style="margin:0 0 10px"><a href="/stats">📊 My stats</a> · <a href="/new">New episodes</a></p><div class="tabs">
       <a class="tab${tab === 'all' ? ' on' : ''}" href="/watchlist">All <small>${list.filter(inAll).length}</small></a>
       ${store.LIST_STATUSES.map(([k, l]) => `<a class="tab${tab === k ? ' on' : ''}" href="/watchlist?tab=${k}">${l} <small>${count(k)}</small></a>`).join('')}
       <a class="tab${tab === 'favourites' ? ' on' : ''}" href="/watchlist?tab=favourites">♥ Favourites <small>${favCount}</small></a>
@@ -1256,7 +1401,42 @@ function viewAccount(query) {
         <label class="card-meta" style="display:flex;gap:8px;margin-top:14px;cursor:pointer">
           <input type="checkbox" id="clear-local"> Also clear the list and history saved in this browser when signing out
         </label>
+      </div>
+      <div class="auth-box cal-box">
+        <h2 style="margin:0 0 6px">airing calendar</h2>
+        <p class="card-meta">Subscribe in Google Calendar, Apple Calendar or Outlook to see when the airing shows on your Watching and Plan to watch lists get new episodes (Japanese broadcast time, shown in your time zone). It updates every few hours. The link is private: "Sign out everywhere" turns it off.</p>
+        <div class="actions"><button class="btn" id="cal-get" type="button">Get my calendar link</button></div>
+        <div id="cal-out" hidden>
+          <input class="cal-url" id="cal-url" readonly aria-label="Calendar link">
+          <div class="actions">
+            <button class="btn sm" id="cal-copy" type="button">Copy link</button>
+            <a class="btn sm" id="cal-google" target="_blank" rel="noopener">Add to Google Calendar</a>
+            <a class="btn sm" id="cal-apple">Open in Apple / Outlook</a>
+          </div>
+        </div>
       </div>`;
+    document.getElementById('cal-get').onclick = async (e) => {
+      e.target.disabled = true;
+      try {
+        const r = await fetch('/api/me/calendar', { credentials: 'same-origin' });
+        const { url } = await r.json();
+        if (!url) throw new Error();
+        const webcal = url.replace(/^https?:/, 'webcal:');
+        document.getElementById('cal-url').value = url;
+        document.getElementById('cal-google').href = 'https://calendar.google.com/calendar/r?cid=' + encodeURIComponent(webcal);
+        document.getElementById('cal-apple').href = webcal;
+        document.getElementById('cal-out').hidden = false;
+        e.target.hidden = true;
+      } catch {
+        e.target.disabled = false;
+        e.target.textContent = "Couldn't get the link, try again";
+      }
+    };
+    document.getElementById('cal-copy').onclick = async (e) => {
+      const input = document.getElementById('cal-url');
+      try { await navigator.clipboard.writeText(input.value); } catch { input.select(); document.execCommand('copy'); }
+      e.target.textContent = 'Copied ✓';
+    };
     document.getElementById('sync-now').onclick = async (e) => {
       e.target.disabled = true;
       await store.sync.pull().catch(() => {});
@@ -1770,6 +1950,13 @@ document.addEventListener('click', (e) => {
   go(path + a.search + a.hash);
 });
 
+// "New" badge: count of new episodes, refreshed in the background at most every 30 minutes.
+const newBadge = document.getElementById('nav-new-count');
+const showBadge = (items) => { if (newBadge) { newBadge.textContent = items.length; newBadge.hidden = !items.length; } };
+inbox.onInboxChange(showBadge);
+showBadge(inbox.inboxItems());
+window.addEventListener('animee:navigate', () => showBadge(inbox.inboxItems()));
+
 // account label in the nav + refresh list pages after the first sync
 const navAccount = document.getElementById('nav-account');
 let firstSync = true;
@@ -1783,4 +1970,4 @@ store.onSyncChange(({ user, synced, changed }) => {
 });
 
 route();
-store.initAccount();
+store.initAccount().finally(() => setTimeout(() => inbox.refreshInbox().catch(() => {}), 1500));

@@ -62,6 +62,20 @@ export async function sessionCookie(env, user) {
   return `${COOKIE}=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${SESSION_DAYS * 86400}`;
 }
 
+// Private calendar feed link: user id + a signature over (purpose, id, ver). Nothing is stored,
+// and "Sign out everywhere" (ver + 1) turns old links off.
+export async function calendarToken(env, user) {
+  return `${user.id}.${(await sign(env, `cal:${user.id}:${user.ver}`)).slice(0, 22)}`;
+}
+export async function userFromCalendarToken(env, token) {
+  const m = String(token || '').match(/^(\d{1,12})\.([A-Za-z0-9_-]{22})$/);
+  if (!m) return null;
+  const user = await env.DB.prepare('SELECT id, name, ver FROM users WHERE id = ?').bind(Number(m[1])).first();
+  if (!user) return null;
+  const expected = (await sign(env, `cal:${user.id}:${user.ver}`)).slice(0, 22);
+  return equal(enc.encode(expected), enc.encode(m[2])) ? user : null;
+}
+
 export const clearCookie = () => `${COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`;
 
 /** Returns the logged-in user row or null. One small DB read (also checks "logged out everywhere"). */

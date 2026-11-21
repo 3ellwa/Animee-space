@@ -7,10 +7,11 @@
 //   GET  /api/auth/me                    -> { user } or { user: null }
 //   GET  /api/me/library                 -> { rows, prefs, now }
 //   POST /api/me/sync         { rows: [...], prefs? }  -> { rows (merged), prefs, now }
+//   GET  /api/me/calendar                -> { url } private airing-calendar feed (calendar.js)
 //
 // A row is { a, s, ep, t, d, w, u } — see migrations/0001_accounts.sql.
 
-import { hashPassword, verifyPassword, sessionCookie, clearCookie, currentUser } from './auth.js';
+import { hashPassword, verifyPassword, sessionCookie, clearCookie, currentUser, calendarToken } from './auth.js';
 
 const MAX_ROWS_PER_USER = 5000;
 const MAX_ROWS_PER_PUSH = 200;
@@ -232,6 +233,9 @@ export async function handleAccount(context, parts) {
       if (!user) throw fail(401, 'Not signed in');
       if (action === 'library' && method === 'GET') return json(await pull(env, user));
       if (action === 'sync' && method === 'POST') return json(await push(request, env, user));
+      if (action === 'calendar' && method === 'GET') {
+        return json({ url: `${new URL(request.url).origin}/api/cal/${await calendarToken(env, user)}.ics` });
+      }
     }
 
     return json({ error: 'Not found' }, 404);

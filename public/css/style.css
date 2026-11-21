@@ -729,3 +729,52 @@ button.tab { color: inherit; }
 @media (max-width: 520px) { .pl-upnext { left: 10px; right: 10px; bottom: 10px; max-width: none; } .un-card { padding: 10px 12px; } }
 kbd { display: inline-block; min-width: 1.5em; padding: 0 5px; border-radius: 5px; border: 1px solid rgb(255 255 255 / .18); background: rgb(255 255 255 / .06); font: 600 11px/1.6 var(--font-body, inherit); text-align: center; color: var(--paper); }
 @media (hover: none) { .keys-hint { display: none; } }
+
+/* Spotlight legibility: a soft dark pool right behind the text, so bright art (white skies,
+   light posters) never competes with the title or synopsis, whatever the slide. */
+.slide-info::before { content: ""; position: absolute; z-index: -1; inset: -56px -90px -40px -60px; pointer-events: none;
+  background: radial-gradient(ellipse 75% 70% at 35% 60%, rgb(8 9 10 / .78), rgb(8 9 10 / .5) 55%, transparent 80%); }
+.slide-info h1, .slide-info h2 { text-shadow: 0 2px 4px rgb(0 0 0 / .55), 0 4px 30px rgb(0 0 0 / .6); }
+.slide-info p, .slide-info .meta { text-shadow: 0 1px 3px rgb(0 0 0 / .7); }
+.slide-info p { color: #D5D8DD; }
+.slide-info .meta span { background: rgb(8 9 10 / .45); border-color: rgb(242 243 238 / .12); }
+.slide.has-art::after { background: linear-gradient(90deg, var(--ink) 6%, rgb(8 9 10 / .88) 32%, rgb(8 9 10 / .5) 56%, rgb(8 9 10 / .08) 78%), linear-gradient(0deg, rgb(8 9 10 / .92), transparent 42%); }
+@media (max-width: 760px) {
+  .slide-info::before { inset: -70px -18px -50px -18px; background: linear-gradient(0deg, rgb(8 9 10 / .85), rgb(8 9 10 / .6) 65%, transparent); }
+}
+
+/* Watch page skeleton while the show and episode list load */
+.watch-skel .crumbs { margin: 14px 0; }
+.skel-player { background: #000 var(--poster, none) center / cover no-repeat; }
+.skel-player .pl-msg { background: rgb(8 9 10 / .72); }
+.skel-bar { height: 44px; margin-top: 12px; border-radius: 14px; background: rgb(255 255 255 / .04); }
+.skel-eps { display: grid; grid-template-columns: repeat(auto-fill, minmax(52px, 1fr)); gap: 8px; padding: 14px; }
+.skel-eps i { height: 38px; border-radius: 10px; background: rgb(255 255 255 / .05); animation: skel 1.4s ease-in-out infinite; }
+.skel-eps i:nth-child(3n) { animation-delay: .2s; } .skel-eps i:nth-child(3n+1) { animation-delay: .4s; }
+@keyframes skel { 50% { background: rgb(255 255 255 / .1); } }
+@media (prefers-reduced-motion: reduce) { .skel-eps i { animation: none; } }
+
+/* New-episode inbox */
+.nav-badge { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; margin-left: 4px; border-radius: 9px; background: var(--lime); color: var(--ink); font-size: 11px; font-weight: 800; vertical-align: 1px; }
+.nav-badge[hidden] { display: none; }
+.inbox { display: grid; gap: 12px; margin-top: 18px; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
+.inbox-item { display: flex; gap: 14px; padding: 12px; border-radius: 18px; background: rgb(255 255 255 / .03); border: 1px solid var(--line-soft); }
+.inbox-item img { width: 78px; aspect-ratio: 225 / 318; object-fit: cover; border-radius: 10px; }
+.inbox-body { display: grid; gap: 6px; align-content: center; min-width: 0; }
+.inbox-title { font-weight: 700; color: var(--paper); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inbox-body .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+@media (max-width: 520px) { .inbox { grid-template-columns: 1fr; } }
+.cal-box { margin-top: 18px; }
+.cal-url { width: 100%; margin: 6px 0 10px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line-soft); background: rgb(255 255 255 / .04); color: var(--paper); font: 13px/1.4 ui-monospace, monospace; }
+#cal-out .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* Stats page */
+.stat-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+.bars { display: grid; gap: 8px; max-width: 640px; }
+.bar-row { display: grid; grid-template-columns: 120px 1fr 44px; gap: 10px; align-items: center; font-size: 14px; }
+.bar-row b { text-align: right; color: var(--fog); font-weight: 600; }
+.bar { height: 10px; border-radius: 5px; background: rgb(255 255 255 / .06); overflow: hidden; }
+.bar i { display: block; height: 100%; border-radius: 5px; background: var(--lime); }
+.week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 10px; height: 140px; max-width: 520px; }
+.week-col { display: flex; flex-direction: column; justify-content: flex-end; height: 100%; gap: 6px; text-align: center; font-size: 12px; color: var(--fog); }
+.week-col i { display: block; min-height: 3px; border-radius: 6px 6px 2px 2px; background: rgb(var(--lime-rgb) / .8); }

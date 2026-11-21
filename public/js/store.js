@@ -50,7 +50,24 @@ let lib = read('lib', {});
 let dirty = new Set(read('dirty', []));
 const saveLib = () => { write('lib', lib); write('dirty', [...dirty]); };
 
-const metaOf = (a) => ({ title: a.title, cover: a.cover, format: a.format, episodes: a.episodes ?? null, year: a.year ?? null, score: a.score ?? null });
+// air: the show's airing status (RELEASING, FINISHED…), used by the new-episode inbox.
+// air / genres / duration are only included when known, so merging a partial record
+// (an import, a backup) never wipes them.
+function metaOf(a) {
+  const m = { title: a.title, cover: a.cover, format: a.format, episodes: a.episodes ?? null, year: a.year ?? null, score: a.score ?? null };
+  const air = a.air || (/^[A-Z_]+$/.test(a.status || '') ? a.status : null);
+  if (air) m.air = air;
+  if (Array.isArray(a.genres) && a.genres.length) m.genres = a.genres.slice(0, 8);
+  if (a.duration) m.duration = a.duration;
+  return m;
+}
+// Refresh the cached title/cover/airing details of a show already in the library.
+export function rememberMeta(a) {
+  const e = lib[a?.id];
+  if (!e) return;
+  e.m = { ...(e.m || {}), ...metaOf(a) };
+  write('lib', lib);
+}
 function entry(id) {
   return lib[id] || (lib[id] = { a: String(id), s: 0, ep: 0, t: 0, d: 0, w: [], u: 0, m: null });
 }
@@ -78,7 +95,7 @@ export const getEntry = (id) => {
 export function setEntry(anime, status) {
   const e = entry(anime.id);
   e.s = (CODE[status] || 0) | (e.s & KEEP);
-  e.m = metaOf(anime);
+  e.m = { ...(e.m || {}), ...metaOf(anime) };
   touch(e);
 }
 // Sub or dub for one show (null when never chosen; the global setting applies then).
@@ -95,7 +112,7 @@ export function setShowCategory(id, category) {
 export function setFavourite(anime, on) {
   const e = entry(anime.id);
   e.s = (e.s & ~FAVOURITE) | (on ? FAVOURITE : 0);
-  e.m = metaOf(anime);
+  e.m = { ...(e.m || {}), ...metaOf(anime) };
   touch(e);
 }
 // Shows marked "Not interested", hidden from home rows, picks and recommendations.
@@ -133,6 +150,22 @@ export function markWatched(id, number) {
   if (e.w.includes(number)) return;
   e.w.push(number);
   touch(e);
+}
+
+// ---------- servers that actually played (this browser only) ----------
+// Each show + language remembers the last server whose video started, so after a failure and
+// an automatic switch, the next episode starts on the server that works instead of failing again.
+const GOOD_MAX = 300;
+let good = read('goodServers', {});
+export const goodServer = (id, category) => good[`${id}:${category}`] || null;
+export function setGoodServer(id, category, provider) {
+  const key = `${id}:${category}`;
+  if (good[key] === provider) return;
+  delete good[key];
+  good[key] = provider; // newest last, so trimming drops the oldest
+  const keys = Object.keys(good);
+  if (keys.length > GOOD_MAX) keys.slice(0, keys.length - GOOD_MAX).forEach((k) => delete good[k]);
+  write('goodServers', good);
 }
 
 // ---------- watch history (this browser only, newest first) ----------
@@ -221,6 +254,11 @@ export async function ensureMeta(ids) {
   } catch { return false; }
 }
 export const libraryIds = () => Object.keys(lib);
+// One summary row per show, for the stats page.
+export const libraryRows = () => Object.values(lib).map((e) => ({
+  id: e.a, title: e.m?.title || null, cover: e.m?.cover || null, status: statusOf(e), favourite: isFav(e),
+  watched: e.w.length, genres: e.m?.genres || null, duration: e.m?.duration || null, format: e.m?.format || null, air: e.m?.air || null,
+}));
 // Shows with any progress or watched episodes.
 export const startedIds = () => new Set(Object.values(lib).filter((e) => e.ep || e.w.length).map((e) => e.a));
 

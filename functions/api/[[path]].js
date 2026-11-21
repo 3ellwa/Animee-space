@@ -2,6 +2,7 @@
 import * as tenrai from '../_lib/providers/tenrai.js';
 import { handleAccount } from '../_lib/account.js';
 import { handleReport } from '../_lib/reports.js';
+import { handleCalendar } from '../_lib/calendar.js';
 import { importAniList } from '../_lib/importers.js';
 import * as megaplay from '../_lib/providers/megaplay.js';
 import * as playback from '../_lib/providers/registry.js';
@@ -56,6 +57,12 @@ export async function onRequest(ctx) {
   const url = new URL(request.url);
   const parts = Array.isArray(params.path) ? params.path : String(params.path || '').split('/').filter(Boolean);
   if (parts[0] === 'auth' || parts[0] === 'me') return handleAccount(ctx, parts);
+  if (parts[0] === 'cal' && parts.length === 2) {
+    try { return await handleCalendar(ctx, parts[1]); } catch (err) {
+      console.error(err);
+      return new Response('Calendar failed, try again later.', { status: 500 });
+    }
+  }
   if (parts[0] === 'report' && parts.length === 1) {
     try { return await handleReport(request, ctx.env || {}); } catch (err) {
       console.error(err);

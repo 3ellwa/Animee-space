@@ -1,3 +1,13 @@
+## New episodes inbox, airing calendar, stats, clearer loading
+
+- **New for you** (`/new`, nav badge): airing shows on your Watching list whose next episode after the last one you watched is out. Worked out in the browser from your list; the server is only asked the existing edge-cached "does episode N play" question. Checked at most every 30 minutes in the background, with Dismiss and Check now.
+- **Airing calendar**: the account page gives a private link (Google Calendar, Apple Calendar, Outlook) with a weekly event per airing show on your Watching and Plan to watch lists, at its Tokyo broadcast time. The link is signed, so nothing is stored; "Sign out everywhere" turns old links off. The feed is edge-cached for 6 hours.
+- **My stats** (`/stats`, footer and watchlist links): episodes and hours watched, list counts, top genres weighted by episodes, most watched shows, busiest weekdays and longest streak (from this browser's history), and a summary to copy.
+- **Watch page loading**: the page's shape (player, episode panel, the poster when known) appears at once with what's happening ("Getting the show…", "Loading the episode list…", "Syncing your progress…"), and the server list for the likely episode is fetched in parallel.
+- **Fewer server failures**: each show remembers the server whose video actually started, so after one failure and an automatic switch, the next episodes start on the working server instead of failing again.
+- **Spotlight legibility**: a soft dark pool behind the text, stronger text shadows and a darker art gradient, so bright art never competes with the title or synopsis (checked on all slides, desktop and mobile).
+- Local show details now keep airing status, genres and episode length (for the inbox and stats), and merge instead of replacing.
+
 ## Up next, per-show audio, automatic list status, shortcuts
 
 - "Up next" card when an episode ends: a 5-second countdown, then the next episode plays (Play now / Cancel). It follows Auto next and Skip filler, says how many filler episodes it skips, and pauses while the tab is hidden.

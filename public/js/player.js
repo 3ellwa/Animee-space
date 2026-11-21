@@ -63,6 +63,7 @@ export class Player {
     this.video.addEventListener('ended', this.onEnd);
     this.video.addEventListener('pause', () => { this.save(true); this.opts.onPause?.(); });
     const started = () => { if (this.busyShown) this.msg(''); };
+    this.video.addEventListener('playing', () => this.markStarted());
     this.video.addEventListener('loadeddata', started);
     this.video.addEventListener('playing', started);
   }
@@ -103,6 +104,13 @@ export class Player {
     this.msgEl.classList.add('busy');
     this.msgEl.hidden = false;
     this.busyShown = true;
+  }
+
+  // Called once per source when the video really starts playing.
+  markStarted() {
+    if (this.startedToken === this.loadToken) return;
+    this.startedToken = this.loadToken;
+    this.opts.onStarted?.();
   }
 
   // "Up next" card with a countdown when an episode ends. Play now / Cancel; the countdown
@@ -254,6 +262,7 @@ export class Player {
     }
     if (!data || typeof data !== 'object') return;
     if (data.channel && data.channel !== 'megacloud') return;
+    if ((data.event === 'time' && Number(data.time) > 0) || (data.type === 'watching-log' && Number(data.currentTime) > 0)) this.markStarted();
     if (data.event === 'time' && Number.isFinite(Number(data.time))) {
       this.embedTime = Math.max(0, Number(data.time));
       this.saveEmbed(false, Number(data.duration) || 0);
