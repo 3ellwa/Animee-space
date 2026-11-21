@@ -25,6 +25,9 @@ const IFRAME_HTML = '<iframe class="embed-frame" title="Anime episode player" ' 
   'allow="autoplay; fullscreen; picture-in-picture; encrypted-media" allowfullscreen webkitallowfullscreen mozallowfullscreen ' +
   'referrerpolicy="strict-origin-when-cross-origin" hidden></iframe>';
 
+// Phones and tablets (touch as the main pointer).
+const COARSE_POINTER = () => Boolean(window.matchMedia?.('(pointer: coarse)').matches);
+
 export class Player {
   constructor(root, opts = {}) {
     this.root = root;
@@ -186,6 +189,8 @@ export class Player {
     this.msg('');
     this.cancelUpNext();
     clearTimeout(this.frameTimer);
+    clearTimeout(this.errorTimer);
+    this.errorTimer = null;
     this.loadToken = (this.loadToken || 0) + 1;
     this.freshIframe();
     this.video.hidden = false;
@@ -198,6 +203,9 @@ export class Player {
     this.reset();
     this.data = data;
     this.meta = meta;
+    // MegaPlay can't be told where to start, but it takes a seek once it's playing.
+    this.megaReady = false;
+    this.pendingSeek = data.embedUrl && Number(startAt) > 15 ? Number(startAt) : 0;
     if (data.embedUrl) {
       this.video.hidden = true;
       this.iframe.hidden = false;
@@ -281,10 +289,27 @@ export class Player {
     }
   }
 
+  isMegaPlay() {
+    try { return Boolean(this.embedOrigin) && /(^|\.)megaplay\.buzz$/.test(new URL(this.embedOrigin).hostname); } catch { return false; }
+  }
+  // MegaPlay takes commands as JSON strings: {event:'seek', time} and {cmd:'SKP_DATA', auto}.
+  megaSend(message) {
+    const w = this.iframe?.contentWindow;
+    if (!w || !this.isMegaPlay()) return;
+    try { w.postMessage(JSON.stringify(message), this.embedOrigin); } catch { /* frame gone */ }
+  }
+  /** Jump to a time in the embedded player, where it supports it (MegaPlay). */
+  seekTo(seconds) {
+    this.megaSend({ event: 'seek', time: Math.max(0, Math.floor(seconds)) });
+    this.embedTime = Math.max(0, seconds);
+  }
+
   // Tell MegaPlay's player whether animee's player box is fullscreen (see handleEmbedMessage).
+  // Phones and tablets keep the player's own fullscreen: taking it over there would stop it
+  // turning the video sideways.
   tellFullscreen() {
     const w = this.iframe?.contentWindow;
-    if (!w || !this.embedOrigin || !/megaplay\.buzz$/.test(new URL(this.embedOrigin).hostname)) return;
+    if (!w || !this.isMegaPlay() || COARSE_POINTER()) return;
     try { w.postMessage({ megaFullscreenState: document.fullscreenElement === this.root.querySelector('.player') }, this.embedOrigin); } catch { /* frame gone */ }
   }
 
@@ -301,7 +326,7 @@ export class Player {
     // us to toggle (toggleFullscreen) instead of making only its frame fullscreen, so animee's
     // whole player box goes fullscreen and the "Up next" card stays visible.
     if (data.megaCommand) {
-      if (data.megaCommand === 'getFullscreenState') this.tellFullscreen();
+      if (data.megaCommand === 'getFullscreenState') this.tellFullscreen(); // stays unanswered on phones
       if (data.megaCommand === 'toggleFullscreen') {
         const box = this.root.querySelector('.player');
         if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
@@ -333,7 +358,24 @@ export class Player {
       return;
     }
 
-    if ((data.event === 'time' && Number(data.time) > 0) || (data.type === 'watching-log' && Number(data.currentTime) > 0)) this.markStarted();
+    const playingAt = data.event === 'time' ? Number(data.time) : data.type === 'watching-log' ? Number(data.currentTime) : NaN;
+    if (playingAt > 0) {
+      this.markStarted();
+      clearTimeout(this.errorTimer); // it recovered
+      this.errorTimer = null;
+      if (!this.megaReady) {
+        this.megaReady = true;
+        // Intro/outro auto skip (MegaPlay skips where it knows the times).
+        if (this.opts.autoskip?.()) this.megaSend({ cmd: 'SKP_DATA', auto: true });
+        // Resume a few seconds before where you stopped.
+        if (this.pendingSeek && playingAt < this.pendingSeek - 5) {
+          const at = this.pendingSeek;
+          this.seekTo(at - 3);
+          this.opts.onResumed?.(at);
+        }
+        this.pendingSeek = 0;
+      }
+    }
     if (data.event === 'time' && Number.isFinite(Number(data.time))) {
       this.embedTime = Math.max(0, Number(data.time));
       this.saveEmbed(false, Number(data.duration) || 0);
@@ -348,7 +390,12 @@ export class Player {
       this.nextBtn.hidden = !this.opts.hasNext?.();
       this.opts.onEnded?.();
     }
-    if (data.event === 'error') this.fail('The embedded player reported a playback error. Try another server.');
+    if (data.event === 'error') {
+      const message = 'The embedded player reported a playback error. Try another server.';
+      if (!this.isMegaPlay()) { this.fail(message); return; }
+      clearTimeout(this.errorTimer);
+      this.errorTimer = setTimeout(() => { this.errorTimer = null; this.fail(message); }, 5000);
+    }
   }
 
   saveEmbed(force, duration = 0) {

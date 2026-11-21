@@ -982,6 +982,8 @@ async function viewWatch(id, query, alive) {
     hasNext: () => !!nextAuto(),
     onNext: () => goTo(nextAuto()),
     onPause: () => store.sync.flush(),
+    // MegaPlay resumed at the saved time: say so, with a way back to the beginning.
+    onResumed: (at) => showNote(`Picked up where you stopped, at <b>${clock(at)}</b>. <button class="btn sm" type="button">Start over</button>`, () => player.seekTo(0)),
     onFail: (message) => tryNextServer(message),
     onStarted: () => { if (server) store.setGoodServer(a.id, server.category, server.id); },
     onEnded: () => {
@@ -1151,7 +1153,7 @@ async function viewWatch(id, query, alive) {
       // Embedded players can't be told where to start, so say where you left off.
       // A sticky note (missing episode, server switched) stays until the next episode.
       if (note.dataset.sticky) { /* keep it */ }
-      else if (src.embedUrl && startAt > 15 && !['vidnest', 'tryembed'].includes(src.provider)) showNote(`You stopped at <b>${clock(startAt)}</b>. Skip there in the player.`);
+      else if (src.embedUrl && startAt > 15 && !['vidnest', 'tryembed', 'megaplay'].includes(src.provider)) showNote(`You stopped at <b>${clock(startAt)}</b>. Skip there in the player.`);
       else if (note.querySelector('button') === null) showNote('');
     } catch (err) {
       if (!alive() || ep !== current) return;
@@ -2048,6 +2050,7 @@ function viewSettings(alive) {
         <div class="setting anime-only"><span>Audio I prefer</span><div class="chips">${radio('category', 'sub', 'Sub', s.category)}${radio('category', 'dub', 'Dub', s.category)}</div></div>
         ${toggle('autoplay', 'Play the next episode automatically', s.autoplay)}
         ${toggle('skipFiller', 'Skip filler and recap episodes when playing the next one', !!s.skipFiller)}
+        <span class="anime-only">${toggle('autoskip', 'Skip intros and outros automatically (on the 3ellwa server)', !!s.autoskip)}</span>
         ${toggle('wide', 'Use the wide player', !!s.wide)}
       </section>
       <section class="settings-group" id="alerts"><h2>Notifications</h2>
