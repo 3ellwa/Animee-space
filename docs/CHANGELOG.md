@@ -1,3 +1,14 @@
+## Continue on any device, safer sign-in, self-healing player
+
+- Switch devices mid-episode: the leaving device uploads right away (pause, episode end, leaving the page, switching apps), and the arriving one downloads before choosing the episode and whenever the tab comes back. A page left open on another device offers "Continue there". Sub/dub and the preferred server sync too, and change times use the server's clock so a phone with a wrong clock can't lose newer progress. Storage is unchanged: still one small row per show, overwritten in place.
+- Embedded players (MegaPlay) can't be told where to start, so the watch page says "You stopped at 11:24".
+- Airing shows without an episode total on MAL (One Piece, Detective Conan) now count their aired episodes, so they show "1180 eps" and a Watch button instead of "Not released yet".
+- Sign-in is limited to 10 attempts a minute per address and per username, sign-up to 3 a minute per address (Workers rate limiting bindings, nothing stored).
+- Player: a spinner while a server is found and the video starts; if a server fails (error from the player, stream error, or a frame that never loads), the next server in the same language is tried once, with a note saying so.
+- Report button on the watch page (won't play, wrong episode, subtitles, audio, other). Reports and automatic server switches are counted in a small D1 `reports` table (one row per episode, server, reason and day; kept 30 days; created automatically). No viewer data is stored.
+- `?ep=999` on a shorter show now says the episode isn't out instead of silently playing episode 1.
+- Not done: sandboxing the player frame. MegaPlay refuses to play when sandboxed.
+
 ## Search engines and quieter browsing
 
 - Real page addresses: `/anime/52991/frieren-beyond-journey-s-end`, `/watch/52991?ep=2`, `/top/popular` instead of `#/…`. Old `#/` links still work and are converted on load; address bars settle on each show's canonical slug.

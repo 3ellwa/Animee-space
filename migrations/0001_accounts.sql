@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS users (
   name    TEXT    NOT NULL UNIQUE,      -- lowercase username
   pass    TEXT    NOT NULL,             -- pbkdf2$iterations$salt$hash
   ver     INTEGER NOT NULL DEFAULT 1,   -- bump to log out every device
-  prefs   INTEGER NOT NULL DEFAULT 1,   -- bit flags: 1 autoplay, 2 autoskip, 4 prefer dub
+  prefs   INTEGER NOT NULL DEFAULT 1,   -- bit flags: 1 autoplay, 2 autoskip, 4 prefer dub, 8 prefer AnimeParadise
   created INTEGER NOT NULL              -- unix seconds
 );
 

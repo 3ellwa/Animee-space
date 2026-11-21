@@ -18,7 +18,15 @@ const read = (key, fallback) => {
 const write = (key, value) => {
   try { localStorage.setItem(PREFIX + key, JSON.stringify(value)); } catch { /* full or blocked */ }
 };
-const now = () => Math.floor(Date.now() / 1000);
+// Change times are compared across devices, so they use the server's clock: each sync response
+// carries the server time and this browser keeps its offset from it.
+let clockOffset = read('clockOffset', 0);
+const learnClock = (serverNow) => {
+  if (!Number.isFinite(serverNow)) return;
+  clockOffset = Math.round(serverNow - Date.now() / 1000);
+  write('clockOffset', clockOffset);
+};
+const now = () => Math.floor(Date.now() / 1000) + clockOffset;
 
 export const LIST_STATUSES = [
   ['watching', 'Watching'],
@@ -212,9 +220,11 @@ export function setSetting(key, value) {
   write('settingsDirty', true);
   sync.schedule();
 }
-const prefsBits = () => (settings.autoplay ? 1 : 0) | (settings.autoskip ? 2 : 0) | (settings.category === 'dub' ? 4 : 0);
+// bits: 1 autoplay, 2 autoskip, 4 dub, 8 AnimeParadise as the preferred server (else MegaPlay)
+const prefsBits = () => (settings.autoplay ? 1 : 0) | (settings.autoskip ? 2 : 0) | (settings.category === 'dub' ? 4 : 0)
+  | (settings.provider === 'animeparadise' ? 8 : 0);
 function applyPrefs(bits) {
-  settings = { ...settings, autoplay: !!(bits & 1), autoskip: !!(bits & 2), category: bits & 4 ? 'dub' : 'sub' };
+  settings = { ...settings, autoplay: !!(bits & 1), autoskip: !!(bits & 2), category: bits & 4 ? 'dub' : 'sub', provider: bits & 8 ? 'animeparadise' : 'megaplay' };
   write('settings', settings);
 }
 
@@ -245,8 +255,15 @@ export const onSyncChange = (fn) => { listeners.add(fn); return () => listeners.
 const emit = (state) => listeners.forEach((fn) => { try { fn(state); } catch { /* ignore */ } });
 
 // Take a row from the server, unless this browser has a newer change. Watched episodes are always combined.
+// Returns true when this browser's copy changed.
 function adopt(row) {
   const local = lib[row.a];
+  const before = local ? `${local.s},${local.ep},${local.t},${local.w.length}` : '';
+  adoptRow(row, local);
+  const e = lib[row.a];
+  return (e ? `${e.s},${e.ep},${e.t},${e.w.length}` : '') !== before;
+}
+function adoptRow(row, local) {
   const w = [...new Set([...(local?.w || []), ...fromBits(row.w)])];
   if (local && local.u > row.u) { local.w = w; return; }
   if (row.deleted) { delete lib[row.a]; return; }
@@ -286,6 +303,7 @@ export const sync = {
       const res = await post('/me/sync', { rows, ...(sendPrefs ? { prefs: prefsBits() } : {}) }, { keepalive });
       // only clear what didn't change again while the request was in flight
       ids.forEach((id) => { if (lib[id]?.u === sentU.get(id)) dirty.delete(id); });
+      learnClock(res.now);
       res.rows.forEach(adopt);
       if (sendPrefs) write('settingsDirty', false);
       saveLib();
@@ -300,27 +318,47 @@ export const sync = {
     }
   },
 
-  // full download + merge, used on sign-in and page load
+  // Push now instead of waiting for the timer (pause, episode end, leaving the player).
+  flush() {
+    if (!this.user || !dirty.size) return;
+    clearTimeout(this.timer);
+    this.timer = null;
+    return this.push();
+  },
+
+  // Pull unless one finished in the last maxAge ms; concurrent callers share one request.
+  // Never waits longer than `timeout` ms, so a slow network can't hold up the page.
+  pulling: null,
+  freshen({ maxAge = 10000, timeout = 2500 } = {}) {
+    if (!this.user) return Promise.resolve(false);
+    if (!this.pulling && this.lastSync && Date.now() - this.lastSync < maxAge) return Promise.resolve(false);
+    if (!this.pulling) this.pulling = this.pull().catch(() => {}).finally(() => { this.pulling = null; });
+    return Promise.race([this.pulling.then(() => true), new Promise((r) => setTimeout(() => r(false), timeout))]);
+  },
+
+  // full download + merge, used on sign-in, page load and when the tab comes back
   async pull() {
     const res = await fetch('/api/me/library', { credentials: 'same-origin' });
     if (res.status === 401) return this.signedOut();
     if (!res.ok) return;
     const data = await res.json();
+    learnClock(data.now);
     const server = new Map(data.rows.map((r) => [String(r.a), r]));
+    const changed = new Set();
     for (const row of data.rows) {
       const local = lib[row.a];
       if (local) {
         const serverWatched = new Set(fromBits(row.w));
         if (local.u > row.u || local.w.some((n) => !serverWatched.has(n))) dirty.add(row.a);
       }
-      adopt(row);
+      if (adopt(row)) changed.add(String(row.a));
     }
     // anything only this browser has gets uploaded
     for (const id of Object.keys(lib)) if (!server.has(String(id))) dirty.add(String(id));
     if (!read('settingsDirty', false)) applyPrefs(data.prefs);
     saveLib();
     this.lastSync = Date.now();
-    emit({ user: this.user, synced: true });
+    emit({ user: this.user, synced: true, pulled: true, changed });
     await this.push();
   },
 
@@ -363,11 +401,17 @@ export async function logout({ everywhere = false, clearLocal = false } = {}) {
 }
 export const currentUser = () => sync.user;
 
-// upload before the tab closes or goes to the background
+// Upload before the tab closes or goes to the background; download when it comes back,
+// so switching from the laptop to the phone picks up where you stopped.
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden' && sync.user && dirty.size) {
+  if (!sync.user) return;
+  if (document.visibilityState === 'hidden') {
+    if (!dirty.size) return;
     clearTimeout(sync.timer);
     sync.timer = null;
     sync.push({ keepalive: true });
+  } else {
+    sync.freshen();
   }
 });
+window.addEventListener('pagehide', () => { if (sync.user && dirty.size) sync.push({ keepalive: true }); });

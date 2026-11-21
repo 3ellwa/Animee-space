@@ -532,6 +532,24 @@ export async function getAnime(rawId) {
   }
 }
 
+// Airing shows (One Piece, Detective Conan…) have no episode total on MAL, so count the aired
+// episodes from the episode list instead: its first page gives the page count, the last page the rest.
+// Only the show's own page asks for this; lists and playback checks don't pay for the extra calls.
+export async function getAnimeWithCount(rawId) {
+  const anime = await getAnime(rawId);
+  if (anime.availableEpisodes > 0 || anime.status !== 'RELEASING') return anime;
+  try {
+    const pageUrl = page => '/anime/' + encodeURIComponent(anime.id) + '/episodes?page=' + page + '&sfw-strict=true';
+    const firstPage = await request(pageUrl(1));
+    const perPage = listData(firstPage).length;
+    const last = Math.min(MAX_EPISODE_PAGES, number(firstPage?.pagination?.last_visible_page) || 1);
+    const aired = last > 1 ? (last - 1) * perPage + listData(await request(pageUrl(last))).length : perPage;
+    return aired > 0 ? { ...anime, availableEpisodes: Math.min(aired, 2000) } : anime;
+  } catch {
+    return anime;
+  }
+}
+
 const MAX_EPISODE_PAGES = 20;
 const episodeCache = new Map();
 export async function getEpisodes(rawId) {

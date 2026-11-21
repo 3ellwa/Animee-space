@@ -59,7 +59,10 @@ export class Player {
     this.onTime = () => this.tick();
     this.video.addEventListener('timeupdate', this.onTime);
     this.video.addEventListener('ended', this.onEnd);
-    this.video.addEventListener('pause', () => this.save(true));
+    this.video.addEventListener('pause', () => { this.save(true); this.opts.onPause?.(); });
+    const started = () => { if (this.busyShown) this.msg(''); };
+    this.video.addEventListener('loadeddata', started);
+    this.video.addEventListener('playing', started);
   }
 
   // Changing an existing iframe's src adds an entry to the tab's history, so Back would step
@@ -73,14 +76,38 @@ export class Player {
       frame.src = src;
       frame.hidden = false;
       frame.onload = () => this.msg('');
+      // A frame that never finishes loading counts as a failed server.
+      const token = this.loadToken;
+      clearTimeout(this.frameTimer);
+      this.frameTimer = setTimeout(() => {
+        if (token === this.loadToken && this.busyShown) this.fail('The player did not load.');
+      }, 20000);
     }
     this.iframe.replaceWith(frame);
     this.iframe = frame;
   }
 
   msg(message) {
+    this.busyShown = false;
+    this.msgEl.classList.remove('busy');
     this.msgEl.textContent = message;
     this.msgEl.hidden = !message;
+  }
+
+  // Spinner over the player while a server is found and the video starts.
+  busy(text = 'Loading episode…') {
+    this.msgEl.innerHTML = '<span class="pl-spin" aria-hidden="true"></span><span></span>';
+    this.msgEl.lastElementChild.textContent = text;
+    this.msgEl.classList.add('busy');
+    this.msgEl.hidden = false;
+    this.busyShown = true;
+  }
+
+  // Playback failed: let the page try another server; show the message only if it can't.
+  fail(message) {
+    clearTimeout(this.frameTimer);
+    if (this.opts.onFail?.(message)) return;
+    this.msg(message);
   }
 
   reset() {
@@ -93,6 +120,7 @@ export class Player {
     this.fullscreenBtn.hidden = true;
     this.nextBtn.hidden = true;
     this.msg('');
+    clearTimeout(this.frameTimer);
     this.loadToken = (this.loadToken || 0) + 1;
     this.freshIframe();
     this.video.hidden = false;
@@ -110,12 +138,12 @@ export class Player {
       this.iframe.hidden = false;
       this.fullscreenBtn.hidden = false;
       this.embedOrigin = data.embedOrigin || new URL(data.embedUrl).origin;
-      this.msg('Loading episode…');
+      this.busy();
       this.freshIframe(data.embedUrl);
       return;
     }
     const source = (data.sources || [])[0];
-    if (!source) return this.msg('No video source for this episode.');
+    if (!source) return this.fail('No video source for this episode.');
     const video = this.video;
     for (const track of data.tracks || []) {
       const element = document.createElement('track');
@@ -132,12 +160,13 @@ export class Player {
     };
     if (source.type === 'hls' && !window.Hls) {
       const token = this.loadToken;
-      this.msg('Loading episode…');
+      this.busy();
       loadHls()
         .catch(() => null)
-        .then(() => { if (token === this.loadToken) { this.msg(''); this.attachSource(source, start); } });
+        .then(() => { if (token === this.loadToken) this.attachSource(source, start); });
       return;
     }
+    this.busy();
     this.attachSource(source, start);
   }
 
@@ -154,14 +183,14 @@ export class Player {
         if (!detail.fatal) return;
         if (detail.type === Hls.ErrorTypes.NETWORK_ERROR) hls.startLoad();
         else if (detail.type === Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError();
-        else this.msg('Playback error. Try another server.');
+        else this.fail('Playback error. Try another server.');
       });
     } else if (source.type !== 'hls' || video.canPlayType('application/vnd.apple.mpegurl')) {
       video.src = source.url;
       video.addEventListener('loadedmetadata', start, { once: true });
-      video.addEventListener('error', () => this.msg('This stream failed to load. Try another server.'), { once: true });
+      video.addEventListener('error', () => this.fail('This stream failed to load. Try another server.'), { once: true });
     } else {
-      this.msg('Your browser can’t play this stream.');
+      this.fail('Your browser can’t play this stream.');
     }
   }
 
@@ -198,7 +227,7 @@ export class Player {
       this.nextBtn.hidden = !this.opts.hasNext?.();
       this.opts.onEnded?.();
     }
-    if (data.event === 'error') this.msg('The embedded player reported a playback error. Try another server.');
+    if (data.event === 'error') this.fail('The embedded player reported a playback error. Try another server.');
   }
 
   saveEmbed(force, duration = 0) {

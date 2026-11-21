@@ -31,6 +31,12 @@ const fmtCountdown = (sec) => {
 const HAPPY = '<svg class="happy" viewBox="0 0 48 24" aria-hidden="true"><path class="eye" d="M3 20.5 L10 6 L17 20.5"/><path class="eye" d="M24 20.5 L31 6 L38 20.5"/><circle class="dot" cx="45" cy="20.6" r="2.9"/></svg>';
 const loader = () => `<div class="loader" role="status"><span class="loader-face">${HAPPY}</span><span class="sr-only">Loading</span></div>`;
 const onCleanup = (fn) => cleanups.push(fn);
+// 754 -> "12:34", 3800 -> "1:03:20"
+const clock = (sec) => {
+  sec = Math.max(0, Math.floor(sec || 0));
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = String(sec % 60).padStart(2, '0');
+  return h ? `${h}:${String(m).padStart(2, '0')}:${s}` : `${m}:${s}`;
+};
 // The title to show, following the English / Japanese setting.
 const T = (a) => (store.getSettings().titles === 'japanese' && a?.titleRomaji ? a.titleRomaji : a?.title || '');
 // Rows and picks leave out shows marked "Not interested", and shows already started when that setting is on.
@@ -637,7 +643,8 @@ async function viewAnime(id, alive, query = new URLSearchParams()) {
   // Old or slug-less links settle on the show's one canonical address.
   if (location.pathname !== animeHref(a)) history.replaceState(null, '', animeHref(a) + location.search);
   const prog = store.getProgress(a.id);
-  const canWatch = a.availableEpisodes > 0;
+  // An airing show can be missing its episode count; it still has episodes to watch.
+  const canWatch = a.availableEpisodes > 0 || a.status === 'RELEASING';
 
   app.innerHTML = `
     <section class="hero">
@@ -731,7 +738,9 @@ async function viewAnime(id, alive, query = new URLSearchParams()) {
 // ---------- watch ----------
 async function viewWatch(id, query, alive) {
   if (!id) return viewNotFound();
-  const [a, epData] = await Promise.all([api(`/anime/${id}`), api(`/anime/${id}/episodes`)]);
+  // Fetch the latest progress from the account alongside the show, so another device's
+  // episode and position are used (never waits more than a couple of seconds).
+  const [a, epData] = await Promise.all([api(`/anime/${id}`), api(`/anime/${id}/episodes`), store.sync.freshen()]);
   if (!alive()) return;
   document.title = `Watch ${a.title} · animee space`;
   const episodes = epData.episodes;
@@ -746,6 +755,7 @@ async function viewWatch(id, query, alive) {
   const prog = store.getProgress(a.id);
   const wantEp = Number(query.get('ep')) || prog?.ep || 1;
   let current = episodes.find((e) => e.number === wantEp) || episodes[0];
+  const missingEp = query.get('ep') && current.number !== wantEp ? wantEp : null;
   let servers = [];
   let server = null; // { id, category }
   const watched = store.watchedSet(a.id);
@@ -770,12 +780,24 @@ async function viewWatch(id, query, alive) {
             <span class="spacer"></span>
             <button class="btn sm wide-btn" id="wide-toggle" type="button" aria-pressed="false">⤢ Wide player</button>
             <button class="btn sm" id="mark-seen" type="button">✓ Mark watched</button>
+            <details class="report-menu" id="report-menu">
+              <summary class="btn sm">⚑ Report</summary>
+              <div class="report-pop" role="group" aria-label="What's wrong with this episode?">
+                <span class="card-meta">What's wrong?</span>
+                <button class="btn sm" type="button" data-r="video">Video won't play</button>
+                <button class="btn sm" type="button" data-r="wrong">Wrong episode</button>
+                <button class="btn sm" type="button" data-r="subs">Subtitles missing or wrong</button>
+                <button class="btn sm" type="button" data-r="audio">Audio problem</button>
+                <button class="btn sm" type="button" data-r="other">Something else</button>
+              </div>
+            </details>
             <button class="btn sm" id="prev-ep">‹ Prev</button>
             <button class="btn sm" id="next-ep">Next ›</button>
           </div>
         </div>
         <div class="servers">
           <div class="now">You are watching<b id="now-ep"></b>If one server doesn't work, try another.</div>
+          <div class="resume-note" id="resume-note" hidden></div>
           <div id="server-list"></div>
         </div>
         <section class="section">
@@ -825,9 +847,12 @@ async function viewWatch(id, query, alive) {
     autoskip: () => store.getSettings().autoskip,
     hasNext: () => !!nextAuto(),
     onNext: () => goTo(nextAuto()),
+    onPause: () => store.sync.flush(),
+    onFail: (message) => tryNextServer(message),
     onEnded: () => {
       store.markWatched(a.id, current.number);
       watched.add(current.number);
+      store.sync.flush();
       if (store.getSettings().autoplay && nextAuto()) goTo(nextAuto());
       else renderEpisodes();
     },
@@ -840,7 +865,28 @@ async function viewWatch(id, query, alive) {
       }
     },
   });
-  onCleanup(() => player.destroy());
+  onCleanup(() => { player.destroy(); store.sync.flush(); });
+
+  // Picked up a newer position from another device while this page was open (e.g. the phone
+  // was left on this page): offer to jump there rather than yanking the video around.
+  const note = $('resume-note');
+  const showNote = (html, onClick) => {
+    note.innerHTML = html;
+    note.hidden = !html;
+    const b = note.querySelector('button');
+    if (b) b.onclick = () => { note.hidden = true; onClick(); };
+  };
+  onCleanup(store.onSyncChange(({ pulled, changed }) => {
+    if (!pulled || !changed?.has(String(a.id)) || !alive()) return;
+    const p = store.getProgress(a.id);
+    if (!p) return;
+    const sameEp = p.ep === current.number;
+    if (sameEp && Math.abs(p.time - player.getCurrentTime()) < 30) return;
+    const target = episodes.find((e) => e.number === p.ep);
+    if (!target) return;
+    showNote(`Another device is at <b>Episode ${p.ep} · ${clock(p.time)}</b> <button class="btn sm primary" type="button">Continue there</button>`,
+      () => (sameEp ? playSource(p.time) : goTo(target)));
+  }));
 
   $('opt-autoplay').onchange = (e) => store.setSetting('autoplay', e.target.checked);
   if ($('opt-skipfiller')) $('opt-skipfiller').onchange = (e) => store.setSetting('skipFiller', e.target.checked);
@@ -910,17 +956,25 @@ async function viewWatch(id, query, alive) {
     const b = e.target.closest('.srv');
     if (!b) return;
     server = { id: b.dataset.id, category: b.dataset.cat };
+    tried.delete(server.id);
     store.setSetting('category', server.category);
     store.setSetting('provider', server.id);
     renderServers();
     playSource(player.getCurrentTime());
   };
 
-  async function playSource(startAt) {
+  // Servers that already failed for this episode, so an automatic retry never loops.
+  let tried = new Set();
+  // explicit: ask for exactly this server (automatic retries), instead of "this one first".
+  async function playSource(startAt, { explicit = false } = {}) {
     const ep = current;
+    player.busy(explicit ? `Trying ${serverName(server)}…` : 'Loading episode…');
     try {
-      const src = await api(`/episode/${encodeURIComponent(ep.id)}/sources?server=auto&preferred=${encodeURIComponent(server.id)}&category=${server.category}`, { fresh: true });
+      const mode = explicit ? `server=${encodeURIComponent(server.id)}` : `server=auto&preferred=${encodeURIComponent(server.id)}`;
+      const src = await api(`/episode/${encodeURIComponent(ep.id)}/sources?${mode}&category=${server.category}`, { fresh: true });
       if (!alive() || ep !== current) return;
+      if (!src.provider) src.provider = server.id;
+      tried.add(src.provider);
       // Reflect the provider that actually resolved, not merely the first one tried.
       if (src.provider) {
         const resolved = servers.find((item) => item.id === src.provider && item.category === server.category);
@@ -928,9 +982,58 @@ async function viewWatch(id, query, alive) {
         renderServers();
       }
       player.load(src, { startAt, meta: { ep: ep.number } });
+      // Embedded players can't be told where to start, so say where you left off.
+      // A sticky note (missing episode, server switched) stays until the next episode.
+      if (note.dataset.sticky) { /* keep it */ }
+      else if (src.embedUrl && startAt > 15) showNote(`You stopped at <b>${clock(startAt)}</b>. Skip there in the player.`);
+      else if (note.querySelector('button') === null) showNote('');
     } catch (err) {
-      if (alive()) player.msg(`Couldn't load the video: ${err.message}`);
+      if (!alive() || ep !== current) return;
+      tried.add(server.id);
+      // Automatic mode already tried every server in this language on the Worker.
+      if (!explicit) servers.filter((s) => s.category === server.category).forEach((s) => tried.add(s.id));
+      if (!tryNextServer(`Couldn't load the video: ${err.message}`)) player.msg(`Couldn't load the video: ${err.message}`);
     }
+  }
+  // Tells the server which episode/server combination failed (no personal data is sent).
+  const reported = new Set();
+  function report(reason, srv = server) {
+    if (!srv) return;
+    const key = `${current.number}:${srv.id}:${srv.category}:${reason}`;
+    if (reported.has(key)) return;
+    reported.add(key);
+    fetch('/api/report', {
+      method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ a: a.id, ep: current.number, p: srv.id, c: srv.category, r: reason }),
+    }).catch(() => {});
+  }
+  $('report-menu').onclick = (e) => {
+    const b = e.target.closest('button[data-r]');
+    if (!b) return;
+    report(b.dataset.r);
+    $('report-menu').open = false;
+    $('report-menu').querySelector('summary').textContent = '✓ Reported, thanks';
+  };
+  const serverName = (s) => servers.find((x) => x.id === s?.id)?.name || s?.id || 'another server';
+
+  // The video failed after it was handed to the player: move to the next server in the same
+  // language once. Returns false when nothing is left, so the player shows the error.
+  function tryNextServer(message) {
+    if (!server || !alive()) return false;
+    const failed = server;
+    tried.add(failed.id);
+    report('auto', failed);
+    const next = servers.find((s) => s.category === failed.category && !tried.has(s.id));
+    if (!next) {
+      player.msg(`${message} No other ${failed.category} server could play it either. You can report it below.`);
+      return true;
+    }
+    server = { id: next.id, category: next.category };
+    renderServers();
+    showNote(`${esc(serverName(failed))} didn't play, switched to <b>${esc(next.name)}</b>.`);
+    note.dataset.sticky = '1'; // keep it up while the next server loads
+    playSource(player.getCurrentTime(), { explicit: true });
+    return true;
   }
 
   async function goTo(ep) {
@@ -946,6 +1049,10 @@ async function viewWatch(id, query, alive) {
     showSeen();
     renderEpisodes();
     player.reset();
+    tried = new Set();
+    delete note.dataset.sticky;
+    $('report-menu').querySelector('summary').textContent = '⚑ Report';
+    player.busy('Finding a server…');
     $('server-list').innerHTML = '<span class="card-meta">Loading servers…</span>';
     try {
       const data = await api(`/episode/${encodeURIComponent(ep.id)}/servers`);
@@ -969,6 +1076,11 @@ async function viewWatch(id, query, alive) {
   }
 
   goTo(current);
+  // ?ep=999 on a 24-episode show: say so instead of silently playing another episode.
+  if (missingEp) {
+    showNote(`Episode ${esc(String(missingEp))} isn't out or doesn't exist, so this is Episode ${current.number}.`);
+    note.dataset.sticky = '1';
+  }
 }
 
 // ---------- watchlist ----------
@@ -1606,9 +1718,9 @@ document.addEventListener('click', (e) => {
 // account label in the nav + refresh list pages after the first sync
 const navAccount = document.getElementById('nav-account');
 let firstSync = true;
-store.onSyncChange(({ user, synced }) => {
+store.onSyncChange(({ user, synced, changed }) => {
   navAccount.textContent = user ? user.name : 'Sign in';
-  if (synced && firstSync) {
+  if (synced && (firstSync || changed?.size)) {
     firstSync = false;
     const page = parseHash().parts[0];
     if (page === undefined || page === 'watchlist') route(); // never interrupt the player

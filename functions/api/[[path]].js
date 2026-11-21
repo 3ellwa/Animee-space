@@ -1,6 +1,7 @@
 // Tenrai catalogue API with direct multi-provider playback. User accounts remain on D1.
 import * as tenrai from '../_lib/providers/tenrai.js';
 import { handleAccount } from '../_lib/account.js';
+import { handleReport } from '../_lib/reports.js';
 import { importAniList } from '../_lib/importers.js';
 import * as megaplay from '../_lib/providers/megaplay.js';
 import * as playback from '../_lib/providers/registry.js';
@@ -55,6 +56,12 @@ export async function onRequest(ctx) {
   const url = new URL(request.url);
   const parts = Array.isArray(params.path) ? params.path : String(params.path || '').split('/').filter(Boolean);
   if (parts[0] === 'auth' || parts[0] === 'me') return handleAccount(ctx, parts);
+  if (parts[0] === 'report' && parts.length === 1) {
+    try { return await handleReport(request, ctx.env || {}); } catch (err) {
+      console.error(err);
+      return json({ error: 'Internal error' }, 500);
+    }
+  }
   if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405);
   try {
     const [a, b, c] = parts;
@@ -95,7 +102,7 @@ export async function onRequest(ctx) {
       megaplay.getEpisodeAvailability(validId(b), url.searchParams.get('ep')));
     if (a === 'anime' && b && c === 'seasons') return await cached(ctx, 86400, async () => tenrai.getSeasons(validId(b)));
     if (a === 'anime' && b && c === 'extras') return await cached(ctx, 3600, async () => tenrai.getExtras(validId(b)));
-    if (a === 'anime' && b && !c) return await cached(ctx, 3600, async () => tenrai.getAnime(validId(b)));
+    if (a === 'anime' && b && !c) return await cached(ctx, 3600, async () => tenrai.getAnimeWithCount(validId(b)));
     if (a === 'anime' && b && c === 'episodes') return await cached(ctx, 1800, async () => tenrai.getEpisodes(validId(b)));
     if (a === 'episode' && b && c === 'servers') return await cached(ctx, 600, async () => {
       const reference = episodeRef(b);

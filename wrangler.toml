@@ -10,3 +10,20 @@ migrations_dir = "migrations"
 
 [vars]
 ANIMEE_EMBED_PROVIDERS = "[]"
+
+# Sign-in / sign-up throttling (functions/_lib/account.js). Counters live at the edge, not in D1.
+# period must be 10 or 60 seconds; namespace_id is any number unique to this account.
+[[ratelimits]]
+name = "LOGIN_LIMITER"
+namespace_id = "41001"
+simple = { limit = 10, period = 60 }
+
+[[ratelimits]]
+name = "REGISTER_LIMITER"
+namespace_id = "41002"
+simple = { limit = 3, period = 60 }
+
+[[ratelimits]]
+name = "REPORT_LIMITER"
+namespace_id = "41003"
+simple = { limit = 20, period = 60 }

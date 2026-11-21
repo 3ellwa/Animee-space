@@ -96,6 +96,19 @@ function merge(existing, incoming) {
 const isEmpty = (r) => !r.s && !r.ep && !r.w;
 const same = (x, y) => x && y && x.s === y.s && x.ep === y.ep && x.t === y.t && x.d === y.d && (x.w || null) === (y.w || null) && x.u === y.u;
 
+// ---------- rate limits ----------
+// Workers' rate limiting bindings (wrangler.toml [[ratelimits]]): counters live at the edge,
+// nothing is stored in D1. Sign-in is limited per address and per username, so guessing one
+// account's password from many addresses is capped too. Missing bindings (tests) mean no limit.
+async function limit(binding, keys) {
+  if (!binding?.limit) return;
+  for (const key of keys) {
+    const { success } = await binding.limit({ key }).catch(() => ({ success: true }));
+    if (!success) throw Object.assign(fail(429, 'Too many attempts. Wait a minute and try again.'), { retryAfter: 60 });
+  }
+}
+const clientIp = (request) => request.headers.get('CF-Connecting-IP') || 'local';
+
 // ---------- handlers ----------
 const USERNAME = /^[a-z0-9_]{3,20}$/;
 
@@ -105,6 +118,7 @@ async function register(request, env) {
   const password = String(body.password || '');
   if (!USERNAME.test(name)) throw fail(400, 'Username must be 3-20 characters: letters, numbers or _');
   if (password.length < 8 || password.length > 128) throw fail(400, 'Password must be at least 8 characters');
+  await limit(env.REGISTER_LIMITER, ['reg:' + clientIp(request)]);
 
   const exists = await env.DB.prepare('SELECT 1 FROM users WHERE name = ?').bind(name).first();
   if (exists) throw fail(409, 'That username is taken');
@@ -119,6 +133,7 @@ async function login(request, env) {
   const body = await readBody(request);
   const name = String(body.username || '').trim().toLowerCase();
   const password = String(body.password || '');
+  await limit(env.LOGIN_LIMITER, ['ip:' + clientIp(request), ...(USERNAME.test(name) ? ['user:' + name] : [])]);
   const user = USERNAME.test(name)
     ? await env.DB.prepare('SELECT id, name, pass, ver, prefs FROM users WHERE name = ?').bind(name).first()
     : null;
@@ -139,7 +154,7 @@ async function push(request, env, user) {
   const incoming = (Array.isArray(body.rows) ? body.rows : []).slice(0, MAX_ROWS_PER_PUSH).map(cleanRow).filter(Boolean);
   const stmts = [];
 
-  if (Number.isInteger(body.prefs) && body.prefs >= 0 && body.prefs < 8 && body.prefs !== user.prefs) {
+  if (Number.isInteger(body.prefs) && body.prefs >= 0 && body.prefs < 16 && body.prefs !== user.prefs) {
     stmts.push(env.DB.prepare('UPDATE users SET prefs = ? WHERE id = ?').bind(body.prefs, user.id));
     user.prefs = body.prefs;
   }
@@ -222,6 +237,6 @@ export async function handleAccount(context, parts) {
   } catch (err) {
     const status = err.status || 500;
     if (status === 500) console.error(err);
-    return json({ error: status === 500 ? 'Internal error' : err.message }, status);
+    return json({ error: status === 500 ? 'Internal error' : err.message }, status, err.retryAfter ? { 'Retry-After': String(err.retryAfter) } : {});
   }
 }

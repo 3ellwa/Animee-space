@@ -3,7 +3,7 @@ const memo = new Map();
 
 // Changing this makes browsers skip API copies they saved before (they used to keep some for a day).
 // API responses now expire from browsers within 10 minutes, so it rarely needs changing.
-const API_VERSION = '4';
+const API_VERSION = '5';
 
 export function api(path, { fresh = false } = {}) {
   if (!fresh && memo.has(path)) return memo.get(path);
