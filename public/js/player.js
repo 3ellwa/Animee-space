@@ -187,8 +187,19 @@ export class Player {
       this.iframe.hidden = false;
       this.fullscreenBtn.hidden = false;
       this.embedOrigin = data.embedOrigin || new URL(data.embedUrl).origin;
+      let embedUrl = data.embedUrl;
+      if (['vidnest', 'tryembed'].includes(data.provider) && Number.isFinite(Number(startAt)) && startAt > 5) {
+        const target = new URL(embedUrl);
+        target.searchParams.set('startAt', String(Math.floor(startAt)));
+        if (data.provider === 'tryembed') target.searchParams.set('autoNext', 'false');
+        embedUrl = target.toString();
+      } else if (data.provider === 'tryembed') {
+        const target = new URL(embedUrl);
+        target.searchParams.set('autoNext', 'false');
+        embedUrl = target.toString();
+      }
       this.busy();
-      this.freshIframe(data.embedUrl);
+      this.freshIframe(embedUrl);
       return;
     }
     const source = (data.sources || [])[0];
@@ -262,6 +273,29 @@ export class Player {
     }
     if (!data || typeof data !== 'object') return;
     if (data.channel && data.channel !== 'megacloud') return;
+
+    // TryEmbed documents PLAYER_EVENT messages with playback state nested in `data`.
+    // Keep the strict origin + iframe-window checks above before accepting any message.
+    if (data.type === 'PLAYER_EVENT') {
+      const state = data.data && typeof data.data === 'object' ? data.data : data;
+      const eventName = String(data.event || state.event || data.name || '').toLowerCase();
+      const currentTime = Number(state.currentTime ?? state.current_time ?? state.time);
+      const duration = Number(state.duration);
+      if (eventName === 'play' || eventName === 'timeupdate' || eventName === 'seeked' || currentTime > 0) this.markStarted();
+      if (Number.isFinite(currentTime) && currentTime >= 0) {
+        this.embedTime = currentTime;
+        if (eventName === 'timeupdate' || eventName === 'seeked' || eventName === 'pause') this.saveEmbed(false, Number.isFinite(duration) ? duration : 0);
+      }
+      if (eventName === 'ended' || eventName === 'complete') {
+        this.embedTime = Number.isFinite(duration) && duration > 0 ? duration : this.embedTime;
+        this.saveEmbed(true, Number.isFinite(duration) ? duration : 0);
+        this.nextBtn.hidden = !this.opts.hasNext?.();
+        this.opts.onEnded?.();
+      }
+      if (eventName === 'error') this.fail('The embedded player reported a playback error. Try another server.');
+      return;
+    }
+
     if ((data.event === 'time' && Number(data.time) > 0) || (data.type === 'watching-log' && Number(data.currentTime) > 0)) this.markStarted();
     if (data.event === 'time' && Number.isFinite(Number(data.time))) {
       this.embedTime = Math.max(0, Number(data.time));

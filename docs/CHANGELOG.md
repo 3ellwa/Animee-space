@@ -1,3 +1,10 @@
+## VidNest and TryEmbed servers; AniList lookups from the browser
+
+- Two more playback servers, each one entry in sub and dub: **VidNest** (`vidnest.fun`) and **TryEmbed** (`tryembed.us.cc`). Both open at your saved position (`startAt`), so there's no "skip to 11:24" hint for them; TryEmbed's own auto-next is turned off so animee's Up next stays in charge, and its progress messages are accepted only from its exact player window.
+- Both address shows by AniList ID. AniList refuses requests from Cloudflare's servers, so the watch page looks the ID up from the browser (remembered for 30 days) and sends it with the playback request (`&al=`). Without it, the Worker tries AniList itself, which works in local development.
+- **AniList import fixed**: it failed on the live site ("AniList returned an error") for the same reason. It now runs in the browser; the old `/api/import/anilist` route stays for local use.
+- Checked locally: VidNest plays (its player opens pop-up ad tabs on click). TryEmbed answered "Access denied: bootstrap binding failed" from localhost, so it may only allow approved sites; check it on animee.space.
+
 ## My anime hub, follow + pop-ups, requests
 
 - **My anime** (`/me`, nav "My Anime" with a new-episode badge): one hub with tabs for Continue, My list, Favourites, History, Notifications, Requests, Stats, Settings and Account, plus a "Five things to know" panel that can be hidden. Settings left the top nav; it lives in the hub.

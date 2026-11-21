@@ -3,6 +3,8 @@
 import * as tenrai from './tenrai.js';
 import * as megaplay from './megaplay.js';
 import * as animeparadise from './animeparadise.js';
+import * as vidnest from './vidnest.js';
+import * as tryembed from './tryembed.js';
 
 const BUILTIN_ID = 'megaplay';
 const ID_RE = /^[a-z0-9][a-z0-9_-]{0,39}$/;
@@ -10,6 +12,8 @@ const CATEGORIES = new Set(['sub', 'dub']);
 const BUILTIN_PROVIDERS = [
   { id: 'megaplay', name: 'MegaPlay', categories: ['sub', 'dub'] },
   { id: 'animeparadise', name: 'AnimeParadise', categories: ['sub'] },
+  { id: 'vidnest', name: 'VidNest', categories: ['sub', 'dub'] },
+  { id: 'tryembed', name: 'TryEmbed', categories: ['sub', 'dub'] },
 ];
 
 const fail = (status, message) => Object.assign(new Error(message), { status });
@@ -116,9 +120,10 @@ async function withDeadline(name, ms, task) {
 const fallbackCache = new Map();
 const FALLBACK_CACHE_MS = 2 * 60 * 1000;
 const FALLBACK_FAILURE_MS = 15 * 1000;
+const STABLE_EMBED_PROVIDERS = new Set(['megaplay', 'vidnest', 'tryembed']);
 
 /** Resolve one provider at a time and stop on the first successful source. */
-export async function getFallbackSource(rawId, rawEpisode, rawPreferred, rawCategory, env = {}) {
+export async function getFallbackSource(rawId, rawEpisode, rawPreferred, rawCategory, env = {}, opts = {}) {
   const id = validAnimeId(rawId);
   const episode = episodeNumber(rawEpisode);
   const category = String(rawCategory || 'sub').toLowerCase();
@@ -151,7 +156,7 @@ export async function getFallbackSource(rawId, rawEpisode, rawPreferred, rawCate
         if (candidate.id === BUILTIN_ID && !(await megaplay.isAvailable(id, episode, category))) {
           throw fail(404, 'episode unavailable');
         }
-        return getSources(id, episode, candidate.id, category, env);
+        return getSources(id, episode, candidate.id, category, env, opts);
       });
       const playable = Boolean(source?.embedUrl || source?.sources?.some(item => item?.url));
       if (!playable) throw fail(502, 'provider returned no playable source');
@@ -165,7 +170,7 @@ export async function getFallbackSource(rawId, rawEpisode, rawPreferred, rawCate
       };
       // Direct stream URLs from scraped providers can expire. Cache only stable
       // iframe/template providers, not AnimeParadise resolutions.
-      if (candidate.id === BUILTIN_ID || !BUILTIN_PROVIDERS.some(provider => provider.id === candidate.id)) {
+      if (STABLE_EMBED_PROVIDERS.has(candidate.id) || !BUILTIN_PROVIDERS.some(provider => provider.id === candidate.id)) {
         fallbackCache.set(key, { value: result, expires: Date.now() + FALLBACK_CACHE_MS });
       }
       return result;
@@ -183,14 +188,15 @@ export async function getFallbackSource(rawId, rawEpisode, rawPreferred, rawCate
 }
 
 /** A single, explicitly chosen provider, with the same deadline as automatic playback. */
-export async function getDirectSources(rawId, rawEpisode, rawServer, rawCategory, env = {}) {
+export async function getDirectSources(rawId, rawEpisode, rawServer, rawCategory, env = {}, opts = {}) {
   const server = String(rawServer || BUILTIN_ID).trim().toLowerCase();
   const provider = getProviderList(env).find(item => item.id === server);
   return withDeadline(provider?.name || 'The provider', playbackLimits.providerMs,
-    () => getSources(rawId, rawEpisode, server, rawCategory, env));
+    () => getSources(rawId, rawEpisode, server, rawCategory, env, opts));
 }
 
-export async function getSources(rawId, rawEpisode, rawServer, rawCategory, env = {}) {
+/** opts.aniListId: the show's AniList ID, looked up by the browser (VidNest and TryEmbed need it). */
+export async function getSources(rawId, rawEpisode, rawServer, rawCategory, env = {}, opts = {}) {
   const id = validAnimeId(rawId);
   const episode = episodeNumber(rawEpisode);
   const server = String(rawServer || BUILTIN_ID).trim().toLowerCase();
@@ -199,6 +205,8 @@ export async function getSources(rawId, rawEpisode, rawServer, rawCategory, env 
 
   if (server === 'megaplay') return tenrai.getSources(id, episode, category);
   if (server === 'animeparadise') return animeparadise.getSources(id, episode, category);
+  if (server === 'vidnest') return vidnest.getSources(id, episode, category, opts.aniListId);
+  if (server === 'tryembed') return tryembed.getSources(id, episode, category, opts.aniListId);
 
   const provider = configuredProviders(env).find(item => item.id === server);
   if (!provider) throw fail(404, 'That playback server is not configured.');

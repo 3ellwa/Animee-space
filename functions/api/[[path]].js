@@ -130,12 +130,15 @@ export async function onRequest(ctx) {
       const language = url.searchParams.get('category') === 'dub' ? 'dub' : 'sub';
       const server = url.searchParams.get('server') || 'megaplay';
       const preferred = url.searchParams.get('preferred') || 'megaplay';
+      // The show's AniList ID, found by the browser (AniList refuses Cloudflare's servers).
+      const al = url.searchParams.get('al');
+      const opts = { aniListId: /^\d{1,9}$/.test(al || '') ? al : null };
       if (server === 'auto') {
-        return json(await playback.getFallbackSource(reference.animeId, reference.episode, preferred, language, ctx.env || {}));
+        return json(await playback.getFallbackSource(reference.animeId, reference.episode, preferred, language, ctx.env || {}, opts));
       }
       return json({
         episodeId: b,
-        ...await playback.getDirectSources(reference.animeId, reference.episode, server, language, ctx.env || {}),
+        ...await playback.getDirectSources(reference.animeId, reference.episode, server, language, ctx.env || {}, opts),
       });
     }
     if (a === 'batch' && !b) return await cached(ctx, 600, async () => {

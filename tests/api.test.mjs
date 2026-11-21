@@ -265,7 +265,7 @@ test('MAL details, episode references, and MegaPlay embeds share one stable ID',
   assert.equal(episodeData.episodes[1].number, 2);
   assert.equal(episodeData.episodes[1].isFiller, true);
   const servers = await onRequest(context('episode/20%3A2/servers'));
-  assert.deepEqual((await servers.json()).servers.map(server => server.category), ['sub', 'dub', 'sub']);
+  assert.deepEqual((await servers.json()).servers.map(server => server.category), ['sub', 'dub', 'sub', 'sub', 'dub', 'sub', 'dub']);
   const source = await onRequest(context('episode/20%3A2/sources?category=sub'));
   assert.equal((await source.json()).embedUrl, 'https://megaplay.buzz/stream/mal/20/2/sub');
 });
@@ -300,6 +300,10 @@ test('playback registry returns real provider IDs and routes sources to the sele
       ['megaplay', 'MegaPlay', 'sub'],
       ['megaplay', 'MegaPlay', 'dub'],
       ['animeparadise', 'AnimeParadise', 'sub'],
+      ['vidnest', 'VidNest', 'sub'],
+      ['vidnest', 'VidNest', 'dub'],
+      ['tryembed', 'TryEmbed', 'sub'],
+      ['tryembed', 'TryEmbed', 'dub'],
       ['backup-one', 'Backup One', 'sub'],
       ['backup-one', 'Backup One', 'dub'],
       ['backup-two', 'Backup Two', 'sub'],
@@ -341,12 +345,90 @@ test('strict content filtering rejects directly requested mature ratings', async
 
 test('built-in playback providers require no optional backend configuration', async () => {
   const providers = getProviderList({});
-  assert.deepEqual(providers.map(provider => provider.id), ['megaplay', 'animeparadise']);
+  assert.deepEqual(providers.map(provider => provider.id), ['megaplay', 'animeparadise', 'vidnest', 'tryembed']);
   const servers = await getServers('20', 1, {});
   assert.deepEqual(servers.map(server => [server.id, server.category]), [
     ['megaplay', 'sub'], ['megaplay', 'dub'], ['animeparadise', 'sub'],
+    ['vidnest', 'sub'], ['vidnest', 'dub'], ['tryembed', 'sub'], ['tryembed', 'dub'],
   ]);
   assert.ok(!providers.some(provider => provider.id === 'anikoto'), 'Anikoto playback uses MegaPlay and is not counted as an independent source');
+});
+
+
+test('VidNest and TryEmbed resolve AniList IDs and remain single provider entries', async () => {
+  const { resetAniListCache } = await import('../functions/_lib/providers/anilist.js');
+  resetAniListCache();
+  let lookups = 0;
+  globalThis.fetch = async (url, init) => {
+    assert.equal(String(url), 'https://graphql.anilist.co');
+    assert.equal(init.method, 'POST');
+    const body = JSON.parse(init.body);
+    assert.match(body.query, /Media\(idMal:/);
+    assert.equal(body.variables.malId, 4242);
+    lookups++;
+    return Response.json({ data: { Media: { id: 172463, idMal: 4242, isAdult: false } } });
+  };
+
+  const vidnest = await getSources('4242', 8, 'vidnest', 'dub');
+  assert.equal(vidnest.embedUrl, 'https://vidnest.fun/anime/172463/8/dub');
+  assert.equal(vidnest.embedOrigin, 'https://vidnest.fun');
+  assert.equal(vidnest.provider, 'vidnest');
+
+  const tryembed = await getSources('4242', 8, 'tryembed', 'sub');
+  assert.equal(tryembed.embedUrl, 'https://tryembed.us.cc/embed/anime/172463/8/sub');
+  assert.equal(tryembed.embedOrigin, 'https://tryembed.us.cc');
+  assert.equal(tryembed.provider, 'tryembed');
+  assert.equal(lookups, 1, 'the MAL-to-AniList mapping is shared and cached');
+
+  const providers = getProviderList({});
+  assert.equal(providers.filter(p => p.id === 'vidnest').length, 1);
+  assert.equal(providers.filter(p => p.id === 'tryembed').length, 1);
+  assert.ok(!providers.some(p => /^vidnest-/.test(p.id)), 'VidNest internal servers are not separate Animee providers');
+  resetAniListCache();
+});
+
+
+test('playback API routes VidNest and TryEmbed through the shared AniList resolver', async () => {
+  const { resetAniListCache } = await import('../functions/_lib/providers/anilist.js');
+  resetAniListCache();
+  globalThis.fetch = async (url, init) => {
+    const target = new URL(String(url));
+    if (target.hostname === 'api.tenrai.org' && target.pathname.endsWith('/full')) {
+      return Response.json(detailPayload(4242));
+    }
+    if (target.hostname === 'graphql.anilist.co') {
+      const body = JSON.parse(init.body);
+      assert.equal(body.variables.malId, 4242);
+      return Response.json({ data: { Media: { id: 172463, isAdult: false } } });
+    }
+    throw new Error('Unexpected URL ' + target);
+  };
+
+  const vidnestResponse = await onRequest(context('episode/4242%3A3/sources?server=vidnest&category=sub'));
+  assert.equal(vidnestResponse.status, 200);
+  assert.equal((await vidnestResponse.json()).embedUrl, 'https://vidnest.fun/anime/172463/3/sub');
+
+  const tryembedResponse = await onRequest(context('episode/4242%3A3/sources?server=tryembed&category=dub'));
+  assert.equal(tryembedResponse.status, 200);
+  assert.equal((await tryembedResponse.json()).embedUrl, 'https://tryembed.us.cc/embed/anime/172463/3/dub');
+  resetAniListCache();
+});
+
+test('AniList resolver rejects missing and adult matches', async () => {
+  const { getAniListId, resetAniListCache } = await import('../functions/_lib/providers/anilist.js');
+  resetAniListCache();
+  globalThis.fetch = async () => Response.json({ data: { Media: null } });
+  await assert.rejects(() => getAniListId('991122'), error => error.status === 404);
+
+  resetAniListCache();
+  globalThis.fetch = async () => Response.json({ data: { Media: { id: 123, isAdult: true } } });
+  await assert.rejects(() => getAniListId('991123'), error => error.status === 404);
+  resetAniListCache();
+});
+
+test('TryEmbed and VidNest only accept supported language and episode values', async () => {
+  await assert.rejects(() => getSources('4242', 0, 'vidnest', 'sub'), error => error.status === 400);
+  await assert.rejects(() => getSources('4242', 1, 'tryembed', 'raw'), error => error.status === 400);
 });
 
 test('AnimeParadise resolves episode sources through its own REST API', async () => {
@@ -573,4 +655,21 @@ test('harem-type shows stay out of browsing but remain searchable', async () => 
   const genres = await (await onRequest(context('genres'))).json();
   assert.ok(!genres.genres.includes('Harem') && !genres.genres.includes('Magical Sex Shift'));
   assert.ok(genres.genres.includes('Action'));
+});
+
+test('an AniList ID from the browser is used as is, so the Worker never has to ask AniList', async () => {
+  const { resetAniListCache } = await import('../functions/_lib/providers/anilist.js');
+  resetAniListCache();
+  globalThis.fetch = async (url) => {
+    const target = new URL(String(url));
+    if (target.hostname === 'api.tenrai.org' && target.pathname.endsWith('/full')) return Response.json(detailPayload(4242));
+    throw new Error('Unexpected request to ' + target.hostname);
+  };
+  const res = await onRequest(context('episode/4242%3A5/sources?server=vidnest&category=dub&al=172463'));
+  assert.equal(res.status, 200);
+  assert.equal((await res.json()).embedUrl, 'https://vidnest.fun/anime/172463/5/dub');
+  // Anything that isn't a plain number is ignored (and would fall back to the Worker's own lookup).
+  const direct = await getSources('4242', 5, 'tryembed', 'sub', {}, { aniListId: '172463' });
+  assert.equal(direct.embedUrl, 'https://tryembed.us.cc/embed/anime/172463/5/sub');
+  resetAniListCache();
 });

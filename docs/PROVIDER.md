@@ -12,6 +12,15 @@ Strict safe-for-work filtering is enabled using `sfw-strict=true` on catalogue r
 
 MegaPlay uses `https://megaplay.buzz/stream/mal/{mal-id}/{episode-number}/{sub|dub}`. Animee checks the actual episode page because MegaPlay can return HTTP 200 for its unavailable-episode page. Playback is hosted in the provider iframe, so provider-owned controls remain inside the iframe.
 
+
+### VidNest
+
+VidNest is one playback provider with its own internal server selector. Animee exposes a single `VidNest` entry; its nine internal server choices are not duplicated as separate Animee providers. Animee resolves the title's AniList ID from its MAL ID, then opens `https://vidnest.fun/anime/{anilist-id}/{episode}/{sub|dub}`. The internal server choice remains inside VidNest's player. Saved positions are passed through its documented `startAt` query parameter.
+
+### TryEmbed
+
+TryEmbed is an anime embed provider using `https://tryembed.us.cc/embed/anime/{anilist-id}/{episode}/{sub|dub}`. Animee resolves the AniList ID from its MAL catalogue ID. The player passes saved positions through `startAt`, disables TryEmbed's own auto-next so Animee owns episode navigation, and accepts documented `PLAYER_EVENT` progress messages only when they come from the active iframe's exact origin and window. TryEmbed's PostMessage interface is used for progress reporting; Animee does not assume undocumented remote-control commands.
+
 ### AnimeParadise
 
 AnimeParadise is an independent sub-only provider. The adapter searches `https://api.animeparadise.moe`, fetches the title's episode list, then resolves its episode through the provider's `/ep/:uid` endpoint. It uses the provider's HLS endpoint at `https://stream.animeparadise.moe`.
@@ -31,6 +40,8 @@ Each provider attempt has an 8-second deadline (later providers get what is left
 Successful fallback results are cached in the Worker isolate for two minutes; failures are cached for 15 seconds. The API response also uses the Cloudflare Cache API. Isolate memory is temporary and is not shared globally, so cache hits are an optimization rather than persistent storage.
 
 The provider list describes adapters that Animee knows how to call, not guaranteed availability for every title or episode. Animee does not claim that every provider has a complete catalogue. Upstream sites can change their domains, markup, APIs, or availability without notice.
+
+VidNest and TryEmbed address shows by AniList ID, while Animee's catalogue uses MAL IDs. AniList refuses requests from Cloudflare's servers, so the watch page looks the AniList ID up from the visitor's browser (remembered for 30 days) and passes it to the Worker with the playback request (`&al=`). The Worker only uses it to build the embed address. When no ID is passed, the Worker tries AniList itself (this works in local development) and caches answers in the isolate for 24 hours, misses for five minutes.
 
 The browser player loads hls.js v1.7.4 (with its integrity hash) the first time an HLS source plays, so pages that never play HLS do not download it. The Worker CSP permits the pinned jsDelivr script and the HTTPS media/frame origins required by independent providers.
 

@@ -4,6 +4,7 @@ import { Player } from './player.js';
 import './fx.js';
 import * as inbox from './inbox.js';
 import * as push from './push.js';
+import * as aniList from './anilist.js';
 
 const app = document.getElementById('app');
 let cleanups = [];
@@ -799,6 +800,9 @@ async function viewWatch(id, query, alive) {
   const step = (text) => { const el = document.getElementById('skel-step'); if (el && alive()) el.textContent = text; };
   // The server list for the likely episode is fetched in parallel, so it's cached by the time it's needed.
   const guessEp = Number(query.get('ep')) || store.getProgress(id)?.ep || 1;
+  // VidNest and TryEmbed need the show's AniList ID, which only the browser can look up
+  // (AniList refuses Cloudflare's servers). Start now; it's remembered for 30 days.
+  const aniListIdP = aniList.aniListIdFor(id);
   api(`/episode/${encodeURIComponent(`${id}:${guessEp}`)}/servers`).catch(() => {});
 
   // Fetch the latest progress from the account alongside the show, so another device's
@@ -1095,7 +1099,9 @@ async function viewWatch(id, query, alive) {
     player.busy(explicit ? `Trying ${serverName(server)}…` : 'Loading episode…');
     try {
       const mode = explicit ? `server=${encodeURIComponent(server.id)}` : `server=auto&preferred=${encodeURIComponent(server.id)}`;
-      const src = await api(`/episode/${encodeURIComponent(ep.id)}/sources?${mode}&category=${server.category}`, { fresh: true });
+      // Wait briefly for the AniList ID; without it VidNest/TryEmbed are simply skipped by the fallback.
+      const al = await Promise.race([aniListIdP, new Promise((r) => setTimeout(() => r(null), 2500))]);
+      const src = await api(`/episode/${encodeURIComponent(ep.id)}/sources?${mode}&category=${server.category}${al ? `&al=${al}` : ''}`, { fresh: true });
       if (!alive() || ep !== current) return;
       if (!src.provider) src.provider = server.id;
       tried.add(src.provider);
@@ -1109,7 +1115,7 @@ async function viewWatch(id, query, alive) {
       // Embedded players can't be told where to start, so say where you left off.
       // A sticky note (missing episode, server switched) stays until the next episode.
       if (note.dataset.sticky) { /* keep it */ }
-      else if (src.embedUrl && startAt > 15) showNote(`You stopped at <b>${clock(startAt)}</b>. Skip there in the player.`);
+      else if (src.embedUrl && startAt > 15 && !['vidnest', 'tryembed'].includes(src.provider)) showNote(`You stopped at <b>${clock(startAt)}</b>. Skip there in the player.`);
       else if (note.querySelector('button') === null) showNote('');
     } catch (err) {
       if (!alive() || ep !== current) return;
@@ -2127,7 +2133,8 @@ function viewSettings(alive) {
     btn.disabled = true;
     importResult.textContent = 'Reading your AniList list…';
     try {
-      const d = await api('/import/anilist?user=' + encodeURIComponent(f.get('user')), { fresh: true });
+      // Asked from the browser: AniList refuses requests from Cloudflare's servers.
+      const d = await aniList.importAniListUser(f.get('user'));
       const items = d.items.slice(0, ANILIST_IMPORT_LIMIT);
       finishImport(store.importEntries(items, f.get('mode')), d.skipped + (d.items.length - items.length), 'AniList');
     } catch (err) {
