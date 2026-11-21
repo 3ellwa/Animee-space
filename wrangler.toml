@@ -45,3 +45,12 @@ simple = { limit = 3, period = 60 }
 # Needs the VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY secrets: run `node scripts/setup-push.mjs` once.
 [triggers]
 crons = ["*/10 * * * *"]
+
+# Watch parties (functions/_lib/party.js): one small room per party code, over WebSockets.
+[[durable_objects.bindings]]
+name = "PARTY"
+class_name = "PartyRoom"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["PartyRoom"]

@@ -14,6 +14,9 @@
 // per followed show per device, and one row per followed show with its last aired count.
 // Devices whose push address stops working (404/410) are deleted automatically.
 //
+// `alerts` per device: bits 0-1 = which language (0 both, 1 sub, 2 dub); bit 2 (4) = weekly
+// digest: new episodes are collected and sent as one pop-up on Sunday at 17:00 UTC.
+//
 // Keys: VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY secrets (scripts/setup-push.mjs makes and sets
 // them). Without them the feature is off and the settings page says so.
 
@@ -44,6 +47,16 @@ const json = (data, status = 200) => new Response(JSON.stringify(data), {
 });
 const fail = (status, message) => Object.assign(new Error(message), { status });
 const now = () => Math.floor(Date.now() / 1000);
+const WEEKLY = 4;
+/** The weekly digest as one pop-up: "3 shows have new episodes" with their names. */
+export function digest(items) {
+  if (items.length <= 1) return items;
+  const names = items.slice(0, 4).map((i) => `${i.title} (ep ${i.ep})`);
+  const more = items.length > 4 ? ` and ${items.length - 4} more` : '';
+  return [{ title: `This week: ${items.length} shows have new episodes`, body: names.join(', ') + more, url: '/new', cover: items[0].cover || null }];
+}
+/** Sunday 17:00-17:09 UTC: the scheduled run that sends weekly digests. */
+export const digestTime = (d = new Date()) => d.getUTCDay() === 0 && d.getUTCHours() === 17 && d.getUTCMinutes() < 10;
 
 let tablesReady = false;
 async function ensureTables(env) {
@@ -115,7 +128,7 @@ async function subscribe(request, env) {
   const endpoint = validEndpoint(b.endpoint);
   if (!endpoint) throw fail(400, 'That push address is not from a known browser push service');
   const ids = [...new Set((Array.isArray(b.ids) ? b.ids : []).map(String).filter((id) => /^\d{1,12}$/.test(id)))].slice(0, MAX_FOLLOWS);
-  const alerts = [0, 1, 2].includes(b.alerts) ? b.alerts : 0;
+  const alerts = [0, 1, 2, 4, 5, 6].includes(b.alerts) ? b.alerts : 0;
   if (env.REQUEST_LIMITER?.limit) {
     const ip = request.headers.get('CF-Connecting-IP') || 'local';
     const { success } = await env.REQUEST_LIMITER.limit({ key: 'push:' + ip }).catch(() => ({ success: true }));
@@ -149,12 +162,12 @@ async function unsubscribe(request, env) {
 async function pending(env, url) {
   const endpoint = validEndpoint(url.searchParams.get('endpoint'));
   if (!endpoint) return json({ items: [] });
-  const sub = await env.DB.prepare('SELECT id, pending FROM push_subs WHERE endpoint = ?').bind(endpoint).first();
+  const sub = await env.DB.prepare('SELECT id, pending, alerts FROM push_subs WHERE endpoint = ?').bind(endpoint).first();
   if (!sub) return json({ items: [] });
   let items = [];
   try { items = JSON.parse(sub.pending || '[]'); } catch { /* ignore */ }
   if (items.length) await env.DB.prepare('UPDATE push_subs SET pending = NULL WHERE id = ?').bind(sub.id).run();
-  return json({ items });
+  return json({ items: (sub.alerts & WEEKLY) && !items[0]?.test ? digest(items) : items });
 }
 
 async function test(request, env) {
@@ -249,17 +262,24 @@ export async function runPushCheck(env) {
       'SELECT s.id, s.alerts, s.pending FROM push_follows f JOIN push_subs s ON s.id = f.sub_id WHERE f.anime_id = ?',
     ).bind(show.anime_id).all();
     for (const sub of subs) {
-      if (sub.alerts === 2) {
+      if ((sub.alerts & 3) === 2) {
         if (dubOut === null) dubOut = await megaplay.isAvailable(String(show.anime_id), ep, 'dub').catch(() => false);
         if (!dubOut) continue;
       }
       let items = [];
       try { items = JSON.parse(sub.pending || '[]'); } catch { /* ignore */ }
-      items = [{ id: String(show.anime_id), ep, title, cover }, ...items.filter((i) => i.id !== String(show.anime_id))].slice(0, 5);
-      updates.push(env.DB.prepare('UPDATE push_subs SET pending = ?, due = 1 WHERE id = ?').bind(JSON.stringify(items), sub.id));
+      const weekly = Boolean(sub.alerts & WEEKLY);
+      items = [{ id: String(show.anime_id), ep, title, cover }, ...items.filter((i) => i.id !== String(show.anime_id))].slice(0, weekly ? 30 : 5);
+      // Weekly digests only collect here; they're sent on Sunday (below).
+      updates.push(env.DB.prepare(`UPDATE push_subs SET pending = ?${weekly ? '' : ', due = 1'} WHERE id = ?`).bind(JSON.stringify(items), sub.id));
     }
   }
   if (updates.length) await env.DB.batch(updates);
+
+  // Sunday evening: weekly-digest devices with something collected are due.
+  if (digestTime()) {
+    await env.DB.prepare(`UPDATE push_subs SET due = 1 WHERE (alerts & ${WEEKLY}) != 0 AND pending IS NOT NULL AND pending != '[]'`).run();
+  }
 
   // 2. Wake devices with something new.
   const { results: due } = await env.DB.prepare('SELECT id, endpoint FROM push_subs WHERE due = 1 LIMIT ?').bind(SENDS_PER_RUN).all();

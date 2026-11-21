@@ -39,6 +39,8 @@ functions/_lib/
   notice.js                     the site notice banner (set on /admin)
   errors.js                     5xx / page-crash counts per day for /admin
   crosssite.js                  "Continue on the other site" (CORS to the sibling origin only)
+  party.js                      watch party rooms (Durable Object PartyRoom, WebSockets)
+  fuzzy.js                      typo-tolerant title matching
   calendar.js                   private .ics feed (anime: weekly JST slot; cinemee: next episode via TVmaze)
   providers/
     tenrai.js                   anime catalogue
@@ -104,6 +106,10 @@ VidLink-style `PLAYER_EVENT`; vidnext/VidNest `source:'vidnest-player'`; EmbedMa
 
 On Windows PowerShell use `npx.cmd` (the `npx.ps1` wrapper is blocked by the execution policy).
 Local development reads the same names from `.dev.vars` (git-ignored).
+
+## Durable Objects
+
+- `PARTY` → class `PartyRoom` (exported from worker.js), migration tag `v1` (`new_sqlite_classes`). One room per site + party code. Routed in worker.js before the API wrapper (a WebSocket upgrade can't be re-wrapped).
 
 ## Data (D1)
 

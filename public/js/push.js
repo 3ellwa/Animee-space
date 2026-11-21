@@ -6,7 +6,8 @@ import * as store from './store.js';
 import { BRAND } from './site.js';
 
 const ON_KEY = 'animee-space:push-on';
-const alertsCode = () => ({ both: 0, sub: 1, dub: 2 }[store.getSettings().alertsFor] ?? 0);
+// Language (0 both, 1 sub, 2 dub) plus 4 for a weekly digest instead of one pop-up per episode.
+const alertsCode = () => ({ both: 0, sub: 1, dub: 2 }[store.getSettings().alertsFor] ?? 0) + (store.getSettings().alertsWhen === 'weekly' ? 4 : 0);
 
 export const supported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
 export const permission = () => (supported() ? Notification.permission : 'unsupported');

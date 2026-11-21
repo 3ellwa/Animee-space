@@ -1,5 +1,7 @@
-// Service worker for the installed app. It never caches pages or data, so a deploy shows up
-// straight away; it only answers with a small offline page when the network is down.
+// Service worker for the installed app. The network always comes first, so a deploy shows up
+// straight away. A copy of the page shell and its scripts and styles is kept from the last visit,
+// so with no connection the app still opens: My list, History and Stats live in the browser and
+// work offline. If nothing was kept yet, a small offline page.
 const OFFLINE = `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>Offline · animee space</title>
 <style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#08090A;color:#F2F3EE;font:16px system-ui,sans-serif;text-align:center}
@@ -7,13 +9,50 @@ b{display:block;font-size:72px;color:#C6FF3D;text-shadow:0 0 28px rgba(198,255,6
 button{margin-top:16px;padding:11px 20px;border-radius:999px;border:0;background:#C6FF3D;color:#08090A;font-weight:700;cursor:pointer;box-shadow:0 0 30px rgba(198,255,61,.45)}</style></head>
 <body><main><b>-.-zz</b><h1>you're offline.</h1><p>Connect to the internet to keep watching.</p><button onclick="location.reload()">Try again</button></main></body></html>`;
 
+const CACHE = 'shell-v1';
+const SHELL = '/__offline-shell';
+// Same-origin files the app needs to start (scripts, styles, icons); not API answers or media.
+const isAsset = (url) => url.origin === self.location.origin && /^\/(js|css|icons)\/|^\/(manifest\.webmanifest|favicon\.svg)$/.test(url.pathname);
+
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));
 
+async function keep(key, response) {
+  if (!response || !response.ok || response.type !== 'basic') return;
+  try { const cache = await caches.open(CACHE); await cache.put(key, response); } catch { /* storage full or blocked */ }
+}
+
 self.addEventListener('fetch', (event) => {
-  if (event.request.mode !== 'navigate') return;
-  event.respondWith(fetch(event.request).catch(() =>
-    new Response(OFFLINE, { headers: { 'Content-Type': 'text/html; charset=utf-8' } })));
+  const { request } = event;
+  if (request.method !== 'GET') return;
+  const url = new URL(request.url);
+  if (request.mode === 'navigate') {
+    event.respondWith((async () => {
+      try {
+        const response = await fetch(request);
+        // Any page works as the shell: the app draws the view from the address.
+        if (response.ok && (response.headers.get('Content-Type') || '').includes('text/html')) event.waitUntil(keep(SHELL, response.clone()));
+        return response;
+      } catch {
+        const shell = await caches.match(SHELL).catch(() => null);
+        return shell || new Response(OFFLINE, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+      }
+    })());
+    return;
+  }
+  if (isAsset(url)) {
+    event.respondWith((async () => {
+      try {
+        const response = await fetch(request);
+        event.waitUntil(keep(request, response.clone()));
+        return response;
+      } catch {
+        const kept = await caches.match(request, { ignoreSearch: true }).catch(() => null);
+        if (kept) return kept;
+        throw new Error('offline');
+      }
+    })());
+  }
 });
 
 // New-episode pop-ups. Pushes carry no payload: ask the server what's new, then show it.

@@ -1,3 +1,11 @@
+## Watch party, better search, weekly digest, device switch, offline lists
+
+- **Watch party** (`functions/_lib/party.js`, Durable Object `PartyRoom`, binding `PARTY`): 👥 Watch party on the watch page starts a room and copies an invite (`/watch/<id>?ep=N&party=CODE`). The host's show, episode, position and play/pause go out every 3 seconds; guests follow: episode changes, jumps on servers that take seek commands (3ellwa, Orion, Atlas, Kaze), pause/play on Kaze; otherwise the bar says where the host is. Reactions (😂 😮 ❤️ 🔥 😭 👏) float over the player. Rooms hold only the host key and last state, max 20 people, forgotten 12 hours after going quiet.
+- **Search:** fixed animee's typo matching (two regexes had lost their backslashes, so it split queries on the letter "s" and never ignored punctuation). cinemee now finds misspelled titles too ("intersteller" → Interstellar, `functions/_lib/fuzzy.js`). Suggestions: "Did you mean…" when guessing, the alternate title that matched, recent searches when the box is empty, faster (300 ms).
+- **Weekly digest:** Settings → Pop-ups → "Weekly summary (Sundays)": new episodes are collected and sent as one pop-up on Sunday 17:00 UTC (`alerts` bit 4).
+- **Other device:** the "you're at … on another device" prompt now has Stay here, uses season names on cinemee, and also checks every 45 seconds while the player is idle (both devices open at once).
+- **Offline:** the service worker keeps the page shell and scripts from the last visit (network first, so deploys still show at once); with no connection the app opens and My list, History and Stats work. The home page says so when offline.
+
 ## Seasons, admin insight, both sites together, hover previews, shared moments
 
 - **Seasons on cinemee:** TV title pages list the seasons (poster, year, episode count), each opening its first episode; seasons that haven't started say when. The watch page's episode picker goes season by season (S1, S2 …) instead of by 100s.

@@ -1,3 +1,4 @@
+import { handleParty } from "./functions/_lib/party.js";
 import { onRequest } from "./functions/api/[[path]].js";
 import { ASSETS } from "./worker-assets.js";
 import * as seo from "./functions/_lib/seo.js";
@@ -13,7 +14,7 @@ function bodyOf(key, value) { if (typeof value === "string") return value; if (!
 // Scripts: only this site, Cloudflare analytics, and the one pinned hls.js version (player.js loads it
 // on demand and checks its hash). JSON-LD blocks are data, not scripts, so CSP doesn't apply to them.
 // frame-src stays open to https: because ANIMEE_EMBED_PROVIDERS can add embed hosts without a code change.
-const CSP = ["default-src 'self'","script-src 'self' https://static.cloudflareinsights.com https://cdn.jsdelivr.net/npm/hls.js@1.7.4/","style-src 'self' 'unsafe-inline'","img-src 'self' data: https:","connect-src 'self' https: https://cloudflareinsights.com http://localhost:8787 http://cinemee.localhost:8787","media-src 'self' blob: https:","worker-src 'self' blob:","frame-src https://megaplay.buzz https://www.youtube-nocookie.com https:","object-src 'none'","base-uri 'self'","form-action 'self'","frame-ancestors 'none'"].join("; ");
+const CSP = ["default-src 'self'","script-src 'self' https://static.cloudflareinsights.com https://cdn.jsdelivr.net/npm/hls.js@1.7.4/","style-src 'self' 'unsafe-inline'","img-src 'self' data: https:","connect-src 'self' https: https://cloudflareinsights.com http://localhost:8787 http://cinemee.localhost:8787 wss: ws://localhost:8787 ws://cinemee.localhost:8787","media-src 'self' blob: https:","worker-src 'self' blob:","frame-src https://megaplay.buzz https://www.youtube-nocookie.com https:","object-src 'none'","base-uri 'self'","form-action 'self'","frame-ancestors 'none'"].join("; ");
 const SECURITY = {"X-Content-Type-Options":"nosniff","Referrer-Policy":"strict-origin-when-cross-origin","Content-Security-Policy":CSP,"X-Frame-Options":"DENY","Strict-Transport-Security":"max-age=31536000","Permissions-Policy":"camera=(), microphone=(), geolocation=(), payment=(), usb=()"};
 
 function cacheControl(key) {
@@ -76,6 +77,7 @@ async function sitemap(url, ctx, env = {}) {
   return response;
 }
 
+export { PartyRoom } from "./functions/_lib/party.js";
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -88,6 +90,9 @@ export default {
     // animee or cinemee, by address; cinemee gets its own database (see functions/_lib/site.js).
     const site = siteOf(request.url);
     const siteEnvironment = siteEnv(env, site);
+    // Watch party rooms (WebSocket): answered directly, the upgrade can't be re-wrapped.
+    const partyPath = url.pathname.match(/^\/api\/party\/([A-Z0-9]{6})\/ws$/);
+    if (partyPath) return handleParty(request, siteEnvironment, partyPath[1], site);
     if (url.pathname === "/api" || url.pathname.startsWith("/api/")) {
       const path = url.pathname.slice(4).split("/").filter(Boolean);
       const response = await onRequest({ request, env: siteEnvironment, params: { path }, waitUntil: p => ctx.waitUntil(p) });

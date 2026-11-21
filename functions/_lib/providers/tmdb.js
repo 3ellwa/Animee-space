@@ -10,6 +10,7 @@
 
 import * as tvmaze from './tvmaze.js';
 import * as omdb from './omdb.js';
+import { containsQuery, prefixesOf, rankClose } from '../fuzzy.js';
 
 const API = 'https://api.themoviedb.org/3';
 const IMG = 'https://image.tmdb.org/t/p/';
@@ -376,8 +377,28 @@ export async function searchAnime(input = {}) {
   const type = ['movie', 'tv'].includes(String(input.type || '').toLowerCase()) ? String(input.type).toLowerCase() : '';
   if (query) {
     const payload = await request('/search/multi', { query, page, include_adult: false });
-    const results = list(payload).filter((t) => !type || t.mediaType === type);
-    return { results, pageInfo: pageInfo(payload, page), approximate: false, seasonal: false };
+    let results = list(payload).filter((t) => !type || t.mediaType === type);
+    const info = pageInfo(payload, page);
+    let approximate = false;
+    // Nothing contains the query as typed: probably a typo ("intersteller"). Ask for short
+    // prefixes of its first words and put the closest titles first.
+    const titles = (t) => [t.title, t.titleRomaji].filter(Boolean);
+    if (query.length >= 4 && page === 1 && !results.some((t) => containsQuery(titles(t), query))) {
+      const pool = new Map(results.map((t) => [t.id, t]));
+      // Longer prefixes first (TMDB matches words from their start); at most three extra asks.
+      for (const prefix of prefixesOf(query, [6, 4]).slice(0, 3)) {
+        const more = await request('/search/multi', { query: prefix, page: 1, include_adult: false }).catch(() => null);
+        for (const t of list(more)) if ((!type || t.mediaType === type) && !pool.has(t.id)) pool.set(t.id, t);
+      }
+      const close = rankClose(query, [...pool.values()], titles).slice(0, 12);
+      if (close.length) {
+        const ids = new Set(close.map((t) => t.id));
+        approximate = !results.length || results[0].id !== close[0].id;
+        results = [...close, ...results.filter((t) => !ids.has(t.id))];
+        if (!info.hasNextPage) Object.assign(info, { currentPage: 1, lastPage: 1, total: results.length });
+      }
+    }
+    return { results, pageInfo: info, approximate, seasonal: false };
   }
   const names = String(Array.isArray(input.genres) ? input.genres.join(',') : input.genres || '').split(',').map((s) => s.trim()).filter(Boolean);
   const pick = (side) => names.map((n) => GENRE_TABLE.find(([name]) => name === n)?.[side === 'movie' ? 1 : 2]).filter(Boolean);

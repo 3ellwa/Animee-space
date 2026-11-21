@@ -349,6 +349,27 @@ export class Player {
     }
     this.embedTime = Math.max(0, seconds);
   }
+  // ---------- watch party ----------
+  /** True when this player can be moved to a time from outside (our own video, or an embed that takes seek commands). */
+  canFollow() {
+    if (this.iframe.hidden) return Boolean(this.video.currentSrc || this.video.src);
+    return this.isMegaPlay() || this.isVidnext() || this.isEmbedMaster();
+  }
+  partySeek(seconds) {
+    if (this.iframe.hidden) {
+      if (this.video.duration) this.video.currentTime = Math.min(Math.max(0, seconds), this.video.duration - 1);
+    } else {
+      this.seekTo(seconds);
+    }
+  }
+  /** Pause or play: only our own video can be told (embedded players don't take it). */
+  partyPause(paused) {
+    if (!this.iframe.hidden || !this.video.src) return;
+    if (paused && !this.video.paused) this.video.pause();
+    else if (!paused && this.video.paused) this.video.play().catch(() => {});
+  }
+  isPausedHere() { return this.iframe.hidden ? this.video.paused : null; }
+
   isEmbedMaster() {
     try { return Boolean(this.embedOrigin) && /(^|\.)embedmaster\.link$/.test(new URL(this.embedOrigin).hostname); } catch { return false; }
   }

@@ -273,7 +273,7 @@ function closeness(query, titles) {
 
 const titlesOf = anime => [anime.title, anime.titleRomaji, ...(anime.synonyms || [])];
 // True when some title of the anime contains the query as typed (ignoring case and punctuation).
-const squash = value => String(value || '').toLowerCase().replace(/[^p{L}p{N}]+/gu, ' ').trim();
+const squash = value => String(value || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 function containsQuery(anime, query) {
   const q = squash(query);
   return Boolean(q) && titlesOf(anime).some(title => squash(title).includes(q));
@@ -283,7 +283,7 @@ function containsQuery(anime, query) {
 // nothing useful. Close matches come from the most popular titles for short prefixes of the
 // query's first two words, ranked by edit distance to the query.
 async function closeMatches(query, extra = []) {
-  const words = query.toLowerCase().split(/s+/).filter(word => word.length >= 2);
+  const words = query.toLowerCase().split(/\s+/).filter(word => word.length >= 2);
   const prefixes = [...new Set(words.slice(0, 2).map(word => word.slice(0, 2)))];
   const pool = new Map(extra.map(anime => [anime.id, anime]));
   for (const prefix of prefixes) {

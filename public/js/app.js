@@ -246,7 +246,16 @@ async function route() {
 }
 
 // ---------- home ----------
+// No connection: say what still works (everything saved in this browser).
+function offlineNote() {
+  return `<div class="empty"><h2>You're offline</h2><p>Your list, history and stats are saved in this browser and still work.</p>
+    <p class="actions" style="justify-content:center"><a class="btn primary" href="/watchlist">My list</a> <a class="btn" href="/watchlist?tab=history">History</a> <a class="btn" href="/stats">Stats</a></p></div>`;
+}
+window.addEventListener('offline', () => toastNote('You’re offline. Your list, history and stats still work.'));
+window.addEventListener('online', () => toastNote('Back online.'));
+
 async function viewHome(alive) {
+  if (!navigator.onLine) { app.innerHTML = offlineNote(); return; }
   const d = await api('/home');
   if (!alive()) return;
   const season = d.recent || [];
@@ -1173,6 +1182,9 @@ async function viewWatch(id, query, alive) {
   const missingEp = query.get('ep') && current.number !== wantEp ? wantEp : null;
   // ?t=754 from a "Share moment" link: start there (once).
   let sharedAt = /^\d{1,5}$/.test(query.get('t') || '') ? Number(query.get('t')) : null;
+  // Watch party (see the party section below). partyAt: where a guest should start the next load.
+  let party = null;
+  let partyAt = null;
   let servers = [];
   let server = null; // { id, category }
   const watched = store.watchedSet(a.id);
@@ -1217,6 +1229,7 @@ async function viewWatch(id, query, alive) {
             <span class="spacer"></span>
             <button class="btn sm wide-btn" id="wide-toggle" type="button" aria-pressed="false">⤢ Wide player</button>
             <button class="btn sm" id="mark-seen" type="button">✓ Mark watched</button>
+            <button class="btn sm" id="party-btn" type="button" title="Watch together: friends with the link follow your episode and position">👥 Watch party</button>
             <button class="btn sm" id="share-moment" type="button" title="Copy a link that opens this episode at this moment">↗ Share moment</button>
             <details class="report-menu" id="report-menu">
               <summary class="btn sm">⚑ Report</summary>
@@ -1371,9 +1384,23 @@ async function viewWatch(id, query, alive) {
     if (sameEp && Math.abs(p.time - player.getCurrentTime()) < 30) return;
     const target = episodes.find((e) => e.number === p.ep);
     if (!target) return;
-    showNote(`Another device is at <b>Episode ${p.ep} · ${clock(p.time)}</b> <button class="btn sm primary" type="button">Continue there</button>`,
-      () => (sameEp ? playSource(p.time) : goTo(target)));
+    if (party) return; // in a watch party the host decides
+    const where = `${isMovie(a) ? '' : `${esc(epName(target))} · `}${clock(p.time)}`;
+    note.innerHTML = `📱 You're at <b>${where}</b> on another device. <button class="btn sm primary" type="button" data-go>Switch to it</button> <button class="btn sm" type="button" data-stay>Stay here</button>`;
+    note.hidden = false;
+    note.querySelector('[data-go]').onclick = () => { note.hidden = true; if (sameEp) playSource(p.time); else goTo(target); };
+    note.querySelector('[data-stay]').onclick = () => { note.hidden = true; };
   }));
+  // Both devices open at once: while this player sits idle (paused or not started), look for
+  // progress from the other device every 45 seconds.
+  let idleSince = player.getCurrentTime();
+  const devicePoll = setInterval(() => {
+    const t = player.getCurrentTime();
+    const idle = Math.abs(t - idleSince) < 5;
+    idleSince = t;
+    if (idle && document.visibilityState === 'visible' && store.currentUser()) store.sync.freshen({ maxAge: 30000 });
+  }, 45000);
+  onCleanup(() => clearInterval(devicePoll));
 
   $('opt-autoplay').onchange = (e) => store.setSetting('autoplay', e.target.checked);
   $('opt-autoskip').onchange = (e) => { store.setSetting('autoskip', e.target.checked); player.setAutoSkip(e.target.checked); };
@@ -1604,7 +1631,8 @@ async function viewWatch(id, query, alive) {
     if (!ep) return;
     current = ep;
     range = groupOf(idx());
-    history.replaceState(null, '', `/watch/${a.id}?ep=${ep.number}`);
+    history.replaceState(null, '', `/watch/${a.id}?ep=${ep.number}${party ? `&party=${party.code}` : ''}`);
+    if (party?.role === 'host') setTimeout(sendPartyState, 800);
     $('crumb-ep').textContent = isMovie(a) ? 'Movie' : epName(ep);
     $('now-ep').textContent = isMovie(a) ? a.title : `${epName(ep)}${ep.isFiller ? ' (filler)' : ''}`;
     $('prev-ep').disabled = idx() === 0;
@@ -1638,12 +1666,138 @@ async function viewWatch(id, query, alive) {
       if (s.category !== pref) $('now-ep').textContent += ` · ${pref} isn't out yet, playing ${s.category}`;
       const p = store.getProgress(a.id);
       // A shared moment (?t=seconds) wins once, on the episode it was shared from.
-      const shared = sharedAt !== null && ep.number === wantEp ? sharedAt : null;
+      const shared = partyAt ?? (sharedAt !== null && ep.number === wantEp ? sharedAt : null);
       sharedAt = null;
+      partyAt = null;
       await playSource(shared ?? (p && p.ep === ep.number ? p.time : 0));
     } catch (err) {
       if (alive()) player.msg(`Couldn't load servers: ${err.message}`);
     }
+  }
+
+  // ---------- watch party ----------
+  // The host's episode and position go to a small room on the server every few seconds; guests
+  // follow (jumping where their server allows it). Reactions float over the player.
+  const PARTY_KEY = (code) => `animee-space:party:${code}`;
+  const partyBar = document.createElement('div');
+  partyBar.className = 'party-bar';
+  partyBar.hidden = true;
+  document.querySelector('.player-wrap').appendChild(partyBar);
+  function renderPartyBar(extra = '') {
+    const p = party;
+    if (!p) { partyBar.hidden = true; $('party-btn').hidden = false; return; }
+    $('party-btn').hidden = true;
+    const live = p.ws?.readyState === 1;
+    partyBar.hidden = false;
+    partyBar.innerHTML = `<span>👥 Party <b>${p.code}</b> · ${live ? `${p.people} watching` : 'connecting…'} · ${p.role === 'host' ? 'you’re the host: everyone follows you' : 'following the host'}${extra ? ` · ${extra}` : ''}</span>
+      <span class="party-react">${['😂', '😮', '❤️', '🔥', '😭', '👏'].map((e) => `<button type="button" data-emoji="${e}" aria-label="React ${e}">${e}</button>`).join('')}</span>
+      <span><button class="btn sm" type="button" data-invite>Copy invite</button> <button class="btn sm" type="button" data-leave>Leave</button></span>`;
+  }
+  partyBar.onclick = async (e) => {
+    const p = party;
+    if (!p) return;
+    const emoji = e.target.closest('[data-emoji]')?.dataset.emoji;
+    if (emoji) { floatEmoji(emoji); if (p.ws?.readyState === 1) p.ws.send(JSON.stringify({ type: 'react', emoji })); return; }
+    if (e.target.closest('[data-invite]')) {
+      const url = `${location.origin}/watch/${a.id}?ep=${current.number}&party=${p.code}`;
+      try { await navigator.clipboard.writeText(url); toastNote('Invite copied. Anyone with the link joins your party.'); } catch { prompt('Copy this invite', url); }
+      return;
+    }
+    if (e.target.closest('[data-leave]')) leaveParty();
+  };
+  function floatEmoji(emoji) {
+    const el = document.createElement('span');
+    el.className = 'party-emoji';
+    el.textContent = emoji;
+    el.style.left = `${10 + Math.random() * 80}%`;
+    document.querySelector('.player-wrap').appendChild(el);
+    setTimeout(() => el.remove(), 2200);
+  }
+  function sendPartyState() {
+    const p = party;
+    if (!p || p.role !== 'host' || p.ws?.readyState !== 1) return;
+    const t = player.getCurrentTime() || 0;
+    const paused = player.isPausedHere();
+    const playing = paused === null ? Math.abs(t - p.lastT) > 0.5 : !paused;
+    p.lastT = t;
+    p.ws.send(JSON.stringify({ type: 'state', show: a.id, ep: current.number, t, playing }));
+  }
+  function followHost(state) {
+    const p = party;
+    if (!p || !state) return;
+    if (state.show !== String(a.id)) { go(`/watch/${state.show}?ep=${state.ep}&party=${p.code}`); return; }
+    const expected = state.t + (state.playing ? Math.max(0, (Date.now() + (p.skew || 0) - state.at) / 1000) : 0);
+    const target = episodes.find((x) => x.number === state.ep);
+    if (target && target !== current) { partyAt = expected; goTo(target); return; }
+    player.partyPause(!state.playing);
+    const mine = player.getCurrentTime() || 0;
+    if (Math.abs(expected - mine) <= 4) { if (p.behind) { p.behind = false; renderPartyBar(); } return; }
+    if (player.canFollow()) { player.partySeek(expected); return; }
+    // This server can't be moved from outside: say where the host is instead.
+    p.behind = true;
+    renderPartyBar(`host is at <b>${clock(expected)}</b>: skip there in the player`);
+  }
+  function connectParty() {
+    const p = party;
+    if (!p || p.closed) return;
+    const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/party/${p.code}/ws${p.hostKey ? `?host=${p.hostKey}` : ''}`);
+    p.ws = ws;
+    ws.onopen = () => { p.retry = 0; renderPartyBar(); };
+    ws.onmessage = (e) => {
+      let d;
+      try { d = JSON.parse(e.data); } catch { return; }
+      if (d.now) p.skew = d.now - Date.now();
+      if (d.type === 'hello') {
+        p.role = d.role;
+        p.people = d.people;
+        renderPartyBar();
+        if (p.role === 'host') sendPartyState(); else followHost(d.state);
+      } else if (d.type === 'people') { p.people = d.people; renderPartyBar(); }
+      else if (d.type === 'state' && p.role === 'guest') followHost(d.state);
+      else if (d.type === 'react') floatEmoji(d.emoji);
+    };
+    ws.onclose = () => {
+      if (p.closed || party !== p) return;
+      p.ws = null;
+      renderPartyBar();
+      p.retry = (p.retry || 0) + 1;
+      setTimeout(connectParty, Math.min(15000, 1000 * 2 ** p.retry));
+    };
+  }
+  function startParty(code, hostKey) {
+    party = { code, hostKey: hostKey || '', role: hostKey ? 'host' : 'guest', people: 1, ws: null, lastT: 0, skew: 0, closed: false };
+    renderPartyBar();
+    connectParty();
+  }
+  function leaveParty() {
+    if (!party) return;
+    party.closed = true;
+    try { party.ws?.close(); } catch { /* ignore */ }
+    party = null;
+    history.replaceState(null, '', `/watch/${a.id}?ep=${current.number}`);
+    renderPartyBar();
+  }
+  $('party-btn').onclick = async () => {
+    const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    const code = Array.from(crypto.getRandomValues(new Uint8Array(6)), (n) => letters[n % letters.length]).join('');
+    const hostKey = crypto.randomUUID().replace(/-/g, '');
+    try { sessionStorage.setItem(PARTY_KEY(code), hostKey); } catch { /* ignore */ }
+    startParty(code, hostKey);
+    history.replaceState(null, '', `/watch/${a.id}?ep=${current.number}&party=${code}`);
+    const url = `${location.origin}/watch/${a.id}?ep=${current.number}&party=${code}`;
+    try { await navigator.clipboard.writeText(url); toastNote('Party started, invite copied. Send it to your friends: they follow your episode and position.'); }
+    catch { prompt('Send this invite to your friends', url); }
+  };
+  const partyTimer = setInterval(sendPartyState, 3000);
+  onCleanup(() => {
+    clearInterval(partyTimer);
+    if (party) { party.closed = true; try { party.ws?.close(); } catch { /* ignore */ } party = null; }
+  });
+  const joinCode = String(query.get('party') || '').toUpperCase();
+  if (/^[A-Z0-9]{6}$/.test(joinCode)) {
+    let key = '';
+    try { key = sessionStorage.getItem(PARTY_KEY(joinCode)) || ''; } catch { /* ignore */ }
+    startParty(joinCode, key);
   }
 
   goTo(current);
@@ -1697,9 +1851,11 @@ async function viewNew(alive) {
 // A small bar under the menu after an update, with the dated list one tap away. "Got it" hides it
 // until the next update (per browser).
 const NEWS = IS_CINEMEE ? [
+  ['Nov 23', ['Watch party: friends follow your episode and position, with reactions', 'Search finds titles even with typos, and remembers your recent searches', 'Weekly summary pop-ups (Settings)', 'Switch to where you are on your other device', 'My list, History and Stats open offline']],
   ['Nov 22', ['Seasons on TV pages, and season by season in the episode list', 'Hover a poster for its trailer', 'Share a moment: a link that opens at the exact minute', 'Continue on animee, right here', 'Real air times for TV', 'IMDb and Rotten Tomatoes scores', 'Search and remove items in History']],
   ['Nov 21', ['Welcome to cinemee: movies and TV, with the same lists, sync and pop-ups as animee', 'Up next stays in fullscreen', 'Save any title from its poster', 'Hide genres you skip']],
 ] : [
+  ['Nov 23', ['Watch party: friends follow your episode and position, with reactions', 'Search handles typos better and remembers your recent searches', 'Weekly summary pop-ups (Settings)', 'Switch to where you are on your other device', 'My list, History and Stats open offline']],
   ['Nov 22', ['Hover a poster for its trailer', 'Share a moment: a link that opens at the exact minute', 'Continue on cinemee, right here', 'Servers that keep failing on an episode are tried last', 'Search and remove items in History, with Undo']],
   ['Nov 21', ['Resume where you stopped on 3ellwa, with Start over', 'Auto skip intros and outros', 'Up next stays in fullscreen', 'Save any show from its poster', 'Select mode on My list', 'Hide genres you skip', '← → jump 10 seconds', 'Follow shows from the schedule', 'Picked for you on the home page']],
   ['Earlier', ['New-episode pop-ups', 'My Anime hub with Requests', 'Continue on any device', 'Short server names']],
@@ -2671,6 +2827,7 @@ function viewSettings(alive) {
       </section>
       <section class="settings-group" id="alerts"><h2>Notifications</h2>
         <div class="setting anime-only"><span>Episode alerts for</span><div class="chips">${radio('alertsFor', 'both', 'Sub and dub', s.alertsFor || 'both')}${radio('alertsFor', 'sub', 'Sub only', s.alertsFor)}${radio('alertsFor', 'dub', 'Dub only', s.alertsFor)}</div></div>
+        <div class="setting"><span>Pop-ups</span><div class="chips">${radio('alertsWhen', 'now', 'Each new episode', s.alertsWhen || 'now')}${radio('alertsWhen', 'weekly', 'Weekly summary (Sundays)', s.alertsWhen)}</div></div>
         <p class="card-meta">New episodes of shows you follow with 🔔 (and of airing shows on your Watching list) show up in <a href="/new">Notifications</a>.</p>
       </section>
     </form>
@@ -2745,6 +2902,7 @@ function viewSettings(alive) {
     const el = e.target;
     if (el.matches('[data-hide-genre]')) return; // handled above
     store.setSetting(el.name, el.type === 'checkbox' ? el.checked : el.value);
+    if (el.name === 'alertsWhen') push.syncFollows();
     if (el.name === 'alertsFor') { push.syncFollows(); inbox.refreshInbox({ force: true }).catch(() => {}); }
   };
 
@@ -2910,33 +3068,74 @@ function setupSearch() {
   let timer = null;
   let seq = 0;
 
+  // Recent searches (this browser only), shown when the empty box gets focus.
+  const RECENT_KEY = 'animee-space:recent-searches';
+  const recent = () => { try { return JSON.parse(localStorage.getItem(RECENT_KEY) || '[]'); } catch { return []; } };
+  const remember = (q) => {
+    const list = [q, ...recent().filter((x) => x.toLowerCase() !== q.toLowerCase())].slice(0, 6);
+    try { localStorage.setItem(RECENT_KEY, JSON.stringify(list)); } catch { /* ignore */ }
+  };
+  const showRecent = () => {
+    const list = recent();
+    if (!list.length) { box.hidden = true; return; }
+    box.innerHTML = '<div class="s-head">Recent searches <button type="button" class="link-btn" data-clear-recent>Clear</button></div>'
+      + list.map((q) => `<a class="s-recent" href="/search?q=${encodeURIComponent(q)}">↺ ${esc(q)}</a>`).join('');
+    box.hidden = false;
+  };
+  box.addEventListener('click', (e) => {
+    if (!e.target.closest('[data-clear-recent]')) return;
+    e.preventDefault(); e.stopPropagation();
+    try { localStorage.removeItem(RECENT_KEY); } catch { /* ignore */ }
+    box.hidden = true;
+    input.focus();
+  }, true);
+  input.addEventListener('focus', () => { if (!input.value.trim()) showRecent(); });
+  // The title that matched, when it isn't the one shown (an English or Japanese name).
+  const alsoKnown = (a, q) => {
+    const needle = q.toLowerCase();
+    if (String(T(a)).toLowerCase().includes(needle)) return '';
+    const hit = [a.title, a.titleRomaji, ...(a.synonyms || [])].find((t) => t && String(t).toLowerCase().includes(needle));
+    return hit && hit !== T(a) ? hit : '';
+  };
+
   form.onsubmit = (e) => {
     e.preventDefault();
     const q = input.value.trim();
     box.hidden = true;
     input.blur();
-    if (q) go('/search?q=' + encodeURIComponent(q));
+    if (q) { remember(q); go('/search?q=' + encodeURIComponent(q)); }
   };
   input.oninput = () => {
     clearTimeout(timer);
     const q = input.value.trim();
     const my = ++seq;
+    if (!q) { showRecent(); return; }
     if (q.length < 3) { box.hidden = true; return; }
     timer = setTimeout(async () => {
       try {
         const d = await api('/search?q=' + encodeURIComponent(q));
         if (my !== seq) return;
         const results = Array.isArray(d.results) ? d.results : [];
-        box.innerHTML = (results.length ? results.slice(0, 5).map((a) => `
-          <a href="${animeHref(a)}"><img src="${esc(a.cover)}" alt="">
-            <div><div class="s-title">${esc(T(a))}</div><div class="s-meta">${[FORMAT[a.format], a.year, STATUS[a.status]].filter(Boolean).join(' · ')}</div></div></a>`).join('') : '<div class="s-empty">No matches found.</div>') +
-          `<a class="s-all" href="/search?q=${encodeURIComponent(q)}">View all results ›</a>`;
+        box.innerHTML = (d.approximate && results.length ? `<div class="s-head">No exact match. Did you mean…</div>` : '')
+          + (results.length ? results.slice(0, 6).map((a) => {
+            const aka = alsoKnown(a, q);
+            return `<a href="${animeHref(a)}"><img src="${esc(a.cover)}" alt="">
+            <div><div class="s-title">${esc(T(a))}</div><div class="s-meta">${aka ? `also “${esc(aka)}” · ` : ''}${[FORMAT[a.format], a.year, STATUS[a.status]].filter(Boolean).join(' · ')}</div></div></a>`;
+          }).join('') : `<div class="s-empty">No matches found. <a href="${esc(SIBLING.origin)}/search?q=${encodeURIComponent(q)}">Try ${SIBLING.name} ↗</a></div>`)
+          + `<a class="s-all" href="/search?q=${encodeURIComponent(q)}">View all results ›</a>`;
         box.hidden = false;
       } catch { if (my === seq) box.hidden = true; }
-    }, 450);
+    }, 300);
   };
   const close = () => { clearTimeout(timer); seq++; box.hidden = true; };
-  box.onclick = () => { close(); input.value = ''; };
+  box.onclick = (e) => {
+    const q = input.value.trim();
+    // A picked suggestion is remembered by its title (not a typo); "View all" by what was typed.
+    const picked = e.target.closest('a')?.querySelector('.s-title')?.textContent;
+    if (picked) remember(picked); else if (q && e.target.closest('a:not(.s-recent)')) remember(q);
+    close();
+    input.value = '';
+  };
   document.addEventListener('click', (e) => { if (!form.contains(e.target)) close(); });
   // Any route change (a picked result, Back, a link elsewhere) closes the list.
   window.addEventListener('animee:navigate', close);
