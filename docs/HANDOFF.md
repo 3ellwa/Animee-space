@@ -37,6 +37,8 @@ functions/_lib/
   reports.js                    "didn't play" counters
   ranking.js                    servers that keep failing are tried last (from reports)
   notice.js                     the site notice banner (set on /admin)
+  errors.js                     5xx / page-crash counts per day for /admin
+  crosssite.js                  "Continue on the other site" (CORS to the sibling origin only)
   calendar.js                   private .ics feed (anime: weekly JST slot; cinemee: next episode via TVmaze)
   providers/
     tenrai.js                   anime catalogue
@@ -128,6 +130,8 @@ npx wrangler dev --port 8787 --test-scheduled
 
 ## Gotchas (each one bit us once)
 
+- **The two sites talk to each other** only through `/api/me/continue` (CORS, exact sibling origin, credentials). Login cookies are host-only, so accounts stay separate. The CSP allows `http://localhost:8787` and `http://cinemee.localhost:8787` for local development.
+
 - **Commit `worker-assets.js`** after `npm run build`; the deploy serves it as committed.
 - **Bump `API_VERSION`** in `public/js/api.js` when API answers change shape: browsers keep API answers 10 min.
 - **Page cache:** rendered pages are cached at the edge for an hour, keyed by path + shell hash + **site**.
@@ -145,8 +149,7 @@ npx wrangler dev --port 8787 --test-scheduled
 ## Ideas not built yet (from docs/HIANIME-NOTES.md and conversations)
 
 - Arabic subtitles we supply ourselves (SubDL / OpenSubtitles → VTT → Atlas's `sub_url[]`). Low priority: Orion, Nova and Vega already have them.
-- "Continue on cinemee" on animee (and back) for people signed in on both.
-- Error counts per server/page in /admin (today only in the Worker logs).
+- Arabic subtitle search for Atlas (see above), if ever needed.
 - vidsrc options (default subtitle language, resume) once its docs can be read.
 - Light theme / accent colours were declined (dark only).
 

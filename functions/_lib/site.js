@@ -58,6 +58,7 @@ export function brandShell(html, site) {
     ['<a href="/az">A-Z list</a>', ''],
     ['<a href="/top/airing">Top airing</a>', '<a href="/top/airing">On TV this week</a>'],
     ['<a href="/top/popular">Most popular</a>', '<a href="/top/popular">Trending</a>'],
+    ['<a class="sibling-link" href="https://cinemee.animee.space/">cinemee: movies &amp; TV ↗</a>', '<a class="sibling-link" href="https://animee.space/">animee: anime ↗</a>'],
     ['<p class="footer-tag">watch movies. stay happy.</p>', '<p class="footer-tag">watch movies. stay happy.</p>\n        ' + TMDB_CREDIT],
   ];
   let out = html;

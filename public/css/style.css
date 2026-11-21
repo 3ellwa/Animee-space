@@ -815,6 +815,22 @@ kbd { display: inline-block; min-width: 1.5em; padding: 0 5px; border-radius: 5p
 .site-notice a { color: var(--lime); font-weight: 600; }
 .site-notice button { flex: none; width: 28px; height: 28px; border-radius: 50%; border: 0; background: transparent; color: var(--fog); cursor: pointer; }
 .site-notice button:hover { color: var(--paper); }
+.sibling-promo { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px; padding: 18px 20px; border-radius: 18px; border: 1px solid var(--line); background: linear-gradient(120deg, rgb(var(--sib-rgb) / .14), rgb(26 29 34 / .6) 60%); }
+.sibling-promo p { margin: 4px 0 0; color: var(--fog); font-size: 14px; max-width: 560px; }
+.sibling-promo .sib-name, .sibling-link { color: rgb(var(--sib-rgb)); }
+.sibling-promo .actions { display: flex; align-items: center; gap: 14px; }
+.cont.sibling { border-color: rgb(var(--sib-rgb) / .35); }
+:root { --sib-rgb: 255 61 82; }
+:root[data-site="cinemee"] { --sib-rgb: 198 255 61; }
+.hover-card { position: fixed; z-index: 90; width: 340px; border-radius: 16px; overflow: hidden; background: rgb(14 16 18 / .98); border: 1px solid rgb(var(--lime-rgb) / .35); box-shadow: 0 20px 60px rgb(0 0 0 / .6); animation: hc-in .18s var(--ease, ease-out); }
+.hover-card iframe, .hover-card > img { display: block; width: 100%; aspect-ratio: 16 / 9; border: 0; object-fit: cover; background: #000; pointer-events: none; }
+.hover-card .hc-body { padding: 12px 14px 14px; }
+.hover-card .hc-body b { display: block; font-size: 15px; }
+.hover-card .hc-genres { margin-top: 4px; font-size: 12px; color: rgb(var(--lime-rgb)); }
+.hover-card p { margin: 8px 0 10px; font-size: 13px; color: var(--fog); display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.hover-card .actions { display: flex; gap: 8px; }
+@keyframes hc-in { from { opacity: 0; transform: translateY(4px); } }
+@media (prefers-reduced-motion: reduce) { .hover-card { animation: none; } }
 .hist-day { margin: 20px 0 8px; font-size: 13px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--fog); }
 .hist-row { position: relative; }
 .hist-row .sched-row { padding-right: 48px; }

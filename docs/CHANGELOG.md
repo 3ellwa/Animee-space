@@ -1,3 +1,12 @@
+## Seasons, admin insight, both sites together, hover previews, shared moments
+
+- **Seasons on cinemee:** TV title pages list the seasons (poster, year, episode count), each opening its first episode; seasons that haven't started say when. The watch page's episode picker goes season by season (S1, S2 …) instead of by 100s.
+- **/admin:** "servers tried last right now" (every current demotion, whole show or one episode, with a Clear button for false alarms) and "errors (7 days)": 5xx API answers per route and page crashes per view, per day (`functions/_lib/errors.js`, table `errors`, created on first use, kept 30 days; the browser sends at most three per page load, rate-limited, no personal data).
+- **Both sites together:** signed in on both, the home page shows "Continue on cinemee" / "Continue on animee" (`GET /api/me/continue`, answered only to the sibling origin with credentials, `functions/_lib/crosssite.js`). Otherwise a small card about the other site (closable for 60 days). Also a footer link, and "Search … on cinemee/animee" when a search finds nothing.
+- **Lighter home page:** genres come with `/api/home`; "Picked for you" is one `/api/picks?ids=` request instead of three; "episode N is out" checks are one `/api/next-out?items=` request instead of one per show.
+- **Trailer on hover:** hold the mouse on a poster (wide screens) for a preview card: muted trailer (or art), genres, story, Watch / Details.
+- **Share moment** on the watch page: copies `/watch/<id>?ep=N&t=seconds`; opening it starts there once.
+
 ## Servers that sort themselves, TV air times, scores, history, site notice
 
 - **Servers that sort themselves** (`functions/_lib/ranking.js`): 2+ "didn't play" reports for one episode in 3 days, or failures on 3+ episodes of a show within 2 days, mark that server `struggling` there. Buttons keep their order (with a small ! and a tooltip); the first automatic pick, the fallback and auto-switching try struggling servers last. Read from the reports table by show, kept 10 minutes.

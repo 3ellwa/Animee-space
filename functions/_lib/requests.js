@@ -6,6 +6,7 @@
 //   POST /api/admin/answer        (X-Admin-Key) { id, answer }     -> { ok }
 //   POST /api/admin/delete        (X-Admin-Key) { id }             -> { ok }
 //   POST /api/admin/notice        (X-Admin-Key) { text, level, link, hours } -> { notice } (see notice.js)
+//   POST /api/admin/undemote      (X-Admin-Key) { anime, ep?, provider, category } -> { ok } (see ranking.js)
 //
 // `who` is a random id the browser makes once and keeps, so answers come back to the same
 // browser without an account; signed-in people also see their requests on every device.
@@ -14,6 +15,8 @@
 
 import { currentUser } from './auth.js';
 import { currentNotice, setNotice } from './notice.js';
+import { recentErrors } from './errors.js';
+import { demotedList, clearDemotion } from './ranking.js';
 
 export const KINDS = ['anime', 'idea', 'broken', 'other'];
 const MAX_ROWS = 5000;
@@ -139,7 +142,8 @@ async function adminList(env) {
     ).bind(Math.floor(Date.now() / 86400000) - 7).all());
   } catch { /* no reports yet */ }
   const notice = await currentNotice(env).catch(() => null);
-  return json({ requests: results.map((r) => ({ ...r, kind: KINDS[r.kind] || 'other' })), reports, notice });
+  const [errors, demoted] = await Promise.all([recentErrors(env), demotedList(env)]);
+  return json({ requests: results.map((r) => ({ ...r, kind: KINDS[r.kind] || 'other' })), reports, notice, errors, demoted });
 }
 
 export async function handleRequests(ctx, parts) {
@@ -160,6 +164,10 @@ export async function handleRequests(ctx, parts) {
         const answer = String(b.answer || '').trim().slice(0, 2000);
         if (!Number.isInteger(b.id) || !answer) throw fail(400, 'Need an id and an answer');
         await run(env, () => env.DB.prepare('UPDATE requests SET answer = ?, answered = ? WHERE id = ?').bind(answer, now(), b.id).run());
+        return json({ ok: true });
+      }
+      if (action === 'undemote' && request.method === 'POST') {
+        await clearDemotion(env, await body(request));
         return json({ ok: true });
       }
       if (action === 'notice' && request.method === 'POST') {

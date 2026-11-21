@@ -226,11 +226,29 @@ export async function getExtras(rawId) {
   return { characters, recommendations, ratings };
 }
 
+// A TV show's seasons, each with the straight-through number of its first episode (`startEp`)
+// so the page can link straight to it. Seasons that haven't started have no startEp.
+export function tvSeasons(id, raw) {
+  const day = today();
+  let start = 1;
+  return (raw.seasons || []).filter((s) => s.season_number > 0).sort((a, b) => a.season_number - b.season_number).slice(0, MAX_SEASONS).map((s) => {
+    const started = Boolean(s.air_date && s.air_date <= day && s.episode_count > 0);
+    const season = {
+      id, season: s.season_number, title: s.name || `Season ${s.season_number}`, titleRomaji: null, format: 'TV',
+      year: year(s.air_date), cover: img(s.poster_path, 'w185') || img(raw.poster_path, 'w185'),
+      episodes: s.episode_count || 0, airDate: s.air_date || null, startEp: started ? start : null,
+    };
+    if (started) start += s.episode_count || 0;
+    return season;
+  });
+}
+
 // Movie collections (e.g. every film in a series) take the place of anime "seasons".
 export async function getSeasons(rawId) {
   const id = String(rawId);
   const { raw, type } = await details(id);
-  if (type !== 'movie' || !raw.belongs_to_collection) return { id, seasons: [] };
+  if (type === 'tv') return { id, seasons: tvSeasons(id, raw) };
+  if (!raw.belongs_to_collection) return { id, seasons: [] };
   const collection = await request(`/collection/${raw.belongs_to_collection.id}`).catch(() => null);
   const parts = (collection?.parts || []).map((p) => normalize(p, 'movie')).filter(Boolean)
     .sort((a, b) => String(a.startDate ? `${a.startDate.year}-${a.startDate.month}` : '9999').localeCompare(String(b.startDate ? `${b.startDate.year}-${b.startDate.month}` : '9999'), undefined, { numeric: true }));

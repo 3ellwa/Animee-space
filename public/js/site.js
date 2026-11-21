@@ -6,3 +6,9 @@ export const IS_CINEMEE = SITE === 'cinemee';
 export const BRAND = IS_CINEMEE
   ? { name: 'cinemee', title: 'cinemee', hub: 'my list', hubNav: 'My List', backup: 'cinemee' }
   : { name: 'animee', title: 'animee space', hub: 'my anime', hubNav: 'My Anime', backup: 'animee-space' };
+
+// The other site: animee.space <-> cinemee.animee.space (also cinemee.localhost in development).
+const SIBLING_HOST = IS_CINEMEE ? location.host.replace(/^cinemee\./, '') : `cinemee.${location.host}`;
+export const SIBLING = IS_CINEMEE
+  ? { origin: `${location.protocol}//${SIBLING_HOST}`, name: 'animee', what: 'anime', pitch: 'Anime, the same way: your lists, sync, Up next and new-episode pop-ups. In lime.' }
+  : { origin: `${location.protocol}//${SIBLING_HOST}`, name: 'cinemee', what: 'movies and TV', pitch: 'Movies and TV, the same way: your lists, sync, Up next and new-episode pop-ups. In red.' };

@@ -6,6 +6,8 @@ import { handleReport } from '../_lib/reports.js';
 import { handleCalendar } from '../_lib/calendar.js';
 import { handleRequests } from '../_lib/requests.js';
 import { handleNotice } from '../_lib/notice.js';
+import { handleClientError, recordError, routeOf } from '../_lib/errors.js';
+import { handleContinue } from '../_lib/crosssite.js';
 import { handlePush } from '../_lib/push.js';
 import { importAniList } from '../_lib/importers.js';
 import * as megaplay from '../_lib/providers/megaplay.js';
@@ -60,10 +62,16 @@ export async function onRequest(ctx) {
   const { request, params } = ctx;
   const url = new URL(request.url);
   const parts = Array.isArray(params.path) ? params.path : String(params.path || '').split('/').filter(Boolean);
+  if (parts[0] === 'me' && parts[1] === 'continue' && parts.length === 2) {
+    try { return await handleContinue(ctx); } catch (err) { console.error(err); return json({ items: [] }, 500); }
+  }
   if (parts[0] === 'auth' || parts[0] === 'me') return handleAccount(ctx, parts);
   if (parts[0] === 'requests' || parts[0] === 'admin') return handleRequests(ctx, parts);
   if (parts[0] === 'push') return handlePush(ctx, parts);
   if (parts[0] === 'notice' && parts.length === 1) return handleNotice(ctx);
+  if (parts[0] === 'error' && parts.length === 1) {
+    try { return await handleClientError(request, ctx.env || {}); } catch { return json({ ok: true }); }
+  }
   if (parts[0] === 'cal' && parts.length === 2) {
     try { return await handleCalendar(ctx, parts[1]); } catch (err) {
       console.error(err);
@@ -93,7 +101,32 @@ export async function onRequest(ctx) {
     });
     if (a === 'home' && !b) return await cached(ctx, 600, async () => {
       const result = await cat.getSeasonalAnime();
-      return { recent: result.results, pagination: result.pagination };
+      // Genres ride along, so the home page needs one request less.
+      const genres = cat.GENRES.map(([name]) => name).filter(name => !cat.BROWSE_HIDDEN.includes(name));
+      return { recent: result.results, pagination: result.pagination, genres };
+    });
+    // "Picked for you": recommendations from up to three titles, mixed, in one request.
+    if (a === 'picks' && !b) return await cached(ctx, 3600, async () => {
+      const ids = [...new Set((url.searchParams.get('ids') || '').split(',').filter(id => /^\d{1,12}$/.test(id)))].slice(0, 3);
+      const lists = await Promise.all(ids.map(id => cat.getExtras(id).then(x => x.recommendations || []).catch(() => [])));
+      const seen = new Set();
+      const results = [];
+      for (let i = 0; i < 12; i++) for (const list of lists) {
+        const rec = list[i];
+        if (rec && !seen.has(String(rec.id))) { seen.add(String(rec.id)); results.push(rec); }
+      }
+      return { results };
+    });
+    // Whether the next episode is out, for several shows at once (?items=id:ep,id:ep).
+    if (a === 'next-out' && !b) return await cached(ctx, 1800, async () => {
+      const items = (url.searchParams.get('items') || '').split(',').map(x => x.split(':'))
+        .filter(([id, ep]) => /^\d{1,12}$/.test(id) && /^\d{1,4}$/.test(ep)).slice(0, 8);
+      const out = {};
+      await Promise.all(items.map(async ([id, ep]) => {
+        try { const d = await (cinemee ? tmdb : megaplay).getEpisodeAvailability(id, ep); out[`${id}:${ep}`] = Boolean(d.sub || d.dub); }
+        catch { out[`${id}:${ep}`] = false; }
+      }));
+      return { out };
     });
     if (a === 'search' && !b) return await cached(ctx, 600, async () => {
       const p = url.searchParams;
@@ -163,6 +196,11 @@ export async function onRequest(ctx) {
     const timedOut = error?.name === 'TimeoutError' || error?.name === 'AbortError';
     const status = error.status || (timedOut ? 504 : 500);
     if (status === 500) console.error('Animee API failure', url.pathname, error?.stack || error);
+    // Counted per route and day for the admin page (5xx only: "not found" is normal).
+    if (status >= 500) {
+      const counted = recordError(ctx.env || {}, 'api', `${routeOf(url.pathname)} (${status})`);
+      if (ctx.waitUntil) ctx.waitUntil(counted); else counted.catch(() => {});
+    }
     return json({ error: status === 500 ? 'The catalogue had a problem. Try again shortly.' : timedOut && !error.status ? 'An upstream service did not respond in time.' : error.message }, status);
   }
 }

@@ -5,7 +5,7 @@ import './fx.js';
 import * as inbox from './inbox.js';
 import * as push from './push.js';
 import * as aniList from './anilist.js';
-import { BRAND, IS_CINEMEE } from './site.js';
+import { BRAND, IS_CINEMEE, SIBLING } from './site.js';
 
 const app = document.getElementById('app');
 let cleanups = [];
@@ -91,7 +91,7 @@ const cardShows = new Map();
 function card(a) {
   if (a?.id) cardShows.set(String(a.id), a);
   const saved = store.getEntry(a.id);
-  return `<a class="card" href="${animeHref(a)}" title="${esc(T(a))}" data-card="${esc(a.id)}">
+  return `<a class="card" href="${animeHref(a)}" data-card="${esc(a.id)}">
     <div class="poster" style="--c:${esc(a.color || '#1e1a2b')}">
       <button class="card-save${saved?.status || saved?.favourite ? ' on' : ''}" type="button" data-save="${esc(a.id)}" aria-label="Save ${esc(T(a))}">${saved?.status || saved?.favourite ? '✓' : '＋'}</button>
       <img loading="lazy" src="${esc(a.cover)}" alt="${esc(T(a))} poster">
@@ -261,10 +261,12 @@ async function viewHome(alive) {
     spotlight(season.filter((x) => !store.notInterestedIds().has(String(x.id))).slice(0, 8)) +
     `<nav class="quick" aria-label="Shortcuts">${quick.map(([label, href]) => `<a class="chip" href="${href}">${label}</a>`).join('')}</nav>` +
     (cont.length ? section('Continue watching', '<div class="row">' + cont.map(contCard).join('') + '</div>') : '') +
+    '<div id="sibling-cont"></div>' +
     '<div id="picked"></div>' +
     (IS_CINEMEE
       ? shelf('shelf-top', 'Top 10 today', 'what everyone is watching right now') +
         shelf('shelf-airing', 'On TV this week', 'new episodes out now', '<a href="/top/airing">See all ›</a>') +
+        '<div id="sibling-promo"></div>' +
         shelf('shelf-season', 'In cinemas now', 'the big screen, right now', '<a href="/top/season">See all ›</a>') +
         shelf('shelf-upcoming', 'Coming to cinemas', 'mark your calendar', '<a href="/top/upcoming">See all ›</a>') +
         shelf('shelf-completed', 'Complete series', 'every season out, so you can binge it all', '<a href="/top/completed">See all ›</a>') +
@@ -272,12 +274,14 @@ async function viewHome(alive) {
         shelf('shelf-favorite', 'Top rated', 'crowd pleasers that never get old', '<a href="/top/favorite">See all ›</a>')
       : shelf('shelf-top', 'Top 10 this season', 'what everyone is watching right now') +
         shelf('shelf-airing', 'Airing now', 'new episodes every week', '<a href="/top/airing">See all ›</a>') +
+        '<div id="sibling-promo"></div>' +
         shelf('shelf-season', 'New this season', 'fresh starts worth a first episode', '<a href="/top/season">See all ›</a>') +
         shelf('shelf-upcoming', 'Coming soon', 'mark your calendar', '<a href="/top/upcoming">See all ›</a>') +
         shelf('shelf-completed', 'Just completed', 'finished, so you can binge it all', '<a href="/top/completed">See all ›</a>') +
         shelf('shelf-popular', 'Most popular', 'the ones everybody has seen', '<a href="/top/popular">See all ›</a>') +
         shelf('shelf-favorite', 'Fan favourites', 'crowd pleasers that never get old', '<a href="/top/favorite">See all ›</a>')) +
     '<section class="section" id="home-genres"></section>';
+  loadSibling(alive);
 
   app.querySelectorAll('.cont .x').forEach(b => b.onclick = e => {
     e.preventDefault();
@@ -299,44 +303,93 @@ async function viewHome(alive) {
   const recentShows = [...store.continueList(), ...Object.values(store.getList()).sort((x, y) => y.updated - x.updated)
     .map((e) => ({ animeId: e.id, title: e.title }))].filter((e) => e.title)
     .filter((e, i, all) => all.findIndex((x) => String(x.animeId) === String(e.animeId)) === i).slice(0, 3);
-  if (recentShows.length) Promise.all(recentShows.map((r) => api(`/anime/${r.animeId}/extras`).catch(() => ({ recommendations: [] })))).then((extras) => {
+  // One request for all of them (the server mixes the lists); ids sorted so the answer caches well.
+  if (recentShows.length) api(`/picks?ids=${recentShows.map((r) => r.animeId).sort().join(',')}`).then(({ results }) => {
     if (!alive()) return;
     const mine = new Set([...store.startedIds(), ...Object.keys(store.getList())].map(String));
-    const seen = new Set();
-    const mixed = [];
-    for (let i = 0; i < 12; i++) for (const x of extras) {
-      const rec = x.recommendations?.[i];
-      if (rec && !seen.has(String(rec.id)) && !mine.has(String(rec.id))) { seen.add(String(rec.id)); mixed.push(rec); }
-    }
+    const mixed = (results || []).filter((rec) => !mine.has(String(rec.id)));
     if (!mixed.length) return;
     const title = recentShows.length > 1 ? 'Picked for you' : `Because you watched ${esc(recentShows[0].title)}`;
     document.getElementById('picked').innerHTML = shelf('shelf-picked', title, recentShows.length > 1 ? `from ${recentShows.map((r) => esc(r.title)).join(', ')}` : 'picked from what you watched');
     bindShelf('shelf-picked', async () => shelfCards(unstarted(mixed).slice(0, 16)), alive);
   }).catch(() => {});
 
-  api('/genres').then(({ genres }) => {
+  Promise.resolve(d.genres ? { genres: d.genres } : api('/genres')).then(({ genres }) => {
     if (!alive()) return;
     document.getElementById('home-genres').innerHTML = `<div class="section-head"><h2>Browse by genre</h2><a href="/search">All filters ›</a></div>
       <div class="chips">${genres.map((g) => `<a class="chip" href="/search?genres=${encodeURIComponent(g)}&order=score">${esc(g)}</a>`).join('')}</div>`;
   }).catch(() => {});
 }
 
+// The other site on the home page: what you're watching there (signed in on both), otherwise a
+// small card about it that can be closed (it comes back after 60 days).
+const SIBLING_CACHE = 'animee-space:sibling-continue';
+const PROMO_KEY = 'animee-space:sibling-promo-closed';
+async function siblingContinue() {
+  try {
+    const hit = JSON.parse(sessionStorage.getItem(SIBLING_CACHE) || 'null');
+    if (hit && hit.at > Date.now() - 5 * 60e3) return hit.data;
+  } catch { /* ignore */ }
+  const r = await fetch(`${SIBLING.origin}/api/me/continue`, { credentials: 'include' });
+  const data = r.ok ? await r.json() : { items: [] };
+  try { sessionStorage.setItem(SIBLING_CACHE, JSON.stringify({ at: Date.now(), data })); } catch { /* ignore */ }
+  return data;
+}
+function loadSibling(alive) {
+  siblingContinue().catch(() => ({ items: [] })).then((d) => {
+    if (!alive()) return;
+    const items = d?.items || [];
+    if (items.length) {
+      const slot = document.getElementById('sibling-cont');
+      if (!slot) return;
+      slot.innerHTML = section(`Continue on ${SIBLING.name}`, '<div class="row">' + items.map((p) => {
+        const pct = p.duration ? Math.min(100, (p.time / p.duration) * 100) : 0;
+        return `<a class="cont sibling" href="${esc(SIBLING.origin)}/watch/${esc(p.id)}?ep=${p.ep}">
+          <img src="${esc(p.cover)}" alt="${esc(p.title)} poster" loading="lazy">
+          <div style="min-width:0;flex:1">
+            <div class="c-title">${esc(p.title)}</div>
+            <div class="c-meta">${esc(p.label)} · on ${SIBLING.name} ↗</div>
+            <div class="progress"><i style="width:${pct.toFixed(1)}%"></i></div>
+          </div>
+        </a>`;
+      }).join('') + '</div>');
+      return;
+    }
+    let closed = 0;
+    try { closed = Number(localStorage.getItem(PROMO_KEY)) || 0; } catch { /* ignore */ }
+    if (closed > Date.now() - 60 * 86400e3) return;
+    const slot = document.getElementById('sibling-promo');
+    if (!slot) return;
+    slot.innerHTML = `<section class="section"><div class="sibling-promo">
+      <div><b>Also by us: <span class="sib-name">${SIBLING.name}</span></b><p>${esc(SIBLING.pitch)} Free, same as here (it has its own account).</p></div>
+      <div class="actions"><a class="btn primary" href="${esc(SIBLING.origin)}/">Open ${SIBLING.name} ↗</a><button class="link-btn" type="button" data-close>Not now</button></div>
+    </div></section>`;
+    slot.querySelector('[data-close]').onclick = () => {
+      try { localStorage.setItem(PROMO_KEY, String(Date.now())); } catch { /* ignore */ }
+      slot.innerHTML = '';
+    };
+  });
+}
+
 // For shows where the last opened episode is finished, check whether the next one is out.
 function checkNewEpisodes(cont, alive) {
-  for (const p of cont) {
-    // Only when this episode is (nearly) finished: it gets a tick as soon as it starts playing.
-    if (!p.duration || p.time / p.duration < 0.85) continue;
-    const next = p.ep + 1;
-    api(`/anime/${p.animeId}/available?ep=${next}`).then((d) => {
-      if (!alive() || !(d.sub || d.dub)) return;
+  // Only shows whose episode is (nearly) finished: it gets a tick as soon as it starts playing.
+  const due = cont.filter((p) => p.duration && p.time / p.duration >= 0.85).slice(0, 8);
+  if (!due.length) return;
+  // One request for all of them.
+  api(`/next-out?items=${due.map((p) => `${p.animeId}:${p.ep + 1}`).join(',')}`).then(({ out }) => {
+    if (!alive()) return;
+    for (const p of due) {
+      const next = p.ep + 1;
+      if (!out?.[`${p.animeId}:${next}`]) continue;
       const cardEl = app.querySelector(`.cont[href^="/watch/${p.animeId}?"]`);
-      if (!cardEl) return;
+      if (!cardEl) continue;
       cardEl.href = `/watch/${p.animeId}?ep=${next}`;
       const badge = cardEl.querySelector('.new-ep');
       badge.textContent = `Episode ${next} is out`;
       badge.hidden = false;
-    }).catch(() => {});
-  }
+    }
+  }).catch(() => {});
 }
 
 // Wide spotlight art, fetched by the browser. Kitsu has the sharpest wide art (its original files
@@ -585,7 +638,7 @@ async function viewSearch(q, alive) {
   const count = info.total ? `<p class="card-meta result-count">${Number(info.total).toLocaleString()} title${info.total === 1 ? '' : 's'}</p>` : '';
   document.getElementById('results').innerHTML = count + note +
     '<div id="genre-top"></div>' +
-    '<div class="section">' + (results.length ? grid(results) : '<div class="empty"><h2>No matches found</h2><p>Try a different title or fewer filters.</p></div>') + '</div>' + pager;
+    '<div class="section">' + (results.length ? grid(results) : `<div class="empty"><h2>No matches found</h2><p>Try a different title or fewer filters.</p>${q.get('q') ? `<p>Looking for ${SIBLING.what}? <a href="${esc(SIBLING.origin)}/search?q=${encodeURIComponent(q.get('q'))}">Search “${esc(q.get('q'))}” on ${SIBLING.name} ↗</a></p>` : ''}</div>`) + '</div>' + pager;
   // One genre and nothing else picked: the genre's Top 10 by score above the results.
   const onlyGenre = pickedGenres.length === 1 && page === 1 && ![...q.keys()].some((k) => !['genres', 'genre'].includes(k));
   if (onlyGenre) {
@@ -631,6 +684,25 @@ function loadSeasons(a, alive, slotId, linkTo = 'anime', onLoaded) {
   api(`/anime/${a.id}/seasons`).then(({ seasons }) => {
     const slot = document.getElementById(slotId);
     if (!alive() || !slot || seasons.length < 2) return;
+    // cinemee TV: the show's own seasons, each opening its first episode (title page only; the
+    // watch page already picks episodes season by season).
+    if (seasons[0].season) {
+      if (linkTo !== 'anime') return;
+      slot.innerHTML = `<section class="section seasons">
+        <div class="section-head"><h2>Seasons</h2></div>
+        <p class="card-meta">${seasons.length} seasons</p>
+        <div class="season-row">${seasons.map((s) => {
+          const inner = `<img src="${esc(s.cover)}" alt="${esc(s.title)} poster" loading="lazy">
+            <span class="season-info">
+              <small>${[s.year, s.episodes ? `${s.episodes} episodes` : ''].filter(Boolean).join(' · ')}</small>
+              <b>${esc(s.title)}</b>
+              ${s.startEp ? '' : `<span class="here-badge">${s.airDate ? `Starts ${new Date(s.airDate + 'T12:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}` : 'Coming later'}</span>`}
+            </span>`;
+          return s.startEp ? `<a class="season" href="/watch/${a.id}?ep=${s.startEp}">${inner}</a>` : `<div class="season">${inner}</div>`;
+        }).join('')}</div>
+      </section>`;
+      return;
+    }
     slot.innerHTML = `<section class="section seasons">
       <div class="section-head"><h2>${IS_CINEMEE ? 'In this collection' : 'Seasons and movies'}</h2></div>
       <p class="card-meta">${seasons.length} parts in watching order</p>
@@ -729,6 +801,87 @@ window.addEventListener('error', (e) => {
   img.dataset.fallback = '1';
   img.src = ART_PLACEHOLDER;
 }, true);
+
+// Page crashes are counted (view + first line of the message, nothing else) for the admin page.
+// At most three per page load, and only errors from this site's own scripts.
+let errorsSent = 0;
+function sendError(message, source = '') {
+  if (errorsSent >= 3 || !message) return;
+  if (source && !String(source).startsWith(location.origin)) return; // extensions, players
+  errorsSent++;
+  const place = parseHash().parts[0] || 'home';
+  fetch('/api/error', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ place, message: String(message).slice(0, 300) }) }).catch(() => {});
+}
+window.addEventListener('error', (e) => { if (e instanceof ErrorEvent) sendError(e.message, e.filename); });
+window.addEventListener('unhandledrejection', (e) => {
+  const r = e.reason;
+  // Network hiccups and aborted requests aren't crashes.
+  if (r?.name === 'AbortError' || /fetch|network|load failed/i.test(String(r?.message || r))) return;
+  sendError(r?.message || String(r), r?.stack?.match(/https?:\/\/[^\s)]+?\.js/)?.[0] || '');
+});
+
+// Hover a poster for a moment (mouse only, wide screens): a preview card with the trailer
+// playing muted, the story and Watch / Details buttons. It closes when the mouse leaves both.
+const canPreview = () => matchMedia('(hover: hover) and (pointer: fine) and (min-width: 900px)').matches;
+let previewTimer = 0;
+let previewClose = 0;
+let previewFor = '';
+function closePreview() {
+  clearTimeout(previewTimer);
+  document.getElementById('hover-card')?.remove();
+  previewFor = '';
+}
+function placePreview(el, cardEl) {
+  const r = cardEl.getBoundingClientRect();
+  const w = el.offsetWidth, h = el.offsetHeight;
+  const right = r.right + 12 + w <= innerWidth - 8;
+  const left = right ? r.right + 12 : Math.max(8, r.left - 12 - w);
+  const top = Math.min(Math.max(8, r.top + r.height / 2 - h / 2), innerHeight - h - 8);
+  el.style.left = `${left}px`;
+  el.style.top = `${top}px`;
+}
+async function openPreview(cardEl) {
+  const id = cardEl.dataset.card;
+  if (!id || previewFor === id || !document.contains(cardEl)) return;
+  closePreview();
+  previewFor = id;
+  let a = cardShows.get(id);
+  try { a = { ...a, ...(await api(`/anime/${id}`)) }; } catch { /* use what the card knows */ }
+  if (previewFor !== id || !a?.title || !cardEl.matches(':hover')) { if (previewFor === id) previewFor = ''; return; }
+  const el = document.createElement('div');
+  el.id = 'hover-card';
+  el.className = 'hover-card';
+  el.innerHTML = `${a.trailer
+    ? `<iframe src="https://www.youtube-nocookie.com/embed/${esc(a.trailer)}?autoplay=1&mute=1&controls=0&playsinline=1&loop=1&playlist=${esc(a.trailer)}&modestbranding=1&rel=0" title="${esc(T(a))} trailer" allow="autoplay; encrypted-media"></iframe>`
+    : `<img src="${esc(a.banner || a.cover)}" alt="">`}
+    <div class="hc-body">
+      <b>${esc(T(a))}</b>
+      <div class="card-meta">${[FORMAT[a.format], a.year, a.score ? `★ ${score(a.score)}` : '', !isMovie(a) && a.availableEpisodes ? `${a.availableEpisodes} eps` : '', a.rating].filter(Boolean).map(esc).join(' · ')}</div>
+      ${a.genres?.length ? `<div class="hc-genres">${a.genres.slice(0, 4).map(esc).join(' · ')}</div>` : ''}
+      <p>${esc(a.description || '')}</p>
+      <div class="actions">${a.availableEpisodes ? `<a class="btn primary sm" href="/watch/${esc(a.id)}">▶ Watch</a>` : ''}<a class="btn sm" href="${animeHref(a)}">Details</a></div>
+    </div>`;
+  document.body.appendChild(el);
+  placePreview(el, cardEl);
+  el.onmouseenter = () => clearTimeout(previewClose);
+  el.onmouseleave = () => { previewClose = setTimeout(closePreview, 200); };
+}
+document.addEventListener('mouseover', (e) => {
+  const cardEl = e.target.closest?.('a.card[data-card]');
+  if (!cardEl || !canPreview()) return;
+  clearTimeout(previewClose);
+  if (previewFor === cardEl.dataset.card) return;
+  clearTimeout(previewTimer);
+  previewTimer = setTimeout(() => openPreview(cardEl), 700);
+});
+document.addEventListener('mouseout', (e) => {
+  const cardEl = e.target.closest?.('a.card[data-card]');
+  if (!cardEl || cardEl.contains(e.relatedTarget)) return;
+  clearTimeout(previewTimer);
+  if (previewFor) previewClose = setTimeout(closePreview, 200);
+});
+window.addEventListener('scroll', closePreview, { passive: true });
+window.addEventListener('animee:navigate', closePreview);
 
 // A toast with an Undo button.
 function undoToast(text, undo) {
@@ -1018,11 +1171,32 @@ async function viewWatch(id, query, alive) {
   const wantEp = Number(query.get('ep')) || prog?.ep || 1;
   let current = episodes.find((e) => e.number === wantEp) || episodes[0];
   const missingEp = query.get('ep') && current.number !== wantEp ? wantEp : null;
+  // ?t=754 from a "Share moment" link: start there (once).
+  let sharedAt = /^\d{1,5}$/.test(query.get('t') || '') ? Number(query.get('t')) : null;
   let servers = [];
   let server = null; // { id, category }
   const watched = store.watchedSet(a.id);
-  const wide = episodes.length <= 30 && episodes.some((e) => e.title && !/^Episode \d+$/.test(e.title));
   const CHUNK = 100;
+  // The episode picker: cinemee TV shows with several seasons go season by season; long lists
+  // otherwise go 100 at a time. Each group is a slice [from, to) of `episodes`.
+  const bySeason = episodes.some((e) => e.season) && new Set(episodes.map((e) => e.season)).size > 1;
+  const groups = [];
+  if (bySeason) {
+    episodes.forEach((e, i) => {
+      const last = groups[groups.length - 1];
+      if (last && last.season === e.season) last.to = i + 1;
+      else groups.push({ season: e.season, from: i, to: i + 1 });
+    });
+    groups.forEach((g) => { g.label = `Season ${g.season} (${g.to - g.from})`; });
+  } else if (episodes.length > CHUNK) {
+    for (let from = 0; from < episodes.length; from += CHUNK) {
+      const to = Math.min(from + CHUNK, episodes.length);
+      groups.push({ from, to, label: `${from + 1}-${to}` });
+    }
+  }
+  // Titles next to the numbers when the list (or each season) is short enough.
+  const wide = (bySeason ? Math.max(...groups.map((g) => g.to - g.from)) <= 40 : episodes.length <= 30) && episodes.some((e) => e.title && !/^Episode \d+$/.test(e.title));
+  const groupOf = (i) => Math.max(0, groups.findIndex((g) => i >= g.from && i < g.to));
   // Availability is determined by the configured providers for each episode.
   // Do not disable an episode based on MegaPlay-only availability when other servers exist.
   const playable = () => true;
@@ -1043,6 +1217,7 @@ async function viewWatch(id, query, alive) {
             <span class="spacer"></span>
             <button class="btn sm wide-btn" id="wide-toggle" type="button" aria-pressed="false">⤢ Wide player</button>
             <button class="btn sm" id="mark-seen" type="button">✓ Mark watched</button>
+            <button class="btn sm" id="share-moment" type="button" title="Copy a link that opens this episode at this moment">↗ Share moment</button>
             <details class="report-menu" id="report-menu">
               <summary class="btn sm">⚑ Report</summary>
               <div class="report-pop" role="group" aria-label="What's wrong with this episode?">
@@ -1086,10 +1261,7 @@ async function viewWatch(id, query, alive) {
         <div class="ep-box">
           <div class="ep-head">
             <h3>Episodes <small class="card-meta">(${episodes.length})</small></h3>
-            ${episodes.length > CHUNK ? `<select id="ep-range">${Array.from({ length: Math.ceil(episodes.length / CHUNK) }, (_, i) => {
-              const from = i * CHUNK + 1, to = Math.min((i + 1) * CHUNK, episodes.length);
-              return `<option value="${i}">${from}-${to}</option>`;
-            }).join('')}</select>` : ''}
+            ${groups.length > 1 ? `<select id="ep-range" aria-label="${bySeason ? 'Season' : 'Episodes'}">${groups.map((g, i) => `<option value="${i}">${esc(g.label)}</option>`).join('')}</select>` : ''}
             <input class="input" id="ep-find" type="number" min="1" max="${episodes.length}" placeholder="EP #">
           </div>
           <div class="ep-list${wide ? ' wide' : ''}" id="ep-list"></div>
@@ -1278,10 +1450,20 @@ async function viewWatch(id, query, alive) {
   document.addEventListener('keydown', onKey);
   onCleanup(() => document.removeEventListener('keydown', onKey));
   $('next-ep').onclick = () => idx() < episodes.length - 1 && goTo(episodes[idx() + 1]);
+  $('share-moment').onclick = async () => {
+    const t = Math.floor(player.getCurrentTime() || 0);
+    const url = `${location.origin}/watch/${a.id}?ep=${current.number}${t > 5 ? `&t=${t}` : ''}`;
+    const what = `${isMovie(a) ? a.title : `${a.title} · ${epName(current)}`}${t > 5 ? ` at ${clock(t)}` : ''}`;
+    if (navigator.share && matchMedia('(pointer: coarse)').matches) return navigator.share({ title: what, url }).catch(() => {});
+    try {
+      await navigator.clipboard.writeText(url);
+      toastNote(`Link copied: ${esc(what)}.${t > 5 ? '' : ' (The player hasn’t said where it is, so it opens at the start.)'}`);
+    } catch { prompt('Copy this link', url); }
+  };
 
-  let range = Math.floor(idx() / CHUNK);
+  let range = groupOf(idx());
   function renderEpisodes() {
-    const slice = episodes.length > CHUNK ? episodes.slice(range * CHUNK, (range + 1) * CHUNK) : episodes;
+    const slice = groups.length > 1 ? episodes.slice(groups[range].from, groups[range].to) : episodes;
     $('ep-list').innerHTML = slice.map((e) => `
       <button class="ep${e === current ? ' on' : ''}${watched.has(e.number) ? ' seen' : ''}${e.isFiller ? ' filler' : ''}${e.isRecap ? ' recap' : ''}${playable(e) ? '' : ' na'}"
         data-n="${e.number}" title="${e.label ? `${esc(e.label)}: ` : ''}${esc(e.title)}${e.isFiller ? ' (filler)' : e.isRecap ? ' (recap)' : ''}${playable(e) ? '' : ' (not available yet)'}">${wide ? `${e.label ? esc(e.label) : e.number}. ${esc(e.title)}` : e.label ? `S${e.season}E${e.episode}` : e.number}</button>`).join('');
@@ -1421,7 +1603,7 @@ async function viewWatch(id, query, alive) {
   async function goTo(ep) {
     if (!ep) return;
     current = ep;
-    range = Math.floor(idx() / CHUNK);
+    range = groupOf(idx());
     history.replaceState(null, '', `/watch/${a.id}?ep=${ep.number}`);
     $('crumb-ep').textContent = isMovie(a) ? 'Movie' : epName(ep);
     $('now-ep').textContent = isMovie(a) ? a.title : `${epName(ep)}${ep.isFiller ? ' (filler)' : ''}`;
@@ -1455,7 +1637,10 @@ async function viewWatch(id, query, alive) {
       if (!server) return player.msg('No playback servers are configured for this episode.');
       if (s.category !== pref) $('now-ep').textContent += ` · ${pref} isn't out yet, playing ${s.category}`;
       const p = store.getProgress(a.id);
-      await playSource(p && p.ep === ep.number ? p.time : 0);
+      // A shared moment (?t=seconds) wins once, on the episode it was shared from.
+      const shared = sharedAt !== null && ep.number === wantEp ? sharedAt : null;
+      sharedAt = null;
+      await playSource(shared ?? (p && p.ep === ep.number ? p.time : 0));
     } catch (err) {
       if (alive()) player.msg(`Couldn't load servers: ${err.message}`);
     }
@@ -1512,10 +1697,10 @@ async function viewNew(alive) {
 // A small bar under the menu after an update, with the dated list one tap away. "Got it" hides it
 // until the next update (per browser).
 const NEWS = IS_CINEMEE ? [
-  ['Nov 22', ['Real air times for TV: schedule, title pages and calendar', 'IMDb and Rotten Tomatoes scores', 'Servers that keep failing are tried last', 'Search and remove items in History']],
+  ['Nov 22', ['Seasons on TV pages, and season by season in the episode list', 'Hover a poster for its trailer', 'Share a moment: a link that opens at the exact minute', 'Continue on animee, right here', 'Real air times for TV', 'IMDb and Rotten Tomatoes scores', 'Search and remove items in History']],
   ['Nov 21', ['Welcome to cinemee: movies and TV, with the same lists, sync and pop-ups as animee', 'Up next stays in fullscreen', 'Save any title from its poster', 'Hide genres you skip']],
 ] : [
-  ['Nov 22', ['Servers that keep failing on an episode are tried last', 'Search and remove items in History, with Undo']],
+  ['Nov 22', ['Hover a poster for its trailer', 'Share a moment: a link that opens at the exact minute', 'Continue on cinemee, right here', 'Servers that keep failing on an episode are tried last', 'Search and remove items in History, with Undo']],
   ['Nov 21', ['Resume where you stopped on 3ellwa, with Start over', 'Auto skip intros and outros', 'Up next stays in fullscreen', 'Save any show from its poster', 'Select mode on My list', 'Hide genres you skip', '← → jump 10 seconds', 'Follow shows from the schedule', 'Picked for you on the home page']],
   ['Earlier', ['New-episode pop-ups', 'My Anime hub with Requests', 'Continue on any device', 'Short server names']],
 ];
@@ -1749,6 +1934,18 @@ function viewAdmin() {
         ${data.reports.length ? `<table class="admin-table"><tr><th>Server</th><th>Audio</th><th>Reason</th><th>Count</th></tr>
           ${data.reports.map((r) => `<tr><td>${esc(r.provider)}</td><td>${r.cat ? 'dub' : 'sub'}</td><td>${REASONS[r.reason] || r.reason}</td><td>${r.n}</td></tr>`).join('')}</table>`
           : '<p class="card-meta">No reports in the last 7 days.</p>'}</section>
+      <section class="section"><div class="section-head"><h2>servers tried last right now</h2></div>
+        <p class="card-meta">From the reports: 2+ on one episode in 3 days, or 3+ episodes of a show within 2 days. Clear a false alarm and that server goes back to its normal place (within 10 minutes everywhere).</p>
+        ${data.demoted?.length ? `<table class="admin-table" id="demoted"><tr><th>Title</th><th>Where</th><th>Server</th><th>Reports</th><th></th></tr>
+          ${data.demoted.map((d) => `<tr data-anime="${esc(d.anime)}" data-ep="${d.ep ?? ''}" data-provider="${esc(d.provider)}" data-category="${esc(d.category)}">
+            <td><a href="/anime/${esc(d.anime)}" data-title="${esc(d.anime)}">#${esc(d.anime)}</a></td><td>${d.ep ? `episode ${d.ep}` : '<b>whole show</b>'}</td>
+            <td>${esc(d.provider)} ${esc(d.category)}</td><td>${d.n}</td><td><button class="btn sm" type="button" data-clear>Clear</button></td></tr>`).join('')}</table>`
+          : '<p class="card-meta">Nothing is demoted right now.</p>'}</section>
+      <section class="section"><div class="section-head"><h2>errors (7 days)</h2></div>
+        <p class="card-meta">API answers that failed (5xx, per route) and pages that crashed in visitors' browsers, per day.</p>
+        ${data.errors?.length ? `<table class="admin-table"><tr><th>Day</th><th>Kind</th><th>Where</th><th>Count</th></tr>
+          ${data.errors.map((e) => `<tr><td>${new Date(e.day * 86400000).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}</td><td>${esc(e.kind)}</td><td>${esc(e.place)}</td><td>${e.n}</td></tr>`).join('')}</table>`
+          : '<p class="card-meta">No errors in the last 7 days.</p>'}</section>
       <section class="section"><div class="section-head"><h2>requests</h2></div>
         ${data.requests.map((q) => `<div class="req-item card-box" data-id="${q.id}">
           <div class="card-meta">#${q.id} · ${esc(KIND_LABEL[q.kind] || q.kind)} · ${fmtWhen(q.created)}${q.anime ? ` · <b>${esc(q.anime)}</b>` : ''}</div>
@@ -1758,6 +1955,22 @@ function viewAdmin() {
             <button class="btn sm" data-act="delete" type="button">Delete</button><span class="card-meta" data-out></span></div>
         </div>`).join('') || '<p class="card-meta">No requests yet.</p>'}</section>`;
     document.getElementById('admin-out').onclick = () => { forget(); askKey(); };
+    // Titles for the demoted list, six at a time.
+    const titleIds = [...new Set((data.demoted || []).map((d) => d.anime))];
+    for (let i = 0; i < titleIds.length; i += 6) {
+      api(`/batch?ids=${titleIds.slice(i, i + 6).join(',')}`).then(({ results }) => {
+        for (const t of results || []) app.querySelectorAll(`[data-title="${t.id}"]`).forEach((el) => { el.textContent = T(t); });
+      }).catch(() => {});
+    }
+    app.querySelectorAll('#demoted [data-clear]').forEach((b) => b.onclick = async () => {
+      const row = b.closest('tr');
+      const { anime, ep, provider, category } = row.dataset;
+      b.disabled = true;
+      try {
+        await call('undemote', { anime, ep: ep ? Number(ep) : null, provider, category });
+        row.remove();
+      } catch (err) { b.disabled = false; b.textContent = err.message; }
+    });
     document.getElementById('notice-form').onsubmit = async (e) => {
       e.preventDefault();
       const f = e.target.elements;
@@ -2816,6 +3029,8 @@ function showNotice() {
 route();
 showNews();
 showNotice();
+// The footer's link to the other site follows the current address (cinemee.localhost in development).
+document.querySelectorAll('.sibling-link').forEach((a) => { a.href = `${SIBLING.origin}/`; });
 store.initAccount().finally(() => setTimeout(() => {
   inbox.refreshInbox().catch(() => {});
   push.syncFollows(); // follows may have changed on another device
