@@ -8,10 +8,13 @@
 
 import { spawnSync } from 'node:child_process';
 import { webcrypto } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 
 const force = process.argv.includes('--force');
-const npx = (args, input) => spawnSync('npx', ['wrangler', ...args], {
-  input, encoding: 'utf8', shell: process.platform === 'win32', stdio: [input === undefined ? 'inherit' : 'pipe', 'pipe', 'inherit'],
+// Runs the project's own Wrangler through Node directly (no shell, so nothing gets re-parsed).
+const WRANGLER = fileURLToPath(new URL('../node_modules/wrangler/bin/wrangler.js', import.meta.url));
+const npx = (args, input) => spawnSync(process.execPath, [WRANGLER, ...args], {
+  input, encoding: 'utf8', stdio: [input === undefined ? 'inherit' : 'pipe', 'pipe', 'inherit'],
 });
 
 const list = npx(['secret', 'list', '--format', 'json']);
@@ -40,4 +43,4 @@ for (const [name, value] of [['VAPID_PUBLIC_KEY', publicKey], ['VAPID_PRIVATE_KE
   }
   console.log(`✓ ${name} set`);
 }
-console.log('\nDone. Pop-ups are on: people can turn them on in Settings → Notifications on this device.');
+console.log('\nDone. Pop-ups are on: people can turn them on in My Anime → Settings → Pop-ups on this device.');

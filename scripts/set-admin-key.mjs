@@ -6,10 +6,13 @@
 
 import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 
 const key = randomBytes(24).toString('base64url');
-const put = spawnSync('npx', ['wrangler', 'secret', 'put', 'ADMIN_KEY'], {
-  input: key, encoding: 'utf8', shell: process.platform === 'win32', stdio: ['pipe', 'pipe', 'inherit'],
+// Runs the project's own Wrangler through Node directly (no shell, so nothing gets re-parsed).
+const WRANGLER = fileURLToPath(new URL('../node_modules/wrangler/bin/wrangler.js', import.meta.url));
+const put = spawnSync(process.execPath, [WRANGLER, 'secret', 'put', 'ADMIN_KEY'], {
+  input: key, encoding: 'utf8', stdio: ['pipe', 'pipe', 'inherit'],
 });
 if (put.status !== 0) {
   console.error('Setting ADMIN_KEY failed. Run `npx wrangler login` first, then try again.');
