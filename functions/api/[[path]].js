@@ -1,5 +1,6 @@
 // Tenrai catalogue API with direct multi-provider playback. User accounts remain on D1.
 import * as tenrai from '../_lib/providers/tenrai.js';
+import * as tmdb from '../_lib/providers/tmdb.js';
 import { handleAccount } from '../_lib/account.js';
 import { handleReport } from '../_lib/reports.js';
 import { handleCalendar } from '../_lib/calendar.js';
@@ -74,6 +75,10 @@ export async function onRequest(ctx) {
     }
   }
   if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405);
+  // animee's catalogue is anime (Tenrai); cinemee's is movies and TV (TMDB), in the same shape.
+  const cinemee = ctx.env?.SITE === 'cinemee';
+  const cat = cinemee ? tmdb : tenrai;
+  if (cinemee) tmdb.useToken(ctx.env);
   try {
     const [a, b, c] = parts;
     if (a === 'stream-proxy' && !b) {
@@ -81,44 +86,45 @@ export async function onRequest(ctx) {
       catch (error) { return json({ error: error?.message || 'Stream proxy failed.' }, error.status || 502); }
     }
     if (a === 'provider' && !b) return json({
-      catalogue: { id: 'tenrai', name: 'Tenrai' },
+      catalogue: cinemee ? { id: 'tmdb', name: 'TMDB' } : { id: 'tenrai', name: 'Tenrai' },
       playback: playback.getProviderList(ctx.env || {}),
     });
     if (a === 'home' && !b) return await cached(ctx, 600, async () => {
-      const result = await tenrai.getSeasonalAnime();
+      const result = await cat.getSeasonalAnime();
       return { recent: result.results, pagination: result.pagination };
     });
     if (a === 'search' && !b) return await cached(ctx, 600, async () => {
       const p = url.searchParams;
-      return tenrai.searchAnime({
+      return cat.searchAnime({
         query: p.get('q'), page: p.get('page'), type: p.get('type'), status: p.get('status'),
         rating: p.get('rating'), season: p.get('season'), year: p.get('year'), score: p.get('score'),
         genres: p.get('genres') || p.get('genre'), order: p.get('order'),
         letter: p.get('letter'), studio: p.get('studio'),
       });
     });
-    if (a === 'list' && b && !c) return await cached(ctx, 1800, async () => tenrai.getList(b, url.searchParams.get('limit')));
-    if (a === 'schedule' && !b) return await cached(ctx, 1800, async () => tenrai.getSchedule(url.searchParams.get('day')));
-    if (a === 'random' && !b) return json(await tenrai.getRandom());
+    if (a === 'list' && b && !c) return await cached(ctx, 1800, async () => cat.getList(b, url.searchParams.get('limit')));
+    if (a === 'schedule' && !b) return await cached(ctx, 1800, async () => cat.getSchedule(url.searchParams.get('day')));
+    if (a === 'random' && !b) return json(await cat.getRandom());
     if (a === 'import' && b === 'anilist' && !c) return json(await importAniList(url.searchParams.get('user')));
     // Hidden themes stay searchable (?genres=Harem works) but get no chip of their own.
-    if (a === 'genres' && !b) return json({ genres: tenrai.GENRES.map(([name]) => name).filter(name => !tenrai.BROWSE_HIDDEN.includes(name)) }, 200, 86400);
+    if (a === 'genres' && !b) return json({ genres: cat.GENRES.map(([name]) => name).filter(name => !cat.BROWSE_HIDDEN.includes(name)) }, 200, 86400);
     // How many episodes MegaPlay can play in sub and dub (checked against the listed count).
     if (a === 'anime' && b && c === 'availability') return await cached(ctx, 3600, async () => {
-      const { total } = await tenrai.getEpisodes(validId(b));
+      if (cinemee) return tmdb.getAvailability(validId(b));
+      const { total } = await cat.getEpisodes(validId(b));
       return megaplay.getAvailability(b, total);
     });
     // Whether one episode plays, for "new episode" badges.
     if (a === 'anime' && b && c === 'available') return await cached(ctx, 1800, async () =>
-      megaplay.getEpisodeAvailability(validId(b), url.searchParams.get('ep')));
-    if (a === 'anime' && b && c === 'seasons') return await cached(ctx, 86400, async () => tenrai.getSeasons(validId(b)));
-    if (a === 'anime' && b && c === 'extras') return await cached(ctx, 3600, async () => tenrai.getExtras(validId(b)));
-    if (a === 'anime' && b && !c) return await cached(ctx, 3600, async () => tenrai.getAnimeWithCount(validId(b)));
-    if (a === 'anime' && b && c === 'episodes') return await cached(ctx, 1800, async () => tenrai.getEpisodes(validId(b)));
+      (cinemee ? tmdb : megaplay).getEpisodeAvailability(validId(b), url.searchParams.get('ep')));
+    if (a === 'anime' && b && c === 'seasons') return await cached(ctx, 86400, async () => cat.getSeasons(validId(b)));
+    if (a === 'anime' && b && c === 'extras') return await cached(ctx, 3600, async () => cat.getExtras(validId(b)));
+    if (a === 'anime' && b && !c) return await cached(ctx, 3600, async () => cat.getAnimeWithCount(validId(b)));
+    if (a === 'anime' && b && c === 'episodes') return await cached(ctx, 1800, async () => cat.getEpisodes(validId(b)));
     if (a === 'episode' && b && c === 'servers') return await cached(ctx, 600, async () => {
       const reference = episodeRef(b);
       // Enforce the catalogue's strict SFW gate even when the API is called directly.
-      await tenrai.getAnime(reference.animeId);
+      await cat.getAnime(reference.animeId);
       return { episodeId: b, servers: await playback.getServers(reference.animeId, reference.episode, ctx.env || {}) };
     });
     if (a === 'episode' && b && c === 'sources') {
@@ -126,7 +132,7 @@ export async function onRequest(ctx) {
       // request-context-bound stream tokens that must be resolved per viewer.
       const reference = episodeRef(b);
       // A direct playback URL must not bypass the strict SFW catalogue check.
-      await tenrai.getAnime(reference.animeId);
+      await cat.getAnime(reference.animeId);
       const language = url.searchParams.get('category') === 'dub' ? 'dub' : 'sub';
       const server = url.searchParams.get('server') || 'megaplay';
       const preferred = url.searchParams.get('preferred') || 'megaplay';
@@ -145,7 +151,7 @@ export async function onRequest(ctx) {
       const ids = [...new Set((url.searchParams.get('ids') || '').split(',').filter(id => /^\d{1,12}$/.test(id)))].slice(0, 6);
       const results = [];
       for (const id of ids) {
-        try { results.push(await tenrai.getAnime(id)); } catch { /* return the successful portion */ }
+        try { results.push(await cat.getAnime(id)); } catch { /* return the successful portion */ }
       }
       return { results };
     });
@@ -155,6 +161,6 @@ export async function onRequest(ctx) {
     const timedOut = error?.name === 'TimeoutError' || error?.name === 'AbortError';
     const status = error.status || (timedOut ? 504 : 500);
     if (status === 500) console.error('Animee API failure', url.pathname, error?.stack || error);
-    return json({ error: status === 500 ? 'The anime service had a problem. Try again shortly.' : timedOut && !error.status ? 'An upstream service did not respond in time.' : error.message }, status);
+    return json({ error: status === 500 ? 'The catalogue had a problem. Try again shortly.' : timedOut && !error.status ? 'An upstream service did not respond in time.' : error.message }, status);
   }
 }

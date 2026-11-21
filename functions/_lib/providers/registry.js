@@ -5,6 +5,7 @@ import * as megaplay from './megaplay.js';
 import * as animeparadise from './animeparadise.js';
 import * as vidnest from './vidnest.js';
 import * as tryembed from './tryembed.js';
+import * as tmdb from './tmdb.js';
 
 const BUILTIN_ID = 'megaplay';
 const ID_RE = /^[a-z0-9][a-z0-9_-]{0,39}$/;
@@ -61,7 +62,11 @@ function configuredProviders(env = {}) {
   });
 }
 
+// cinemee (movies and TV) has one server: VidNest, addressed by TMDB id. Neutral name, as on animee.
+const CINEMEE_PROVIDERS = [{ id: 'vidnest', name: 'Nova', categories: ['sub'] }];
+
 export function getProviderList(env = {}) {
+  if (env.SITE === 'cinemee') return CINEMEE_PROVIDERS.map((provider) => ({ ...provider, configured: true }));
   return [
     ...BUILTIN_PROVIDERS.map(provider => ({ ...provider, configured: true })),
     ...configuredProviders(env).map(({ id, name, categories }) => ({ id, name, categories, configured: true })),
@@ -131,7 +136,8 @@ export async function getFallbackSource(rawId, rawEpisode, rawPreferred, rawCate
   const category = String(rawCategory || 'sub').toLowerCase();
   if (!CATEGORIES.has(category)) throw fail(400, 'Invalid playback category.');
   const preferred = String(rawPreferred || BUILTIN_ID).trim().toLowerCase();
-  const key = `${id}:${episode}:${category}:${preferred}`;
+  // The site is part of the key: an anime and a movie can share the same number.
+  const key = `${env.SITE || 'animee'}:${id}:${episode}:${category}:${preferred}`;
   const hit = fallbackCache.get(key);
   if (hit && hit.expires > Date.now()) {
     if (hit.error) throw fail(hit.status || 502, hit.error);
@@ -214,6 +220,10 @@ export async function getSources(rawId, rawEpisode, rawServer, rawCategory, env 
   const category = String(rawCategory || 'sub').toLowerCase();
   if (!CATEGORIES.has(category)) throw fail(400, 'Invalid playback category.');
 
+  if (env.SITE === 'cinemee') {
+    if (server !== 'vidnest') throw fail(404, 'That playback server is not configured.');
+    return tmdb.getSources(id, episode);
+  }
   if (server === 'megaplay') return tenrai.getSources(id, episode, category);
   if (server === 'animeparadise') return animeparadise.getSources(id, episode, category);
   if (server === 'vidnest') return vidnest.getSources(id, episode, category, opts.aniListId);

@@ -18,6 +18,7 @@
 // them). Without them the feature is off and the settings page says so.
 
 import * as tenrai from './providers/tenrai.js';
+import * as tmdb from './providers/tmdb.js';
 import * as megaplay from './providers/megaplay.js';
 
 const MAX_FOLLOWS = 100;
@@ -212,6 +213,10 @@ async function airedCount(id, page) {
 
 export async function runPushCheck(env) {
   if (!env.DB || !keysReady(env)) return { skipped: true };
+  // cinemee follows movies and TV (TMDB); animee follows anime (Tenrai).
+  const cinemee = env.SITE === 'cinemee';
+  if (cinemee) tmdb.useToken(env);
+  const catalogue = cinemee ? tmdb : tenrai;
   await ensureTables(env);
   const t = now();
   // 1. Followed shows that haven't been looked at for a while, oldest first.
@@ -225,7 +230,11 @@ export async function runPushCheck(env) {
   let newEpisodes = 0;
   for (const show of shows) {
     let result;
-    try { result = await airedCount(show.anime_id, Math.max(1, show.page)); } catch { continue; }
+    try {
+      result = cinemee
+        ? { aired: (await tmdb.getAnime(String(show.anime_id))).availableEpisodes, page: 1 }
+        : await airedCount(show.anime_id, Math.max(1, show.page));
+    } catch { continue; }
     updates.push(env.DB.prepare('UPDATE push_shows SET aired = ?, page = ?, checked = ? WHERE anime_id = ?')
       .bind(result.aired, result.page, t, show.anime_id));
     // The first look only records where the show is; later looks notify when it moved on.
@@ -234,7 +243,7 @@ export async function runPushCheck(env) {
     const ep = result.aired;
     let title = `Episode ${ep}`;
     let cover = null;
-    try { const a = await tenrai.getAnime(String(show.anime_id)); title = a.title; cover = a.cover; } catch { /* keep the plain title */ }
+    try { const a = await catalogue.getAnime(String(show.anime_id)); title = a.title; cover = a.cover; } catch { /* keep the plain title */ }
     let dubOut = null; // only asked when someone wants dub-only alerts
     const { results: subs } = await env.DB.prepare(
       'SELECT s.id, s.alerts, s.pending FROM push_follows f JOIN push_subs s ON s.id = f.sub_id WHERE f.anime_id = ?',

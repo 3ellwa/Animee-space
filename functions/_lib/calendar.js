@@ -6,6 +6,7 @@
 
 import { userFromCalendarToken } from './auth.js';
 import * as tenrai from './providers/tenrai.js';
+import * as tmdb from './providers/tmdb.js';
 
 const MAX_SHOWS = 25;
 const CACHE_SECONDS = 6 * 3600;
@@ -121,7 +122,9 @@ export async function handleCalendar(ctx, file) {
   for (const row of results) {
     if (shows.length >= MAX_SHOWS) break;
     try {
-      const anime = await tenrai.getAnime(String(row.a));
+      // cinemee titles come from TMDB, which has no weekly broadcast slot, so they add no events.
+      if (env.SITE === 'cinemee') tmdb.useToken(env);
+      const anime = await (env.SITE === 'cinemee' ? tmdb : tenrai).getAnime(String(row.a));
       if (anime.status === 'RELEASING' || anime.status === 'NOT_YET_RELEASED') shows.push(anime);
     } catch { /* skip shows that can't be loaded right now */ }
   }

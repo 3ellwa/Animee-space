@@ -363,7 +363,8 @@ function bindSpotlight(alive) {
   const dots = [...root.querySelectorAll('.dots button')];
   let i = 0;
   const warm = () => { loadSlideArt(slides[i]); loadSlideArt(slides[(i + 1) % slides.length]); };
-  loadBanners(slides.map((s) => s.dataset.id)).then((urls) => {
+  // cinemee's wide art comes straight from TMDB (data-art); the Kitsu/AniList lookup is anime-only.
+  (IS_CINEMEE ? Promise.resolve({}) : loadBanners(slides.map((s) => s.dataset.id))).then((urls) => {
     if (!alive()) return;
     slides.forEach((s) => { if (urls[s.dataset.id]) s.dataset.art = urls[s.dataset.id]; });
     warm();
@@ -389,7 +390,7 @@ function spotlight(list) {
   if (!list?.length) return '';
   return `<section class="spotlight" aria-label="Spotlight">
     ${list.map((a, i) => `
-      <div class="slide${i === 0 ? ' on' : ''}" data-id="${a.id}">
+      <div class="slide${i === 0 ? ' on' : ''}" data-id="${a.id}"${IS_CINEMEE && a.banner ? ` data-art="${esc(a.banner)}"` : ''}>
         <div class="slide-bg" style="background-image:url('${esc(a.cover)}')"></div>
         <img class="slide-poster" src="${esc(a.cover)}" alt="" ${i ? 'loading="lazy"' : ''}>
         <div class="slide-info">
