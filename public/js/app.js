@@ -1074,8 +1074,8 @@ async function viewWatch(id, query, alive) {
     const groups = ['sub', 'dub'].map((cat) => {
       const list = servers.filter((s) => s.category === cat);
       if (!list.length) return '';
-      return `<div class="srv-row"><span class="lab">${cat}</span>${list.map((s) => `
-        <button class="srv${server && server.id === s.id && server.category === cat ? ' on' : ''}" data-id="${esc(s.id)}" data-cat="${cat}"${playable(current, cat) ? '' : ` disabled title="Not out in ${cat} for this episode yet"`}>${esc(s.name)}</button>`).join('')}</div>`;
+      return `<div class="srv-row"><span class="lab">${cat}</span><div class="srv-btns">${list.map((s) => `
+        <button class="srv${server && server.id === s.id && server.category === cat ? ' on' : ''}" data-id="${esc(s.id)}" data-cat="${cat}"${playable(current, cat) ? '' : ` disabled title="Not out in ${cat} for this episode yet"`}>${esc(s.name)}</button>`).join('')}</div></div>`;
     }).join('');
     $('server-list').innerHTML = groups || '<span class="card-meta">No servers available.</span>';
   }

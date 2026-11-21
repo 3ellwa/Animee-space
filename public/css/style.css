@@ -451,8 +451,10 @@ button.tab { color: inherit; }
 .servers .resume-note { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; color: var(--fog); font-size: 14px; }
 .servers .resume-note[hidden] { display: none; }
 .servers .resume-note b { color: var(--paper); }
-.srv-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 4px 0; }
-.srv-row .lab { width: 44px; color: var(--fog); font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+/* Label in its own column; buttons wrap inside theirs, never under the label. */
+.srv-row { display: grid; grid-template-columns: 44px 1fr; align-items: start; gap: 8px; padding: 4px 0; }
+.srv-row .lab { padding-top: 8px; color: var(--fog); font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+.srv-btns { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
 .srv { padding: 7px 15px; border-radius: 10px; border: 1px solid var(--line); background: rgb(26 29 34 / .7); cursor: pointer; font-size: 13px; font-weight: 600; transition: border-color var(--dur-fast), box-shadow var(--dur), background-color var(--dur); }
 .srv:hover { border-color: rgb(var(--lime-rgb) / .5); }
 .srv.on { background: var(--lime); color: var(--ink); border-color: var(--lime); box-shadow: var(--glow-sm); }
