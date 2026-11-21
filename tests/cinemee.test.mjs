@@ -108,13 +108,19 @@ test('a TV show counts only aired episodes and numbers them straight through', a
   assert.deepEqual(episodes.map((e) => [e.number, e.label]), [[1, 'S1 · E1'], [2, 'S1 · E2'], [3, 'S1 · E3'], [4, 'S2 · E1']]);
 });
 
-test('cinemee plays through Vega (vidsrc) then Nova (VidNest), by TMDB id and season/episode', async () => {
+test('cinemee tries Orion, Nova, Atlas, Vega and Lyra (last), by TMDB id and season/episode', async () => {
   tmdb.resetCache();
   fakeTmdb();
   const servers = await (await onRequest(context('episode/13992%3A4/servers'))).json();
-  assert.deepEqual(servers.servers.map((s) => [s.id, s.name]), [['vidsrc', 'Vega'], ['vidnest', 'Nova']]);
+  assert.deepEqual(servers.servers.map((s) => [s.id, s.name]), [['vidnext', 'Orion'], ['vidnest', 'Nova'], ['embedmaster', 'Atlas'], ['vidsrc', 'Vega'], ['vidcore', 'Lyra']]);
+  const orion = await (await onRequest(context('episode/13992%3A4/sources?server=vidnext&category=sub'))).json();
+  assert.equal(orion.embedUrl, 'https://vidnext.pro/tv/1399/2/1?theme=FF3D52');
   const tv = await (await onRequest(context('episode/13992%3A4/sources?server=auto&preferred=megaplay&category=sub'))).json();
-  assert.equal(tv.embedUrl, 'https://vidsrc.to/embed/tv/1399/2/1');
+  assert.equal(tv.embedUrl, 'https://vidnext.pro/tv/1399/2/1?theme=FF3D52');
+  const atlas = await (await onRequest(context('episode/13992%3A4/sources?server=embedmaster&category=sub'))).json();
+  assert.equal(atlas.embedUrl, 'https://embedmaster.link/tv/1399/2/1?skin=onyx&welcome_page=off');
+  const lyra = await (await onRequest(context('episode/5501%3A1/sources?server=vidcore&category=sub'))).json();
+  assert.equal(lyra.embedUrl, 'https://vidcore.org/embed/movie/550?theme=FF3D52');
   const vega = await (await onRequest(context('episode/5501%3A1/sources?server=vidsrc&category=sub'))).json();
   assert.equal(vega.embedUrl, 'https://vidsrc.to/embed/movie/550');
   const movie = await (await onRequest(context('episode/5501%3A1/sources?server=vidnest&category=sub'))).json();

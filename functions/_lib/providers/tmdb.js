@@ -395,9 +395,17 @@ export async function getRandom() {
 // The stream address for one title. Both players address movies and shows by TMDB id:
 //   vidsrc:  https://vidsrc.to/embed/movie/{id}   and /embed/tv/{id}/{season}/{episode}
 //   vidnest: https://vidnest.fun/movie/{id}       and /tv/{id}/{season}/{episode}
+//   vidnext: https://vidnext.pro/movie/{id}       and /tv/{id}/{season}/{episode}
+//   embedmaster: https://embedmaster.link/movie/{id} and /tv/{id}/{season}/{episode}
+//   vidcore: https://vidcore.org/embed/movie/{id} and /embed/tv/{id}/{season}/{episode}
 const PLAYERS = {
   vidsrc: { base: 'https://vidsrc.to', movie: (t) => `/embed/movie/${t.tmdb}`, tv: (t) => `/embed/tv/${t.tmdb}/${t.season}/${t.episode}` },
   vidnest: { base: 'https://vidnest.fun', movie: (t) => `/movie/${t.tmdb}`, tv: (t) => `/tv/${t.tmdb}/${t.season}/${t.episode}` },
+  // vidnext: theme = cinemee's red for its controls.
+  vidnext: { base: 'https://vidnext.pro', movie: (t) => `/movie/${t.tmdb}?theme=FF3D52`, tv: (t) => `/tv/${t.tmdb}/${t.season}/${t.episode}?theme=FF3D52` },
+  // EmbedMaster: dark skin, no welcome page.
+  embedmaster: { base: 'https://embedmaster.link', movie: (t) => `/movie/${t.tmdb}?skin=onyx&welcome_page=off`, tv: (t) => `/tv/${t.tmdb}/${t.season}/${t.episode}?skin=onyx&welcome_page=off` },
+  vidcore: { base: 'https://vidcore.org', movie: (t) => `/embed/movie/${t.tmdb}?theme=FF3D52`, tv: (t) => `/embed/tv/${t.tmdb}/${t.season}/${t.episode}?theme=FF3D52` },
 };
 export async function getSources(rawId, rawEpisode, server = 'vidnest') {
   const player = PLAYERS[server] || PLAYERS.vidnest;

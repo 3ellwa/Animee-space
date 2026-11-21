@@ -55,3 +55,22 @@ test('embedded progress messages are rejected from other origins or iframe windo
   assert.equal(player.embedTime, 0);
   assert.equal(player.progress.length, 0);
 });
+
+test('vidnext-style messages (source: vidnest-player) update progress and end the episode', () => {
+  const player = fakePlayer();
+  player.embedOrigin = 'https://vidnext.pro';
+  player.handleEmbedMessage({
+    origin: 'https://vidnext.pro',
+    source: player.iframe.contentWindow,
+    data: { source: 'vidnest-player', event: 'timeupdate', currentTime: 75, duration: 2700, percentage: 2.7 },
+  });
+  assert.equal(player.started, true);
+  assert.equal(player.embedTime, 75);
+  assert.deepEqual(player.progress[0], { time: 75, duration: 2700, ep: 3 });
+  player.handleEmbedMessage({
+    origin: 'https://vidnext.pro',
+    source: player.iframe.contentWindow,
+    data: { source: 'vidnest-player', event: 'ended', currentTime: 2700, duration: 2700 },
+  });
+  assert.equal(player.ended, true);
+});

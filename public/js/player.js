@@ -232,7 +232,7 @@ export class Player {
       this.fullscreenBtn.hidden = false;
       this.embedOrigin = data.embedOrigin || new URL(data.embedUrl).origin;
       let embedUrl = data.embedUrl;
-      if (['vidnest', 'tryembed'].includes(data.provider) && Number.isFinite(Number(startAt)) && startAt > 5) {
+      if (['vidnest', 'tryembed', 'vidnext', 'vidcore'].includes(data.provider) && Number.isFinite(Number(startAt)) && startAt > 5) {
         const target = new URL(embedUrl);
         target.searchParams.set('startAt', String(Math.floor(startAt)));
         if (data.provider === 'tryembed') target.searchParams.set('autoNext', 'false');
@@ -326,7 +326,7 @@ export class Player {
   /** Jump n seconds forward or back (arrow keys). Native video and MegaPlay. */
   seekBy(seconds) {
     if (!this.iframe.hidden) {
-      if (!this.isMegaPlay()) return false;
+      if (!this.isMegaPlay() && !this.isVidnext() && !this.isEmbedMaster()) return false;
       this.userSeek = true;
       this.seekTo(Math.max(0, (this.embedTime || 0) + seconds));
       return true;
@@ -341,7 +341,19 @@ export class Player {
     this.programmaticSeek = !this.userSeek;
     this.userSeek = false;
     this.megaSend({ event: 'seek', time: Math.max(0, Math.floor(seconds)) });
+    if (this.isVidnext()) {
+      try { this.iframe.contentWindow.postMessage({ action: 'seek', time: Math.max(0, Math.floor(seconds)) }, this.embedOrigin); } catch { /* frame gone */ }
+    }
+    if (this.isEmbedMaster()) {
+      try { this.iframe.contentWindow.postMessage({ source: 'embedmaster_player_command', command: 'seek', value: Math.max(0, Math.floor(seconds)) }, this.embedOrigin); } catch { /* frame gone */ }
+    }
     this.embedTime = Math.max(0, seconds);
+  }
+  isEmbedMaster() {
+    try { return Boolean(this.embedOrigin) && /(^|\.)embedmaster\.link$/.test(new URL(this.embedOrigin).hostname); } catch { return false; }
+  }
+  isVidnext() {
+    try { return Boolean(this.embedOrigin) && /(^|\.)vidnext\.pro$/.test(new URL(this.embedOrigin).hostname); } catch { return false; }
   }
 
   setAutoSkip(on) {
@@ -383,8 +395,27 @@ export class Player {
 
     // TryEmbed documents PLAYER_EVENT messages with playback state nested in `data`.
     // Keep the strict origin + iframe-window checks above before accepting any message.
-    if (data.type === 'PLAYER_EVENT') {
-      const state = data.data && typeof data.data === 'object' ? data.data : data;
+    // EmbedMaster: {source:'embedmaster_player', event, info}. VidCore: 'vidcore:play' / 'vidcore:ended'.
+    // Both only say when playback starts and ends (no running time), which is enough for the
+    // "it plays" signal and auto next.
+    const simpleEvent = data.source === 'embedmaster_player' ? String(data.event || '')
+      : /^vidcore:/.test(String(data.event || data.type || '')) ? String(data.event || data.type).slice(8) : '';
+    if (simpleEvent) {
+      const info = typeof data.info === 'string' ? (() => { try { return JSON.parse(data.info); } catch { return {}; } })() : data.info || {};
+      const t = Number(info.time ?? info.currentTime);
+      if (Number.isFinite(t) && t >= 0) this.embedTime = t;
+      if (simpleEvent === 'play' || simpleEvent === 'time' || t > 0) this.markStarted();
+      if (simpleEvent === 'ended' || simpleEvent === 'end' || simpleEvent === 'complete') {
+        this.saveEmbed(true, Number(info.duration) || 0);
+        this.nextBtn.hidden = !this.opts.hasNext?.();
+        this.opts.onEnded?.();
+      }
+      return;
+    }
+    // vidnext (and VidNest's player) tag their messages source:'vidnest-player', with the event,
+    // currentTime and duration at the top level: same handling as TryEmbed's PLAYER_EVENT.
+    if (data.type === 'PLAYER_EVENT' || data.source === 'vidnest-player') {
+      const state = data.type === 'PLAYER_EVENT' && data.data && typeof data.data === 'object' ? data.data : data;
       const eventName = String(data.event || state.event || data.name || '').toLowerCase();
       const currentTime = Number(state.currentTime ?? state.current_time ?? state.time);
       const duration = Number(state.duration);

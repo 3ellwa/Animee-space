@@ -1342,7 +1342,7 @@ async function viewWatch(id, query, alive) {
       // Embedded players can't be told where to start, so say where you left off.
       // A sticky note (missing episode, server switched) stays until the next episode.
       if (note.dataset.sticky) { /* keep it */ }
-      else if (src.embedUrl && startAt > 15 && !['vidnest', 'tryembed', 'megaplay'].includes(src.provider)) showNote(`You stopped at <b>${clock(startAt)}</b>. Skip there in the player.`);
+      else if (src.embedUrl && startAt > 15 && !['vidnest', 'tryembed', 'megaplay', 'vidnext', 'vidcore'].includes(src.provider)) showNote(`You stopped at <b>${clock(startAt)}</b>. Skip there in the player.`);
       else if (note.querySelector('button') === null) showNote('');
     } catch (err) {
       if (!alive() || ep !== current) return;

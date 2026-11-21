@@ -63,12 +63,17 @@ function configuredProviders(env = {}) {
 }
 
 // cinemee (movies and TV) has one server: VidNest, addressed by TMDB id. Neutral name, as on animee.
-// Vega (vidsrc) first: its player has subtitles in many languages, Arabic included, picked in its
-// own subtitle menu. Nova (VidNest) is the backup.
+// Tried in this order. Orion (vidnext) resumes, reports progress and takes seek commands. Nova
+// (VidNest) next, then Atlas (EmbedMaster). Vega (vidsrc) has subtitles in many languages, Arabic
+// included, in its own menu. Lyra (VidCore) is last: it works but shows a lot of ads.
 const CINEMEE_PROVIDERS = [
-  { id: 'vidsrc', name: 'Vega', categories: ['sub'] },
+  { id: 'vidnext', name: 'Orion', categories: ['sub'] },
   { id: 'vidnest', name: 'Nova', categories: ['sub'] },
+  { id: 'embedmaster', name: 'Atlas', categories: ['sub'] },
+  { id: 'vidsrc', name: 'Vega', categories: ['sub'] },
+  { id: 'vidcore', name: 'Lyra', categories: ['sub'] },
 ];
+const CINEMEE_IDS = CINEMEE_PROVIDERS.map((p) => p.id);
 
 export function getProviderList(env = {}) {
   if (env.SITE === 'cinemee') return CINEMEE_PROVIDERS.map((provider) => ({ ...provider, configured: true }));
@@ -226,7 +231,7 @@ export async function getSources(rawId, rawEpisode, rawServer, rawCategory, env 
   if (!CATEGORIES.has(category)) throw fail(400, 'Invalid playback category.');
 
   if (env.SITE === 'cinemee') {
-    if (server !== 'vidnest' && server !== 'vidsrc') throw fail(404, 'That playback server is not configured.');
+    if (!CINEMEE_IDS.includes(server)) throw fail(404, 'That playback server is not configured.');
     return tmdb.getSources(id, episode, server);
   }
   if (server === 'megaplay') return tenrai.getSources(id, episode, category);
