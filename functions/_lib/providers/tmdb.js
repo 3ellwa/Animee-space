@@ -392,12 +392,18 @@ export async function getRandom() {
 }
 
 // ---------- playback ----------
-// The stream address for one title (VidNest addresses movies and shows by TMDB id).
-export async function getSources(rawId, rawEpisode) {
+// The stream address for one title. Both players address movies and shows by TMDB id:
+//   vidsrc:  https://vidsrc.to/embed/movie/{id}   and /embed/tv/{id}/{season}/{episode}
+//   vidnest: https://vidnest.fun/movie/{id}       and /tv/{id}/{season}/{episode}
+const PLAYERS = {
+  vidsrc: { base: 'https://vidsrc.to', movie: (t) => `/embed/movie/${t.tmdb}`, tv: (t) => `/embed/tv/${t.tmdb}/${t.season}/${t.episode}` },
+  vidnest: { base: 'https://vidnest.fun', movie: (t) => `/movie/${t.tmdb}`, tv: (t) => `/tv/${t.tmdb}/${t.season}/${t.episode}` },
+};
+export async function getSources(rawId, rawEpisode, server = 'vidnest') {
+  const player = PLAYERS[server] || PLAYERS.vidnest;
   const target = await episodeTarget(rawId, rawEpisode);
-  const base = 'https://vidnest.fun';
-  const embedUrl = target.type === 'movie' ? `${base}/movie/${target.tmdb}` : `${base}/tv/${target.tmdb}/${target.season}/${target.episode}`;
-  return { embedUrl, embedOrigin: base, language: 'sub', provider: 'vidnest', events: [] };
+  const embedUrl = player.base + (target.type === 'movie' ? player.movie(target) : player.tv(target));
+  return { embedUrl, embedOrigin: player.base, language: 'sub', provider: PLAYERS[server] ? server : 'vidnest', events: [] };
 }
 
 /** Test hook: forget cached details and episode lists. */

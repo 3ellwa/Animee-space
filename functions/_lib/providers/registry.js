@@ -63,7 +63,12 @@ function configuredProviders(env = {}) {
 }
 
 // cinemee (movies and TV) has one server: VidNest, addressed by TMDB id. Neutral name, as on animee.
-const CINEMEE_PROVIDERS = [{ id: 'vidnest', name: 'Nova', categories: ['sub'] }];
+// Vega (vidsrc) first: its player has subtitles in many languages, Arabic included, picked in its
+// own subtitle menu. Nova (VidNest) is the backup.
+const CINEMEE_PROVIDERS = [
+  { id: 'vidsrc', name: 'Vega', categories: ['sub'] },
+  { id: 'vidnest', name: 'Nova', categories: ['sub'] },
+];
 
 export function getProviderList(env = {}) {
   if (env.SITE === 'cinemee') return CINEMEE_PROVIDERS.map((provider) => ({ ...provider, configured: true }));
@@ -221,8 +226,8 @@ export async function getSources(rawId, rawEpisode, rawServer, rawCategory, env 
   if (!CATEGORIES.has(category)) throw fail(400, 'Invalid playback category.');
 
   if (env.SITE === 'cinemee') {
-    if (server !== 'vidnest') throw fail(404, 'That playback server is not configured.');
-    return tmdb.getSources(id, episode);
+    if (server !== 'vidnest' && server !== 'vidsrc') throw fail(404, 'That playback server is not configured.');
+    return tmdb.getSources(id, episode, server);
   }
   if (server === 'megaplay') return tenrai.getSources(id, episode, category);
   if (server === 'animeparadise') return animeparadise.getSources(id, episode, category);

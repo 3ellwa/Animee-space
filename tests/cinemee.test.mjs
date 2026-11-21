@@ -108,13 +108,15 @@ test('a TV show counts only aired episodes and numbers them straight through', a
   assert.deepEqual(episodes.map((e) => [e.number, e.label]), [[1, 'S1 · E1'], [2, 'S1 · E2'], [3, 'S1 · E3'], [4, 'S2 · E1']]);
 });
 
-test('cinemee plays through one neutral server, by TMDB id and season/episode', async () => {
+test('cinemee plays through Vega (vidsrc) then Nova (VidNest), by TMDB id and season/episode', async () => {
   tmdb.resetCache();
   fakeTmdb();
   const servers = await (await onRequest(context('episode/13992%3A4/servers'))).json();
-  assert.deepEqual(servers.servers.map((s) => [s.id, s.name]), [['vidnest', 'Nova']]);
+  assert.deepEqual(servers.servers.map((s) => [s.id, s.name]), [['vidsrc', 'Vega'], ['vidnest', 'Nova']]);
   const tv = await (await onRequest(context('episode/13992%3A4/sources?server=auto&preferred=megaplay&category=sub'))).json();
-  assert.equal(tv.embedUrl, 'https://vidnest.fun/tv/1399/2/1');
+  assert.equal(tv.embedUrl, 'https://vidsrc.to/embed/tv/1399/2/1');
+  const vega = await (await onRequest(context('episode/5501%3A1/sources?server=vidsrc&category=sub'))).json();
+  assert.equal(vega.embedUrl, 'https://vidsrc.to/embed/movie/550');
   const movie = await (await onRequest(context('episode/5501%3A1/sources?server=vidnest&category=sub'))).json();
   assert.equal(movie.embedUrl, 'https://vidnest.fun/movie/550');
   const missing = await onRequest(context('episode/13992%3A5/sources?server=vidnest&category=sub'));
