@@ -13,6 +13,7 @@
 // A row is { a, s, ep, t, d, w, u } — see migrations/0001_accounts.sql.
 
 import { hashPassword, verifyPassword, sessionCookie, clearCookie, currentUser, calendarToken } from './auth.js';
+import { SHARE_BITS, shareMode, shareBits } from './share.js';
 
 const MAX_ROWS_PER_USER = 5000;
 const MAX_ROWS_PER_PUSH = 200;
@@ -67,12 +68,14 @@ const int = (v, min, max) => {
 
 // s packs the list status in the low 3 bits (0 none, 1 watching, 2 planning, 3 completed,
 // 4 on hold, 5 dropped, 6 not interested), a favourite flag (8), and the show's own audio
-// choice: 16 = chosen, 32 = dub, and 64 = following (new-episode alerts).
+// choice: 16 = chosen, 32 = dub, and 64 = following (new-episode alerts). Bits 7-10 hold your
+// own rating, 1-10 (0 = not rated).
 const FLAGS = 8 | 16 | 32 | 64;
 export function cleanStatus(value) {
-  const s = int(value, 0, 127);
+  const s = int(value, 0, 2047);
   const status = s & 7;
-  return (status <= 6 ? status : 0) | (s & FLAGS);
+  const rating = (s >> 7) & 15;
+  return (status <= 6 ? status : 0) | (s & FLAGS) | ((rating <= 10 ? rating : 0) << 7);
 }
 
 function cleanRow(r) {
@@ -157,9 +160,10 @@ async function push(request, env, user) {
   const incoming = (Array.isArray(body.rows) ? body.rows : []).slice(0, MAX_ROWS_PER_PUSH).map(cleanRow).filter(Boolean);
   const stmts = [];
 
-  if (Number.isInteger(body.prefs) && body.prefs >= 0 && body.prefs < 16 && body.prefs !== user.prefs) {
-    stmts.push(env.DB.prepare('UPDATE users SET prefs = ? WHERE id = ?').bind(body.prefs, user.id));
-    user.prefs = body.prefs;
+  // Playback prefs are the low 4 bits; the list-sharing bits (share.js) are left as they are.
+  if (Number.isInteger(body.prefs) && body.prefs >= 0 && body.prefs < 16 && body.prefs !== (user.prefs & 15)) {
+    stmts.push(env.DB.prepare('UPDATE users SET prefs = (prefs & ?) | ? WHERE id = ?').bind(SHARE_BITS, body.prefs, user.id));
+    user.prefs = (user.prefs & SHARE_BITS) | body.prefs;
   }
 
   // load the rows we're about to touch (D1 allows up to 100 bound params per query)
@@ -257,6 +261,15 @@ export async function handleAccount(context, parts) {
       if (!user) throw fail(401, 'Not signed in');
       if (action === 'library' && method === 'GET') return json(await pull(env, user));
       if (action === 'sync' && method === 'POST') return json(await push(request, env, user));
+      if (action === 'share' && method === 'GET') {
+        return json({ mode: shareMode(user.prefs), url: `${new URL(request.url).origin}/u/${user.name}` });
+      }
+      if (action === 'share' && method === 'POST') {
+        const body = await readBody(request);
+        const mode = ['off', 'all', 'favourites'].includes(body.mode) ? body.mode : 'off';
+        await env.DB.prepare('UPDATE users SET prefs = (prefs & ?) | ? WHERE id = ?').bind(~SHARE_BITS & 0xffff, shareBits(mode), user.id).run();
+        return json({ mode, url: `${new URL(request.url).origin}/u/${user.name}` });
+      }
       if (action === 'calendar' && method === 'GET') {
         return json({ url: `${new URL(request.url).origin}/api/cal/${await calendarToken(env, user)}.ics` });
       }

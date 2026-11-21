@@ -79,6 +79,7 @@ export async function describe(url, env) {
     return { status: 200, title: `${title} · ${SITE}`, description, canonical: `${ORIGIN}/top/${second}`, image, imageIsWide: true };
   }
   if ((PRIVATE.has(first) || SHORTCUTS.has(first)) && !second) return { status: 200, title: SITE, description: DEFAULT_DESC, robots: 'noindex, follow', image, imageIsWide: true };
+  if (first === 'u' && /^[a-z0-9_]{3,20}$/i.test(second || '') && !parts[2]) return { status: 200, title: `${second}'s list · ${SITE}`, description: DEFAULT_DESC, robots: 'noindex, follow', image, imageIsWide: true };
 
   const titlePage = ['movie', 'tv', 'anime'].includes(first) && /^\d{2,12}$/.test(second || '') && parts.length <= 3;
   const watchPage = first === 'watch' && /^\d{2,12}$/.test(second || '') && parts.length === 2;

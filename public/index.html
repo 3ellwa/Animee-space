@@ -15,6 +15,15 @@
 
   <link rel="stylesheet" href="/css/style.css">
   <script type="module" src="/js/app.js"></script>
+  <!-- app.js imports these; asking for them now saves a round trip on every first load. -->
+  <link rel="modulepreload" href="/js/api.js">
+  <link rel="modulepreload" href="/js/store.js">
+  <link rel="modulepreload" href="/js/player.js">
+  <link rel="modulepreload" href="/js/site.js">
+  <link rel="modulepreload" href="/js/inbox.js">
+  <link rel="modulepreload" href="/js/push.js">
+  <link rel="modulepreload" href="/js/anilist.js">
+  <link rel="modulepreload" href="/js/fx.js">
 </head>
 <body>
   <div class="scroll-progress" aria-hidden="true"></div>

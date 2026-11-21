@@ -44,7 +44,9 @@ const FAVOURITE = 8;
 const LANG_SET = 16, LANG_DUB = 32;
 // Bit 64: following the show (🔔): new episodes go to Notifications and, if allowed, pop-ups.
 const FOLLOW = 64;
-const KEEP = FAVOURITE | LANG_SET | LANG_DUB | FOLLOW; // bits a list-status change leaves alone
+// Bits 7-10: your own rating, 1-10 (0 = not rated).
+const RATING_SHIFT = 7, RATING_MASK = 15 << 7;
+const KEEP = FAVOURITE | LANG_SET | LANG_DUB | FOLLOW | RATING_MASK; // bits a list-status change leaves alone
 const ON_LIST = 7 | FAVOURITE;
 const statusOf = (e) => NAME[e.s & 7] || null;
 const isFav = (e) => !!(e.s & FAVOURITE);
@@ -87,7 +89,7 @@ function touch(e) {
 export function getList() {
   const out = {};
   for (const e of Object.values(lib)) {
-    if (e.s & ON_LIST) out[e.a] = { id: e.a, ...(e.m || {}), status: statusOf(e), favourite: isFav(e), updated: e.u };
+    if (e.s & ON_LIST) out[e.a] = { id: e.a, ...(e.m || {}), status: statusOf(e), favourite: isFav(e), rating: ratingOf(e), updated: e.u };
   }
   return out;
 }
@@ -139,6 +141,19 @@ export function setShowCategory(id, category) {
   e.s = (e.s & ~(LANG_SET | LANG_DUB)) | LANG_SET | (category === 'dub' ? LANG_DUB : 0);
   touch(e);
 }
+// ---------- your ratings ----------
+const ratingOf = (e) => ((e?.s || 0) & RATING_MASK) >> RATING_SHIFT;
+export const getRating = (id) => ratingOf(lib[id]);
+export function setRating(anime, value) {
+  const n = Math.max(0, Math.min(10, Math.round(Number(value) || 0)));
+  const e = entry(anime.id);
+  if (ratingOf(e) === n) return;
+  e.s = (e.s & ~RATING_MASK) | (n << RATING_SHIFT);
+  if (anime.title) e.m = { ...(e.m || {}), ...metaOf(anime) };
+  touch(e);
+}
+/** Every rated show: [{ id, rating, title, cover, genres, format }]. */
+export const ratedList = () => Object.values(lib).filter((e) => ratingOf(e)).map((e) => ({ id: e.a, rating: ratingOf(e), ...(e.m || {}) }));
 export function setFavourite(anime, on) {
   const e = entry(anime.id);
   e.s = (e.s & ~FAVOURITE) | (on ? FAVOURITE : 0);

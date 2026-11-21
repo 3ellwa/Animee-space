@@ -835,13 +835,26 @@ kbd { display: inline-block; min-width: 1.5em; padding: 0 5px; border-radius: 5p
 .suggest .s-recent { display: block; padding: 8px 12px; font-size: 14px; }
 .suggest .s-empty a { color: var(--lime); }
 .player-wrap { position: relative; }
-.party-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; padding: 10px 14px; border-radius: 14px; border: 1px solid rgb(var(--lime-rgb) / .35); background: rgb(var(--lime-rgb) / .07); font-size: 14px; }
+.party-bar { display: grid; gap: 10px; margin-top: 10px; padding: 10px 14px; border-radius: 14px; border: 1px solid rgb(var(--lime-rgb) / .35); background: rgb(var(--lime-rgb) / .07); font-size: 14px; }
 .party-bar b { color: var(--lime); letter-spacing: .06em; }
+.party-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+.party-log { list-style: none; margin: 0; padding: 0; max-height: 120px; overflow-y: auto; font-size: 13px; display: grid; gap: 3px; }
+.party-log:empty { display: none; }
+.party-log b { letter-spacing: 0; color: var(--fog); font-weight: 700; }
+.party-log li.mine b { color: var(--lime); }
+.party-say { display: flex; gap: 8px; }
+.party-say .input { flex: 1; min-width: 0; padding: 8px 12px; }
 .party-react button { border: 0; background: transparent; font-size: 20px; cursor: pointer; padding: 2px 4px; transition: transform var(--dur-fast); }
 .party-react button:hover { transform: scale(1.25); }
 .party-emoji { position: absolute; bottom: 70px; font-size: 34px; pointer-events: none; z-index: 5; animation: party-float 2.2s ease-out forwards; }
 @keyframes party-float { from { transform: translateY(0); opacity: 1; } to { transform: translateY(-220px); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .party-emoji { animation-duration: .01s; } }
+.badge.mine { left: auto; right: 8px; top: auto; bottom: 8px; background: rgb(var(--lime-rgb) / .92); color: var(--ink); font-weight: 700; }
+.rating-select { appearance: none; padding: 10px 16px; border-radius: 999px; border: 1px solid var(--line); background: rgb(26 29 34 / .7); color: var(--paper); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+.rating-select.rated { border-color: rgb(var(--lime-rgb) / .6); color: var(--lime); }
+.save-menu .save-rate { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px 4px; font-size: 12px; color: var(--fog); }
+.save-menu .rating-select { padding: 7px 10px; font-size: 13px; }
+.share-box .chips input { margin-right: 6px; }
 .hist-day { margin: 20px 0 8px; font-size: 13px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--fog); }
 .hist-row { position: relative; }
 .hist-row .sched-row { padding-right: 48px; }

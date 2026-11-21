@@ -8,6 +8,9 @@ import { handleRequests } from '../_lib/requests.js';
 import { handleNotice } from '../_lib/notice.js';
 import { handleClientError, recordError, routeOf } from '../_lib/errors.js';
 import { handleContinue } from '../_lib/crosssite.js';
+import { publicList } from '../_lib/share.js';
+import { handlePlay, popularHere } from '../_lib/popular.js';
+import { handleSubs } from '../_lib/subs.js';
 import { handlePush } from '../_lib/push.js';
 import { importAniList } from '../_lib/importers.js';
 import * as megaplay from '../_lib/providers/megaplay.js';
@@ -69,6 +72,12 @@ export async function onRequest(ctx) {
   if (parts[0] === 'requests' || parts[0] === 'admin') return handleRequests(ctx, parts);
   if (parts[0] === 'push') return handlePush(ctx, parts);
   if (parts[0] === 'notice' && parts.length === 1) return handleNotice(ctx);
+  if (parts[0] === 'subs' && parts.length <= 2) {
+    try { return await handleSubs(ctx, parts); } catch (err) { console.error(err); return json({ error: 'Upload failed, try again.' }, 500); }
+  }
+  if (parts[0] === 'play' && parts.length === 1) {
+    try { return await handlePlay(request, ctx.env || {}); } catch (err) { console.error(err); return json({ ok: true }); }
+  }
   if (parts[0] === 'error' && parts.length === 1) {
     try { return await handleClientError(request, ctx.env || {}); } catch { return json({ ok: true }); }
   }
@@ -182,6 +191,9 @@ export async function onRequest(ctx) {
         ...await playback.getDirectSources(reference.animeId, reference.episode, server, language, ctx.env || {}, opts),
       });
     }
+    if (a === 'popular-here' && !b) return await cached(ctx, 1800, async () => popularHere(ctx.env || {}, cat));
+    // A shared list (only when its owner turned sharing on; see share.js).
+    if (a === 'u' && b && !c) return await cached(ctx, 300, async () => publicList(ctx.env || {}, b, cat));
     if (a === 'batch' && !b) return await cached(ctx, 600, async () => {
       const ids = [...new Set((url.searchParams.get('ids') || '').split(',').filter(id => /^\d{1,12}$/.test(id)))].slice(0, 6);
       const results = [];

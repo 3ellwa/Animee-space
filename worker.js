@@ -24,12 +24,28 @@ function cacheControl(key) {
 }
 // cinemee's own icons, manifest and share image live in public/sites/cinemee/ and win over the
 // shared files at the same path.
-function file(key, site = "animee") {
+// A short content hash per file, so "no-cache" files are revalidated with a 304 instead of
+// downloaded again on every page load.
+const ETAGS = new Map();
+function etagOf(key) {
+  if (!ETAGS.has(key)) {
+    const text = String(ASSETS[key]);
+    let h = 2166136261;
+    for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 16777619); }
+    ETAGS.set(key, `"${(h >>> 0).toString(36)}-${text.length.toString(36)}"`);
+  }
+  return ETAGS.get(key);
+}
+function file(key, site = "animee", request = null) {
   const own = site !== "animee" && ASSETS["/sites/" + site + key] !== undefined ? "/sites/" + site + key : null;
   if (own) key = own;
   if (ASSETS[key] === undefined) return null;
   const ext = key.slice(key.lastIndexOf("."));
-  return new Response(bodyOf(key, ASSETS[key]), { headers: { "Content-Type": TYPES[ext] || "application/octet-stream", "Cache-Control": cacheControl(key), ...SECURITY } });
+  const etag = etagOf(key);
+  const headers = { "Content-Type": TYPES[ext] || "application/octet-stream", "Cache-Control": cacheControl(key), ETag: etag, ...SECURITY };
+  const seen = request?.headers.get("If-None-Match") || "";
+  if (seen && seen.split(/\s*,\s*/).some((t) => t.replace(/^W\//, "") === etag)) return new Response(null, { status: 304, headers });
+  return new Response(bodyOf(key, ASSETS[key]), { headers });
 }
 // Rendered pages are cached under a key that includes a hash of index.html, so each deploy
 // that changes the page shell starts a fresh cache instead of serving last hour's HTML.
@@ -109,7 +125,7 @@ export default {
     // The per-site folders are only reachable through their normal paths.
     if (key.startsWith("/sites/")) return new Response("Not found", { status: 404, headers: { "X-Robots-Tag": "noindex" } });
     if (key === "/sw.js" && site !== "animee") return respond(new Response(brandServiceWorker(ASSETS["/sw.js"], site), { headers: { "Content-Type": TYPES[".js"], "Cache-Control": "no-cache", ...SECURITY } }));
-    if (key !== "/index.html" && key in ASSETS) return respond(file(key, site));
+    if (key !== "/index.html" && key in ASSETS) return respond(file(key, site, request));
     if (/\.[a-z0-9]+$/i.test(key) && key !== "/index.html") return new Response("Not found", { status: 404, headers: { "X-Robots-Tag": "noindex" } });
     return respond(await page(request, url, ctx, site, siteEnvironment));
   },

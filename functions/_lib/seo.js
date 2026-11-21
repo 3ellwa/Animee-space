@@ -72,6 +72,8 @@ export async function describe(url, site = 'animee', env = {}) {
     return { status: 200, title: `${title} · ${SITE}`, description, canonical: `${ORIGIN}/top/${second}` };
   }
   if (PRIVATE.has(first) && !second) return { status: 200, title: SITE, description: DEFAULT_DESC, robots: 'noindex, follow' };
+  // Shared lists (/u/<name>): real pages, but kept out of search results.
+  if (first === 'u' && /^[a-z0-9_]{3,20}$/i.test(second || '') && !parts[2]) return { status: 200, title: `${second}'s list · ${SITE}`, description: DEFAULT_DESC, robots: 'noindex, follow' };
   if (SHORTCUTS.has(first) && !second) return { status: 200, title: SITE, description: DEFAULT_DESC, robots: 'noindex, follow' };
 
   if ((first === 'anime' || first === 'watch') && /^\d{1,12}$/.test(second || '') && (first === 'anime' ? parts.length <= 3 : parts.length === 2)) {

@@ -1,3 +1,13 @@
+## Ratings, shared lists, popular here, party chat, speed memory, your subtitles, faster loads
+
+- **Your ratings (1-10):** a "★ Rate it" menu on title pages and in the poster ＋ menu; "you 8/10" on posters; "My rating" sort on My list; a "your ratings" section in Stats (average, spread, genres you rate highest); Picked for you leans on shows you rated 8+ and never on ones rated 4 or less. Stored in bits 7-10 of the library status number, so it syncs with no database change.
+- **Shared lists** (`functions/_lib/share.js`): Account → "share your list": Off / Whole list / Favourites only. `/u/<name>` shows titles, statuses, favourites and the owner's ratings (never progress or history), noindex. Stored in two spare bits of `users.prefs`; playback-pref syncing now leaves them alone.
+- **Popular on animee / cinemee this week** (`functions/_lib/popular.js`, table `plays`, created on first use, kept 8 days): one anonymous count per show per day per browser when an episode starts (or after 90 s on the page for players that don't say). The home row appears once at least 6 shows qualify (2+ plays).
+- **Party chat:** a chat line under the party bar (your username, or "Guest 1234"); one line a second per person; lines are passed on, never stored.
+- **Kaze remembers speed and volume per show** (this browser), plus a speed button (0.75×–2×) while Kaze plays.
+- **Your own subtitles on cinemee** (`functions/_lib/subs.js`, table `subs`, kept 3 days): "CC Your subtitles" takes an .srt/.vtt (500 KB max), converts it to WebVTT in the browser, uploads it, and plays the title on Atlas with `sub_url[]`/`sub_label[]` (EmbedMaster's documented parameters; the file is served with `Access-Control-Allow-Origin: *` as they require).
+- **Faster loads:** scripts and styles now carry ETags and answer 304 when unchanged (before, `no-cache` with no validator meant a full download on every page load); the app's modules are preloaded. **Accessibility:** the player's messages are announced, the phone menu reports open/closed, the search box says when suggestions are showing.
+
 ## Watch party, better search, weekly digest, device switch, offline lists
 
 - **Watch party** (`functions/_lib/party.js`, Durable Object `PartyRoom`, binding `PARTY`): 👥 Watch party on the watch page starts a room and copies an invite (`/watch/<id>?ep=N&party=CODE`). The host's show, episode, position and play/pause go out every 3 seconds; guests follow: episode changes, jumps on servers that take seek commands (3ellwa, Orion, Atlas, Kaze), pause/play on Kaze; otherwise the bar says where the host is. Reactions (😂 😮 ❤️ 🔥 😭 👏) float over the player. Rooms hold only the host key and last state, max 20 people, forgotten 12 hours after going quiet.

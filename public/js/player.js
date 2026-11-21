@@ -43,7 +43,7 @@ export class Player {
       '<video playsinline controls preload="metadata"></video>' +
       IFRAME_HTML +
       '<button class="pl-btn next" type="button" hidden>Next episode ▶</button>' +
-      '<div class="pl-msg" hidden></div>' +
+      '<div class="pl-msg" hidden role="status" aria-live="polite"></div>' +
       '<div class="pl-upnext" hidden role="status" aria-live="polite"></div>' +
       '<button class="pl-exit" type="button" aria-label="Exit full screen">✕ Exit full screen</button>' +
       '</div><div class="player-tools"><button class="btn sm fullscreen" type="button" hidden>Fullscreen ⛶</button></div>';
@@ -98,9 +98,17 @@ export class Player {
     this.video.addEventListener('timeupdate', this.onTime);
     this.video.addEventListener('ended', this.onEnd);
     this.video.addEventListener('pause', () => { this.save(true); this.opts.onPause?.(); });
+    // Speed and volume changes are remembered per show (see mediaPrefs in the watch page).
+    const prefsChanged = () => {
+      if (this.applyingPrefs || !this.video.src) return;
+      this.opts.onMediaPrefs?.({ rate: this.video.playbackRate, volume: Math.round(this.video.volume * 100) / 100, muted: this.video.muted });
+    };
+    this.video.addEventListener('ratechange', prefsChanged);
+    this.video.addEventListener('volumechange', prefsChanged);
     const started = () => { if (this.busyShown) this.msg(''); };
     this.video.addEventListener('playing', () => this.markStarted());
     this.video.addEventListener('loadeddata', started);
+    this.video.addEventListener('loadeddata', () => this.opts.onReady?.());
     this.video.addEventListener('playing', started);
   }
 
@@ -260,6 +268,15 @@ export class Player {
     }
     const start = () => {
       if (startAt > 5 && (!video.duration || startAt < video.duration - 15)) video.currentTime = startAt;
+      // This show's own speed and volume, as you left them (our own player only).
+      const prefs = this.opts.mediaPrefs?.();
+      if (prefs) {
+        this.applyingPrefs = true;
+        if (prefs.rate >= 0.25 && prefs.rate <= 3) video.playbackRate = prefs.rate;
+        if (prefs.volume >= 0 && prefs.volume <= 1) video.volume = prefs.volume;
+        video.muted = Boolean(prefs.muted);
+        setTimeout(() => { this.applyingPrefs = false; }, 0);
+      }
       video.play().catch(() => {});
     };
     if (source.type === 'hls' && !window.Hls) {
@@ -369,6 +386,10 @@ export class Player {
     else if (!paused && this.video.paused) this.video.play().catch(() => {});
   }
   isPausedHere() { return this.iframe.hidden ? this.video.paused : null; }
+  /** True while our own video (Kaze) plays, not an embedded player. */
+  isNative() { return this.iframe.hidden && Boolean(this.video.currentSrc || this.video.src); }
+  setRate(rate) { if (this.isNative()) this.video.playbackRate = rate; }
+  getRate() { return this.isNative() ? this.video.playbackRate : 1; }
 
   isEmbedMaster() {
     try { return Boolean(this.embedOrigin) && /(^|\.)embedmaster\.link$/.test(new URL(this.embedOrigin).hostname); } catch { return false; }

@@ -4,7 +4,7 @@
 //
 // The first connection that brings a host key becomes the host; only the host's state counts.
 // Rooms keep nothing about people: the host key, the last state ({ show, ep, t, playing, at })
-// and that's it, deleted 12 hours after the room goes quiet. At most 20 people per room.
+// and that's it (chat lines are passed on, never stored), deleted 12 hours after the room goes quiet. At most 20 people per room.
 // Uses the WebSocket Hibernation API, so an idle room costs nothing between messages.
 
 const CODE = /^[A-Z0-9]{6}$/;
@@ -22,6 +22,14 @@ export async function handleParty(request, env, code, site) {
   if (origin && new URL(origin).host !== new URL(request.url).host) return new Response('Bad origin', { status: 403 });
   const stub = env.PARTY.get(env.PARTY.idFromName(`${site}:${code}`));
   return stub.fetch(request);
+}
+
+/** A chat line: plain text up to 200 characters and a short display name; null when empty. */
+export function cleanChat(d) {
+  const text = String(d?.text ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200);
+  if (!text) return null;
+  const name = String(d?.name ?? '').replace(/[^\p{L}\p{N}_ -]/gu, '').trim().slice(0, 20) || 'Guest';
+  return { name, text };
 }
 
 /** Cleans the host's state message; null when it's not usable. */
@@ -79,6 +87,13 @@ export class PartyRoom {
       this.broadcast({ type: 'state', state, now: Date.now() }, ws);
     } else if (d.type === 'react' && REACTIONS.includes(d.emoji)) {
       this.broadcast({ type: 'react', emoji: d.emoji }, ws);
+    } else if (d.type === 'chat') {
+      // At most one line a second per person; nothing is kept, it's passed on and gone.
+      const last = ws.deserializeAttachment?.()?.lastChat || 0;
+      if (Date.now() - last < 1000) return;
+      ws.serializeAttachment?.({ lastChat: Date.now() });
+      const line = cleanChat(d);
+      if (line) this.broadcast({ type: 'chat', ...line, host }, ws);
     } else if (d.type === 'ping') {
       ws.send(JSON.stringify({ type: 'pong', now: Date.now() }));
     }

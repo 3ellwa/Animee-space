@@ -41,6 +41,9 @@ functions/_lib/
   crosssite.js                  "Continue on the other site" (CORS to the sibling origin only)
   party.js                      watch party rooms (Durable Object PartyRoom, WebSockets)
   fuzzy.js                      typo-tolerant title matching
+  share.js                      read-only shared lists at /u/<name>
+  popular.js                    anonymous per-day play counts, "Popular on … this week"
+  subs.js                       your own subtitle files for Atlas (served with CORS *)
   calendar.js                   private .ics feed (anime: weekly JST slot; cinemee: next episode via TVmaze)
   providers/
     tenrai.js                   anime catalogue
@@ -116,7 +119,8 @@ Local development reads the same names from `.dev.vars` (git-ignored).
 Same schema in both databases (`migrations/0001-0004`): `users`, `library` (one row per show, ids are plain
 numbers), `reports`, `requests`, `push_subs`, `push_follows`, `push_shows`. Tables 0002–0004 also create
 themselves on first use. `library.s` packs: list status (bits 0–2), favourite 8, sub/dub chosen 16, dub 32,
-following 64.
+following 64, your rating 1–10 in bits 7–10. `users.prefs`: playback bits 1/2/4/8, list sharing 16 (all) / 32 (favourites).
+Tables created on first use: `errors`, `plays`, `subs`, `notice`, `requests`, `reports`, push tables.
 
 - cinemee ids: TMDB id × 10 + 1 (movie) / + 2 (TV). TV episodes are numbered straight through the aired
   seasons; each keeps `season`/`episode` for the player.

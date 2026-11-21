@@ -11,7 +11,7 @@ test('list status keeps 0-6, the favourite and audio flags, and drops anything e
   assert.equal(cleanStatus(15), 8);         // unknown status, favourite kept
   assert.equal(cleanStatus(16 | 32 | 1), 49); // watching, dub chosen for this show
   assert.equal(cleanStatus(64 | 1), 65);     // watching + following
-  assert.equal(cleanStatus(255), 120);      // clamped to 127: flags kept, unknown status dropped
+  assert.equal(cleanStatus(255), 248);      // flags and a rating of 1 kept, unknown status dropped
   assert.equal(cleanStatus(-4), 0);
   assert.equal(cleanStatus('x'), 0);
 });

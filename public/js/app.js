@@ -96,6 +96,7 @@ function card(a) {
       <button class="card-save${saved?.status || saved?.favourite ? ' on' : ''}" type="button" data-save="${esc(a.id)}" aria-label="Save ${esc(T(a))}">${saved?.status || saved?.favourite ? '✓' : '＋'}</button>
       <img loading="lazy" src="${esc(a.cover)}" alt="${esc(T(a))} poster">
       ${a.score ? `<span class="badge score">★ ${score(a.score)}</span>` : ''}
+      ${store.getRating(a.id) ? `<span class="badge mine" title="Your rating">you ${store.getRating(a.id)}/10</span>` : ''}
       ${a.status === 'RELEASING' ? '<span class="badge airing">Airing</span>' : ''}
       ${FORMAT[a.format] === 'Movie' ? '<span class="badge eps">Movie</span>'
         : !IS_CINEMEE && epsLabel(a) !== '?' ? `<span class="badge eps">${epsLabel(a)} eps</span>` : ''}
@@ -231,6 +232,7 @@ async function route() {
       case 'me': return viewMe();
       case 'requests': return await viewRequests(alive);
       case 'admin': return viewAdmin();
+      case 'u': return await viewShared(parts[1], alive, query);
       case 'stats': return viewStats();
       case 'account': return viewAccount(query);
       default: return viewNotFound();
@@ -274,6 +276,7 @@ async function viewHome(alive) {
     '<div id="picked"></div>' +
     (IS_CINEMEE
       ? shelf('shelf-top', 'Top 10 today', 'what everyone is watching right now') +
+        '<div id="popular-here"></div>' +
         shelf('shelf-airing', 'On TV this week', 'new episodes out now', '<a href="/top/airing">See all ›</a>') +
         '<div id="sibling-promo"></div>' +
         shelf('shelf-season', 'In cinemas now', 'the big screen, right now', '<a href="/top/season">See all ›</a>') +
@@ -282,6 +285,7 @@ async function viewHome(alive) {
         shelf('shelf-popular', 'Trending this week', 'the ones everybody is talking about', '<a href="/top/popular">See all ›</a>') +
         shelf('shelf-favorite', 'Top rated', 'crowd pleasers that never get old', '<a href="/top/favorite">See all ›</a>')
       : shelf('shelf-top', 'Top 10 this season', 'what everyone is watching right now') +
+        '<div id="popular-here"></div>' +
         shelf('shelf-airing', 'Airing now', 'new episodes every week', '<a href="/top/airing">See all ›</a>') +
         '<div id="sibling-promo"></div>' +
         shelf('shelf-season', 'New this season', 'fresh starts worth a first episode', '<a href="/top/season">See all ›</a>') +
@@ -291,6 +295,16 @@ async function viewHome(alive) {
         shelf('shelf-favorite', 'Fan favourites', 'crowd pleasers that never get old', '<a href="/top/favorite">See all ›</a>')) +
     '<section class="section" id="home-genres"></section>';
   loadSibling(alive);
+  // "Popular on <site> this week": what people here play (only once there's enough to show).
+  api('/popular-here').then(({ results }) => {
+    if (!alive() || (results || []).length < 6) return;
+    const list = unstarted(results).filter((x) => !store.notInterestedIds().has(String(x.id)));
+    if (list.length < 4) return;
+    const slot = document.getElementById('popular-here');
+    if (!slot) return;
+    slot.innerHTML = shelf('shelf-here', `Popular on ${BRAND.name} this week`, `what people here are watching`);
+    bindShelf('shelf-here', async () => shelfCards(list.slice(0, 20)), alive);
+  }).catch(() => {});
 
   app.querySelectorAll('.cont .x').forEach(b => b.onclick = e => {
     e.preventDefault();
@@ -309,8 +323,10 @@ async function viewHome(alive) {
 
   // "Picked for you": recommendations from the last few shows you watched or saved, mixed, with
   // anything already started or on your list left out. With one show it says which one.
-  const recentShows = [...store.continueList(), ...Object.values(store.getList()).sort((x, y) => y.updated - x.updated)
-    .map((e) => ({ animeId: e.id, title: e.title }))].filter((e) => e.title)
+  // Seeds: shows you rated 8+ first, then what you watched or saved lately; never ones you rated 4 or less.
+  const lovedShows = store.ratedList().filter((r) => r.rating >= 8 && r.title).sort((x, y) => y.rating - x.rating).map((r) => ({ animeId: r.id, title: r.title }));
+  const recentShows = [...lovedShows, ...store.continueList(), ...Object.values(store.getList()).sort((x, y) => y.updated - x.updated)
+    .map((e) => ({ animeId: e.id, title: e.title }))].filter((e) => e.title && !(store.getRating(e.animeId) && store.getRating(e.animeId) <= 4))
     .filter((e, i, all) => all.findIndex((x) => String(x.animeId) === String(e.animeId)) === i).slice(0, 3);
   // One request for all of them (the server mixes the lists); ids sorted so the answer caches well.
   if (recentShows.length) api(`/picks?ids=${recentShows.map((r) => r.animeId).sort().join(',')}`).then(({ results }) => {
@@ -910,8 +926,11 @@ function openSaveMenu(button, a) {
     ${store.LIST_STATUSES.filter(([k]) => k !== 'notinterested').map(([k, l]) => `<button type="button" data-status="${k}"${entry.status === k ? ' class="on"' : ''}>${entry.status === k ? '✓ ' : ''}${l}</button>`).join('')}
     <button type="button" data-fav>${entry.favourite ? '♥ Favourite' : '♡ Favourite'}</button>
     <button type="button" data-ni>Not interested</button>
-    ${entry.status ? '<button type="button" data-status="">Remove from list</button>' : ''}`;
+    ${entry.status ? '<button type="button" data-status="">Remove from list</button>' : ''}
+    <label class="save-rate">Your rating ${ratingSelect(a, 'menu-rating')}</label>`;
   document.body.appendChild(menu);
+  bindRatingSelect(a, menu.querySelector('#menu-rating'));
+  menu.querySelector('.save-rate').addEventListener('click', (ev) => ev.stopPropagation());
   const r = button.getBoundingClientRect();
   menu.style.top = `${Math.min(window.scrollY + r.bottom + 6, window.scrollY + innerHeight - menu.offsetHeight - 10)}px`;
   menu.style.left = `${Math.max(10, Math.min(window.scrollX + r.left, window.scrollX + innerWidth - menu.offsetWidth - 10))}px`;
@@ -991,6 +1010,25 @@ function refreshListButtons(a) {
   box.outerHTML = listButtons(a);
   bindListButtons(a);
 }
+// Your own 1-10 rating (title pages and the poster menu).
+const RATING_WORDS = ['', 'Appalling', 'Horrible', 'Very bad', 'Bad', 'Average', 'Fine', 'Good', 'Very good', 'Great', 'Masterpiece'];
+function ratingSelect(a, id = 'my-rating') {
+  const r = store.getRating(a.id);
+  return `<select id="${id}" class="rating-select${r ? ' rated' : ''}" aria-label="Your rating for ${esc(T(a))}">
+    <option value="0">${r ? 'Remove my rating' : '★ Rate it'}</option>
+    ${[10, 9, 8, 7, 6, 5, 4, 3, 2, 1].map((n) => `<option value="${n}"${r === n ? ' selected' : ''}>★ ${n} · ${RATING_WORDS[n]}</option>`).join('')}
+  </select>`;
+}
+function bindRatingSelect(a, el) {
+  if (!el) return;
+  el.onchange = () => {
+    store.setRating(a, el.value);
+    const r = store.getRating(a.id);
+    el.classList.toggle('rated', Boolean(r));
+    el.options[0].textContent = r ? 'Remove my rating' : '★ Rate it';
+    toastNote(r ? `You rated ${esc(T(a))} <b>${r}/10</b>.` : 'Rating removed.');
+  };
+}
 function bindListButtons(a) {
   const fav = document.getElementById('fav-btn');
   const ni = document.getElementById('ni-btn');
@@ -1051,6 +1089,7 @@ async function viewAnime(id, alive, query = new URLSearchParams()) {
             ${canWatch && !isMovie(a) && a.availableEpisodes > 1 ? `<a class="btn" href="/watch/${a.id}?ep=${a.availableEpisodes}">Newest: episode ${a.availableEpisodes}</a>` : ''}
             ${canWatch && prog && !isMovie(a) && prog.ep > 1 ? `<a class="btn" href="/watch/${a.id}?ep=1">From episode 1</a>` : ''}
             ${listButtons(a)}
+            ${ratingSelect(a)}
             <button class="btn" id="share" type="button">Share</button>
             ${query.get('from') === 'random' ? '<a class="btn" href="/random">🎲 Another random</a>' : ''}
           </div>
@@ -1103,6 +1142,7 @@ async function viewAnime(id, alive, query = new URLSearchParams()) {
     if (al && link) { link.href = `https://anilist.co/anime/${al}`; link.hidden = false; }
   });
   bindListButtons(a);
+  bindRatingSelect(a, document.getElementById('my-rating'));
   bindShare(a);
   loadExtras(a.id, alive, { chars: 'extras-chars', recs: 'extras-recs', ratings: 'info-box' });
   // How many episodes actually stream, in sub and dub.
@@ -1229,6 +1269,8 @@ async function viewWatch(id, query, alive) {
             <span class="spacer"></span>
             <button class="btn sm wide-btn" id="wide-toggle" type="button" aria-pressed="false">⤢ Wide player</button>
             <button class="btn sm" id="mark-seen" type="button">✓ Mark watched</button>
+            ${IS_CINEMEE ? '<button class="btn sm" id="subs-btn" type="button" title="Use your own .srt or .vtt subtitle file (plays on the Atlas server)">CC Your subtitles</button><input type="file" id="subs-file" accept=".srt,.vtt,text/vtt,application/x-subrip" hidden>' : ''}
+            <button class="btn sm" id="speed-btn" type="button" hidden title="Playback speed (remembered for this show)">1×</button>
             <button class="btn sm" id="party-btn" type="button" title="Watch together: friends with the link follow your episode and position">👥 Watch party</button>
             <button class="btn sm" id="share-moment" type="button" title="Copy a link that opens this episode at this moment">↗ Share moment</button>
             <details class="report-menu" id="report-menu">
@@ -1328,7 +1370,13 @@ async function viewWatch(id, query, alive) {
     onResumed: (at) => showNote(`Picked up where you stopped, at <b>${clock(at)}</b>. <button class="btn sm" type="button">Start over</button>`, () => player.seekTo(0)),
     onFail: (message) => tryNextServer(message),
     serverCount: () => new Set(servers.map((s) => s.id)).size,
+    // Per show: speed and volume on our own player (Kaze), remembered in this browser.
+    mediaPrefs: () => mediaPrefsFor(a.id),
+    onReady: () => updateSpeedBtn(),
+    onMediaPrefs: (p) => { saveMediaPrefs(a.id, p); updateSpeedBtn(); },
     onStarted: () => {
+      countPlay(a.id);
+      updateSpeedBtn();
       if (server) store.setGoodServer(a.id, server.category, server.id);
       // An episode counts as watched as soon as it starts playing (it gets its tick in the list,
       // Continue watching and New episodes move on), like tapping "Mark watched".
@@ -1477,6 +1525,57 @@ async function viewWatch(id, query, alive) {
   document.addEventListener('keydown', onKey);
   onCleanup(() => document.removeEventListener('keydown', onKey));
   $('next-ep').onclick = () => idx() < episodes.length - 1 && goTo(episodes[idx() + 1]);
+  // ---------- your own subtitles (cinemee, Atlas) ----------
+  const SUBS_KEY = 'animee-space:custom-subs';
+  const subsKey = () => `${a.id}:${current.number}`;
+  function customSub() {
+    try { return JSON.parse(sessionStorage.getItem(SUBS_KEY) || '{}')[subsKey()] || null; } catch { return null; }
+  }
+  if ($('subs-btn')) {
+    $('subs-btn').onclick = () => $('subs-file').click();
+    $('subs-file').onchange = async (e) => {
+      const f = e.target.files?.[0];
+      e.target.value = '';
+      if (!f) return;
+      if (f.size > 500 * 1024) { toastNote('That file is too big (500 KB at most).'); return; }
+      try {
+        const raw = await f.text();
+        // SRT → WebVTT in the browser: timestamps get a dot, cue numbers go, a header is added.
+        const t = raw.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n').trim();
+        const vtt = /^WEBVTT/.test(t) ? `${t}\n` : `WEBVTT\n\n${t.replace(/(\d{1,2}:\d{2}:\d{2}),(\d{3})/g, '$1.$2').replace(/^\d+\n(?=\d{1,2}:\d{2}:\d{2}\.\d{3})/gm, '')}\n`;
+        const r = await fetch('/api/subs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ vtt }) });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || 'Upload failed');
+        const label = f.name.replace(/\.(srt|vtt)$/i, '').slice(0, 40) || 'My subtitles';
+        let all = {};
+        try { all = JSON.parse(sessionStorage.getItem(SUBS_KEY) || '{}'); } catch { /* ignore */ }
+        all[subsKey()] = { url: d.url, label };
+        try { sessionStorage.setItem(SUBS_KEY, JSON.stringify(all)); } catch { /* ignore */ }
+        // Atlas is the server that takes subtitle files: switch to it and reload at the same spot.
+        const atlas = servers.find((s) => s.id === 'embedmaster');
+        if (!atlas) throw new Error('The Atlas server isn\u2019t available for this title.');
+        server = { id: atlas.id, category: atlas.category };
+        renderServers();
+        toastNote(`Subtitles added (“${esc(label)}”). Playing on Atlas; pick them in its CC menu if they don’t show.`);
+        playSource(player.getCurrentTime(), { explicit: true });
+      } catch (err) { toastNote(esc(err.message)); }
+    };
+  }
+
+  // Speed button (our own player only): 1× → 1.25× → 1.5× → 1.75× → 2× → 0.75× → 1×.
+  const SPEEDS = [0.75, 1, 1.25, 1.5, 1.75, 2];
+  function updateSpeedBtn() {
+    const b = $('speed-btn');
+    if (!b) return;
+    b.hidden = !player.isNative();
+    b.textContent = `${player.getRate()}×`;
+  }
+  $('speed-btn').onclick = () => {
+    const now = player.getRate();
+    const next = SPEEDS[(SPEEDS.indexOf(now) + 1) % SPEEDS.length] || 1;
+    player.setRate(next);
+    updateSpeedBtn();
+  };
   $('share-moment').onclick = async () => {
     const t = Math.floor(player.getCurrentTime() || 0);
     const url = `${location.origin}/watch/${a.id}?ep=${current.number}${t > 5 ? `&t=${t}` : ''}`;
@@ -1552,6 +1651,14 @@ async function viewWatch(id, query, alive) {
       const src = await api(`/episode/${encodeURIComponent(ep.id)}/sources?${mode}&category=${server.category}${al ? `&al=${al}` : ''}`, { fresh: true });
       if (!alive() || ep !== current) return;
       if (!src.provider) src.provider = server.id;
+      // Your own subtitle file for this episode goes to Atlas (EmbedMaster) as sub_url[] / sub_label[].
+      const mySub = customSub();
+      if (mySub && src.provider === 'embedmaster' && src.embedUrl) {
+        const u = new URL(src.embedUrl);
+        u.searchParams.append('sub_url[]', mySub.url);
+        u.searchParams.append('sub_label[]', mySub.label);
+        src.embedUrl = u.toString();
+      }
       tried.add(src.provider);
       // Reflect the provider that actually resolved, not merely the first one tried.
       if (src.provider) {
@@ -1560,6 +1667,7 @@ async function viewWatch(id, query, alive) {
         renderServers();
       }
       player.load(src, { startAt, meta: { ep: ep.number } });
+      updateSpeedBtn();
       // Embedded players can't be told where to start, so say where you left off.
       // A sticky note (missing episode, server switched) stays until the next episode.
       if (note.dataset.sticky) { /* keep it */ }
@@ -1683,15 +1791,50 @@ async function viewWatch(id, query, alive) {
   partyBar.className = 'party-bar';
   partyBar.hidden = true;
   document.querySelector('.player-wrap').appendChild(partyBar);
+  // The bar is drawn once per party (so a half-typed message survives); updates change the info line.
+  partyBar.innerHTML = `<div class="party-top"><span class="party-info"></span>
+      <span class="party-react">${['😂', '😮', '❤️', '🔥', '😭', '👏'].map((e) => `<button type="button" data-emoji="${e}" aria-label="React ${e}">${e}</button>`).join('')}</span>
+      <span><button class="btn sm" type="button" data-invite>Copy invite</button> <button class="btn sm" type="button" data-leave>Leave</button></span></div>
+    <div class="party-chat"><ol class="party-log" aria-live="polite" aria-label="Party chat"></ol>
+      <form class="party-say"><input class="input" name="text" maxlength="200" autocomplete="off" placeholder="Say something to the party…" aria-label="Message the party"><button class="btn sm" type="submit">Send</button></form></div>`;
+  // Your name in the chat: your username when signed in, otherwise a guest name kept for this tab.
+  const chatName = () => {
+    if (store.currentUser()?.name) return store.currentUser().name;
+    let n = '';
+    try { n = sessionStorage.getItem('animee-space:party-name') || ''; } catch { /* ignore */ }
+    if (!n) { n = `Guest ${Math.floor(1000 + Math.random() * 9000)}`; try { sessionStorage.setItem('animee-space:party-name', n); } catch { /* ignore */ } }
+    return n;
+  };
+  function addChatLine(name, text, { mine = false, host = false } = {}) {
+    const log = partyBar.querySelector('.party-log');
+    const li = document.createElement('li');
+    li.className = mine ? 'mine' : '';
+    li.innerHTML = `<b>${esc(name)}${host ? ' (host)' : ''}</b> ${esc(text)}`;
+    log.appendChild(li);
+    while (log.children.length > 50) log.firstElementChild.remove();
+    log.scrollTop = log.scrollHeight;
+  }
+  partyBar.querySelector('.party-say').onsubmit = (e) => {
+    e.preventDefault();
+    const p = party;
+    const input = e.target.elements.text;
+    const text = input.value.trim();
+    if (!p || !text || p.ws?.readyState !== 1) return;
+    if (Date.now() - (p.lastSaid || 0) < 1000) return;
+    p.lastSaid = Date.now();
+    p.ws.send(JSON.stringify({ type: 'chat', name: chatName(), text }));
+    addChatLine('You', text, { mine: true });
+    input.value = '';
+  };
+  // Keys typed in the chat box (N, P, F, arrows…) stay in the chat box.
+  partyBar.addEventListener('keydown', (e) => { if (e.target.matches('input')) e.stopPropagation(); });
   function renderPartyBar(extra = '') {
     const p = party;
     if (!p) { partyBar.hidden = true; $('party-btn').hidden = false; return; }
     $('party-btn').hidden = true;
     const live = p.ws?.readyState === 1;
     partyBar.hidden = false;
-    partyBar.innerHTML = `<span>👥 Party <b>${p.code}</b> · ${live ? `${p.people} watching` : 'connecting…'} · ${p.role === 'host' ? 'you’re the host: everyone follows you' : 'following the host'}${extra ? ` · ${extra}` : ''}</span>
-      <span class="party-react">${['😂', '😮', '❤️', '🔥', '😭', '👏'].map((e) => `<button type="button" data-emoji="${e}" aria-label="React ${e}">${e}</button>`).join('')}</span>
-      <span><button class="btn sm" type="button" data-invite>Copy invite</button> <button class="btn sm" type="button" data-leave>Leave</button></span>`;
+    partyBar.querySelector('.party-info').innerHTML = `👥 Party <b>${p.code}</b> · ${live ? `${p.people} watching` : 'connecting…'} · ${p.role === 'host' ? 'you’re the host: everyone follows you' : 'following the host'}${extra ? ` · ${extra}` : ''}`;
   }
   partyBar.onclick = async (e) => {
     const p = party;
@@ -1755,6 +1898,7 @@ async function viewWatch(id, query, alive) {
       } else if (d.type === 'people') { p.people = d.people; renderPartyBar(); }
       else if (d.type === 'state' && p.role === 'guest') followHost(d.state);
       else if (d.type === 'react') floatEmoji(d.emoji);
+      else if (d.type === 'chat') addChatLine(d.name, d.text, { host: d.host });
     };
     ws.onclose = () => {
       if (p.closed || party !== p) return;
@@ -1775,6 +1919,7 @@ async function viewWatch(id, query, alive) {
     try { party.ws?.close(); } catch { /* ignore */ }
     party = null;
     history.replaceState(null, '', `/watch/${a.id}?ep=${current.number}`);
+    partyBar.querySelector('.party-log').innerHTML = '';
     renderPartyBar();
   }
   $('party-btn').onclick = async () => {
@@ -1789,6 +1934,12 @@ async function viewWatch(id, query, alive) {
     catch { prompt('Send this invite to your friends', url); }
   };
   const partyTimer = setInterval(sendPartyState, 3000);
+  let visibleFor = 0;
+  const playCounter = setInterval(() => {
+    if (document.visibilityState === 'visible') visibleFor += 15;
+    if (visibleFor >= 90) { countPlay(a.id); clearInterval(playCounter); }
+  }, 15000);
+  onCleanup(() => clearInterval(playCounter));
   onCleanup(() => {
     clearInterval(partyTimer);
     if (party) { party.closed = true; try { party.ws?.close(); } catch { /* ignore */ } party = null; }
@@ -1851,10 +2002,12 @@ async function viewNew(alive) {
 // A small bar under the menu after an update, with the dated list one tap away. "Got it" hides it
 // until the next update (per browser).
 const NEWS = IS_CINEMEE ? [
+  ['Nov 24', ['Rate anything 1-10, and see your ratings in Stats', 'Share your list with a link (Account)', 'Popular on cinemee this week', 'Chat in watch parties', 'Use your own .srt subtitles (CC button, Atlas server)']],
   ['Nov 23', ['Watch party: friends follow your episode and position, with reactions', 'Search finds titles even with typos, and remembers your recent searches', 'Weekly summary pop-ups (Settings)', 'Switch to where you are on your other device', 'My list, History and Stats open offline']],
   ['Nov 22', ['Seasons on TV pages, and season by season in the episode list', 'Hover a poster for its trailer', 'Share a moment: a link that opens at the exact minute', 'Continue on animee, right here', 'Real air times for TV', 'IMDb and Rotten Tomatoes scores', 'Search and remove items in History']],
   ['Nov 21', ['Welcome to cinemee: movies and TV, with the same lists, sync and pop-ups as animee', 'Up next stays in fullscreen', 'Save any title from its poster', 'Hide genres you skip']],
 ] : [
+  ['Nov 24', ['Rate anything 1-10, and see your ratings in Stats', 'Share your list with a link (Account)', 'Popular on animee this week', 'Chat in watch parties', 'Kaze remembers speed and volume per show']],
   ['Nov 23', ['Watch party: friends follow your episode and position, with reactions', 'Search handles typos better and remembers your recent searches', 'Weekly summary pop-ups (Settings)', 'Switch to where you are on your other device', 'My list, History and Stats open offline']],
   ['Nov 22', ['Hover a poster for its trailer', 'Share a moment: a link that opens at the exact minute', 'Continue on cinemee, right here', 'Servers that keep failing on an episode are tried last', 'Search and remove items in History, with Undo']],
   ['Nov 21', ['Resume where you stopped on 3ellwa, with Start over', 'Auto skip intros and outros', 'Up next stays in fullscreen', 'Save any show from its poster', 'Select mode on My list', 'Hide genres you skip', '← → jump 10 seconds', 'Follow shows from the schedule', 'Picked for you on the home page']],
@@ -2155,7 +2308,73 @@ function viewAdmin() {
   load();
 }
 
+// Speed and volume per show on our own player, this browser only (the last 200 shows).
+const MEDIA_KEY = 'animee-space:media-prefs';
+function mediaPrefsFor(id) {
+  try { return JSON.parse(localStorage.getItem(MEDIA_KEY) || '{}')[id] || null; } catch { return null; }
+}
+function saveMediaPrefs(id, p) {
+  let all = {};
+  try { all = JSON.parse(localStorage.getItem(MEDIA_KEY) || '{}'); } catch { /* ignore */ }
+  delete all[id];
+  all[id] = { rate: p.rate, volume: p.volume, muted: p.muted };
+  const keys = Object.keys(all);
+  if (keys.length > 200) keys.slice(0, keys.length - 200).forEach((k) => delete all[k]);
+  try { localStorage.setItem(MEDIA_KEY, JSON.stringify(all)); } catch { /* ignore */ }
+}
+
+// "Popular here": one anonymous count per show per day from this browser (see popular.js).
+function countPlay(id) {
+  const key = 'animee-space:played';
+  const day = new Date().toDateString();
+  let seen = {};
+  try { seen = JSON.parse(localStorage.getItem(key) || '{}'); } catch { /* ignore */ }
+  if (seen.day !== day) seen = { day, ids: [] };
+  if (seen.ids.includes(String(id))) return;
+  seen.ids.push(String(id));
+  try { localStorage.setItem(key, JSON.stringify(seen)); } catch { /* ignore */ }
+  fetch('/api/play', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ a: String(id) }) }).catch(() => {});
+}
+
+// ---------- a shared list (/u/<name>) ----------
+async function viewShared(name, alive, query) {
+  const d = await api(`/u/${encodeURIComponent(String(name || ''))}`).catch((err) => ({ error: err.message }));
+  if (!alive()) return;
+  if (d.error || !d.items) {
+    app.innerHTML = `<div class="empty"><h2>This list isn't shared</h2><p>It's private, or there's no one by that name.</p><a class="btn primary" href="/">Go home</a></div>`;
+    return;
+  }
+  document.title = `${d.name}'s list · ${BRAND.title}`;
+  const tab = query.get('tab') || 'all';
+  const tabs = [['all', 'All'], ...store.LIST_STATUSES.filter(([k]) => k !== 'notinterested'), ['favourites', '♥ Favourites']]
+    .filter(([k]) => k === 'all' || d.items.some((i) => (k === 'favourites' ? i.favourite : i.status === k)));
+  const shown = d.items.filter((i) => (tab === 'all' ? true : tab === 'favourites' ? i.favourite : i.status === tab));
+  const label = Object.fromEntries(store.LIST_STATUSES);
+  app.innerHTML = `<h1 class="page-title">${esc(d.name)}'s ${d.mode === 'favourites' ? 'favourites' : 'list'}</h1>
+    <p class="card-meta">${d.total} title${d.total === 1 ? '' : 's'}${d.total > d.items.length ? ` (${d.items.length} shown)` : ''} · shared from ${esc(BRAND.title)}. <a href="/account">Share yours</a></p>
+    ${d.mode === 'all' && tabs.length > 2 ? `<div class="tabs">${tabs.map(([k, l]) => `<a class="tab${k === tab ? ' on' : ''}" href="/u/${esc(d.name)}${k === 'all' ? '' : `?tab=${k}`}">${l}</a>`).join('')}</div>` : ''}
+    ${shown.length ? `<div class="grid">${shown.map((i) => card(i).replace('<div class="card-meta">', `<div class="card-meta">${[i.status ? label[i.status] : '', i.favourite ? '♥' : '', i.rating ? `★ ${i.rating}/10 from ${esc(d.name)}` : ''].filter(Boolean).join(' · ')}${i.status || i.favourite || i.rating ? ' · ' : ''}`)).join('')}</div>`
+      : '<div class="empty"><p>Nothing here.</p></div>'}`;
+}
+
 // ---------- stats ----------
+// Your ratings: how many, the average, how they spread, and the genres you rate highest.
+function ratingStats() {
+  const rated = store.ratedList();
+  if (!rated.length) return '<section class="section"><div class="section-head"><h2>your ratings</h2></div><p class="card-meta">Rate shows from their page or the ＋ on any poster, and your ratings show up here.</p></section>';
+  const avg = rated.reduce((n, r) => n + r.rating, 0) / rated.length;
+  const spread = [10, 9, 8, 7, 6, 5, 4, 3, 2, 1].map((n) => [n, rated.filter((r) => r.rating === n).length]);
+  const most = Math.max(1, ...spread.map(([, c]) => c));
+  const byGenre = new Map();
+  for (const r of rated) for (const g of r.genres || []) { const x = byGenre.get(g) || [0, 0]; byGenre.set(g, [x[0] + r.rating, x[1] + 1]); }
+  const loved = [...byGenre].filter(([, [, c]]) => c >= 2).map(([g, [t, c]]) => [g, t / c]).sort((x, y) => y[1] - x[1]).slice(0, 3);
+  const best = rated.slice().sort((x, y) => y.rating - x.rating).slice(0, 6);
+  return `<section class="section"><div class="section-head"><h2>your ratings</h2></div>
+    <p class="card-meta"><b>${rated.length}</b> rated · average <b>${avg.toFixed(1)}</b>/10${loved.length ? ` · you rate <b>${loved.map(([g]) => esc(g)).join(', ')}</b> highest` : ''}</p>
+    <div class="bars">${spread.map(([n, c]) => `<div class="bar-row"><span>★ ${n}</span><div class="bar"><i style="width:${Math.round((c / most) * 100)}%"></i></div><b>${c}</b></div>`).join('')}</div>
+    ${best.some((r) => r.title) ? `<div class="grid" style="margin-top:14px">${best.filter((r) => r.title).map((r) => `<a class="card" href="/anime/${esc(r.id)}"><div class="poster"><img loading="lazy" src="${esc(r.cover || '')}" alt=""><span class="badge mine">you ${r.rating}/10</span></div><div class="card-title">${esc(r.title)}</div></a>`).join('')}</div>` : ''}
+  </section>`;
+}
 // Everything is worked out from what this browser knows (your library, plus history opened here).
 function viewStats() {
   document.title = `My stats · ${BRAND.title}`;
@@ -2203,6 +2422,7 @@ function viewStats() {
       <div><b>${count('planning')}</b><span>plan to watch</span></div>
       <div><b>${rows.filter((r) => r.favourite).length}</b><span>favourites</span></div>
     </div>
+    ${ratingStats()}
     ${genres.length ? `<section class="section"><div class="section-head"><h2>top genres</h2></div>
       <div class="bars">${genres.map(([g, n]) => `<div class="bar-row"><span>${esc(g)}</span><div class="bar"><i style="width:${Math.round((n / topGenre) * 100)}%"></i></div><b>${n}</b></div>`).join('')}</div>
       <p class="card-meta">Weighted by episodes watched.${missingGenres ? ` Loading genres for ${missingGenres} more show${missingGenres > 1 ? 's' : ''}…` : ''}</p></section>`
@@ -2237,7 +2457,7 @@ function viewStats() {
 // Long lists (for example after an import) are shown 60 at a time.
 const LIST_PAGE = 60;
 const asCard = (e) => ({ ...e, availableEpisodes: e.episodes });
-const LIST_SORTS = [['recent', 'Last changed first'], ['oldest', 'First changed first'], ['title', 'Title A-Z'], ['year', 'Newest year']];
+const LIST_SORTS = [['recent', 'Last changed first'], ['oldest', 'First changed first'], ['title', 'Title A-Z'], ['year', 'Newest year'], ['rating', 'My rating']];
 function viewWatchlist(query) {
   document.title = `Watchlist · ${BRAND.title}`;
   const ids = Object.keys(store.getList());
@@ -2323,6 +2543,7 @@ function viewWatchlist(query) {
     oldest: (x, y) => x.updated - y.updated,
     title: (x, y) => String(x.title).localeCompare(String(y.title)),
     year: (x, y) => (y.year || 0) - (x.year || 0),
+    rating: (x, y) => (y.rating || 0) - (x.rating || 0) || y.updated - x.updated,
   };
   const shown = list
     .filter((e) => (tab === 'all' ? inAll(e) : tab === 'favourites' ? e.favourite : e.status === tab)
@@ -2499,7 +2720,40 @@ function viewAccountPage(query) {
             <a class="btn sm" id="cal-apple">Open in Apple / Outlook</a>
           </div>
         </div>
+      </div>
+      <div class="auth-box share-box">
+        <h2 style="margin:0 0 6px">share your list</h2>
+        <p class="card-meta">A read-only page anyone with the link can open: titles, list status, favourites and your ratings. Never your progress or history. Off by default.</p>
+        <div class="chips" id="share-mode" role="radiogroup" aria-label="Share your list">
+          <label class="chip"><input type="radio" name="share" value="off"> Off</label>
+          <label class="chip"><input type="radio" name="share" value="all"> Whole list</label>
+          <label class="chip"><input type="radio" name="share" value="favourites"> Favourites only</label>
+        </div>
+        <div class="actions" id="share-out" hidden><input class="cal-url" id="share-url" readonly aria-label="Your list's link"><button class="btn sm" id="share-copy" type="button">Copy link</button></div>
+        <p class="card-meta" id="share-msg" role="status"></p>
       </div>`;
+    // Sharing: read the current choice, change it with the radio buttons.
+    const shareBox = document.getElementById('share-mode');
+    const showShare = ({ mode, url }) => {
+      shareBox.querySelectorAll('input').forEach((i) => { i.checked = i.value === mode; });
+      document.getElementById('share-url').value = url || '';
+      document.getElementById('share-out').hidden = mode === 'off';
+    };
+    fetch('/api/me/share', { credentials: 'same-origin' }).then((r) => r.json()).then(showShare).catch(() => {});
+    shareBox.onchange = async (e) => {
+      const msg = document.getElementById('share-msg');
+      try {
+        const r = await fetch('/api/me/share', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: e.target.value }) });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || 'Failed');
+        showShare(d);
+        msg.textContent = d.mode === 'off' ? 'Your list is private again (a copy someone already opened can stay up to 5 minutes).' : 'Shared. Send the link to anyone.';
+      } catch (err) { msg.textContent = err.message; }
+    };
+    document.getElementById('share-copy').onclick = async () => {
+      const url = document.getElementById('share-url').value;
+      try { await navigator.clipboard.writeText(url); toastNote('Link copied.'); } catch { prompt('Copy this link', url); }
+    };
     document.getElementById('cal-get').onclick = async (e) => {
       e.target.disabled = true;
       try {
@@ -3124,10 +3378,14 @@ function setupSearch() {
           }).join('') : `<div class="s-empty">No matches found. <a href="${esc(SIBLING.origin)}/search?q=${encodeURIComponent(q)}">Try ${SIBLING.name} ↗</a></div>`)
           + `<a class="s-all" href="/search?q=${encodeURIComponent(q)}">View all results ›</a>`;
         box.hidden = false;
+        input.setAttribute('aria-expanded', 'true');
       } catch { if (my === seq) box.hidden = true; }
     }, 300);
   };
-  const close = () => { clearTimeout(timer); seq++; box.hidden = true; };
+  const close = () => { clearTimeout(timer); seq++; box.hidden = true; input.setAttribute('aria-expanded', 'false'); };
+  input.setAttribute('aria-controls', 'suggest');
+  input.setAttribute('aria-expanded', 'false');
+  input.setAttribute('aria-autocomplete', 'list');
   box.onclick = (e) => {
     const q = input.value.trim();
     // A picked suggestion is remembered by its title (not a typo); "View all" by what was typed.
@@ -3165,7 +3423,15 @@ function setupSearch() {
 let installPrompt = null;
 window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installPrompt = e; });
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
-document.getElementById('menu-btn').onclick = () => document.getElementById('nav-links').classList.toggle('open');
+document.getElementById('menu-btn').onclick = (e) => {
+  const open = document.getElementById('nav-links').classList.toggle('open');
+  e.currentTarget.setAttribute('aria-expanded', String(open));
+};
+// The phone menu closes (and says so) when you go somewhere.
+window.addEventListener('animee:navigate', () => {
+  document.getElementById('nav-links').classList.remove('open');
+  document.getElementById('menu-btn').setAttribute('aria-expanded', 'false');
+});
 setupSearch();
 // Old #/ links (shared before paths existed) become real paths.
 if (location.hash.startsWith('#/')) history.replaceState(null, '', location.hash.slice(1) || '/');
