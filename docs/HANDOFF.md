@@ -53,12 +53,17 @@ functions/_lib/
     registry.js                 server lists, fallback order, neutral names, deadlines/breaker
     megaplay.js, animeparadise.js, vidnest.js, tryembed.js, anilist.js
 public/
-  js/app.js                     the whole front end (router + views)
+  js/app.js                     router, shared helpers, home, search, title pages, start-up
+  js/views/                     the other views: watch, lists (My list/stats/shared), hub (My anime,
+                                requests, what's new), account, admin, discover (schedule/A-Z/pick), settings
   js/player.js                  player: embeds, MegaPlay handshake/commands, progress, Up next
   js/store.js, inbox.js, push.js, anilist.js, site.js, api.js, fx.js
   sites/cinemee/                cinemee's own icons, favicon, manifest, og.png (served first on cinemee)
 docs/                           CHANGELOG, PROVIDER, BRAND, HIANIME-NOTES, AUDIT-2026-11, this file
-tests/                          node --test (65 tests): `npm test`
+tests/                          server tests: `npm test`
+e2e/                            browser smoke tests for both sites: `npm run test:browser` (needs `npm run dev`
+                                running; uses the installed Chrome/Edge through playwright-core)
+docs/CHECKLIST.md               the 15-minute hands-on check on a phone, in Brave and with a friend
 ```
 
 ## Servers (what visitors see → real source)
@@ -151,6 +156,8 @@ npx wrangler dev --port 8787 --test-scheduled
   canonical addresses locally (`/anime/52991/frieren-beyond-journey-s-end`).
 - **Service worker offline page:** opening a page while `wrangler dev` is still starting shows "you're offline";
   just reload.
+- **Views import from app.js and app.js imports the views** (a module cycle). It works because view
+  files only declare things at the top level; never run code there that uses something from app.js.
 - **Line endings:** the repo stores CRLF. Editing scripts should keep the file's existing line endings.
 - **AniList refuses Cloudflare's servers:** AniList lookups (VidNest/TryEmbed ids, AniList import, links) run
   in the browser (`public/js/anilist.js`).

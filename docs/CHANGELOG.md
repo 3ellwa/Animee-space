@@ -1,3 +1,10 @@
+## Audit fixes, code review fixes, app.js split, browser tests
+
+- From the November audit (most of it was already done): a clicked server only becomes your default once it actually plays, and a note says which one played instead; "Not interested" once on title pages; trailers load on click; recommendation titles follow the English-titles setting; ~40 px tap targets on phones; "Sign in" no longer wraps. Fixed along the way: `split(/s+/)` and `[^p{L}p{N}]` in tenrai.js had lost their backslashes.
+- From the code review: backups keep ratings; the other-device check doesn't poll on players that never report time (it pulled the whole library every 45 s); TV season cards open via `?season=N` (the real first episode); Atlas gets literal `sub_url[]`; one SRT converter (on the server); shared lists aren't edge-cached and count every title; a push test keeps a weekly digest's episodes; parties that can't be joined stop retrying; "Script error." isn't counted.
+- `public/js/app.js` (3,500 lines) is split: views now live in `public/js/views/` (watch, lists, hub, account, admin, discover, settings).
+- Browser smoke tests (`e2e/smoke.e2e.mjs`, 17 tests, both sites): `npm run test:browser`. `docs/CHECKLIST.md` for the hands-on part.
+
 ## Ratings, shared lists, popular here, party chat, speed memory, your subtitles, faster loads
 
 - **Your ratings (1-10):** a "★ Rate it" menu on title pages and in the poster ＋ menu; "you 8/10" on posters; "My rating" sort on My list; a "your ratings" section in Stats (average, spread, genres you rate highest); Picked for you leans on shows you rated 8+ and never on ones rated 4 or less. Stored in bits 7-10 of the library status number, so it syncs with no database change.
