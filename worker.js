@@ -39,10 +39,16 @@ const html = (body, status, extra = {}) => new Response(body, { status, headers:
 // Rendered pages are kept in the edge cache for an hour (the catalogue changes slowly).
 async function page(request, url, ctx, site = "animee", env = {}) {
   const cache = globalThis.caches?.default;
-  const key = new Request(url.origin + url.pathname + url.search + (url.search ? "&" : "?") + "__page=" + SHELL_VERSION, { method: "GET" });
+  // The site is part of the key, so a page cached for one site is never served on the other.
+  const key = new Request(url.origin + url.pathname + url.search + (url.search ? "&" : "?") + "__page=" + SHELL_VERSION + "-" + site, { method: "GET" });
   if (cache) {
     const hit = await cache.match(key).catch(() => null);
-    if (hit) return new Response(hit.body, hit);
+    if (hit) {
+      // The edge keeps its copy for an hour; browsers must check back every time.
+      const fresh = new Response(hit.body, hit);
+      fresh.headers.set("Cache-Control", "no-cache");
+      return fresh;
+    }
   }
   const shell = brandShell(ASSETS["/index.html"], site);
   const info = await seo.describe(url, site, env).catch(() => ({ status: 200, transient: true }));
