@@ -409,6 +409,8 @@ export class Player {
     if (this.iframe.hidden) return this.video.paused;
     return (this.isRem() || this.isRam()) && typeof this.embedPaused === 'boolean' ? this.embedPaused : null;
   }
+  /** Whether this player tells us where it is (our own video, or an embed that has reported a time). */
+  hasTime() { return this.iframe.hidden ? Boolean(this.video.currentSrc || this.video.src) : this.embedTime > 0; }
   /** True while our own video (Kaze) plays, not an embedded player. */
   isNative() { return this.iframe.hidden && Boolean(this.video.currentSrc || this.video.src); }
   setRate(rate) { if (this.isNative()) this.video.playbackRate = rate; }

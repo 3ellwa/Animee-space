@@ -627,37 +627,150 @@ export async function viewWatch(id, query, alive) {
   }
 
   // ---------- watch party ----------
-  // The host's episode and position go to a small room on the server every few seconds; guests
-  // follow (jumping where their server allows it). Reactions float over the player.
+  // One person hosts; everyone with the invite link follows the host's episode, server, position
+  // and pause (where their player allows it). No account needed. The panel under the player shows
+  // the invite, who's watching, whether you're really in sync, a chat and reactions.
   const PARTY_KEY = (code) => `animee-space:party:${code}`;
-  const partyBar = document.createElement('div');
-  partyBar.className = 'party-bar';
+  const NAME_KEY = 'animee-space:party-name';
+  const REACTIONS = ['😂', '😮', '❤️', '🔥', '😭', '👏'];
+  const partyBar = document.createElement('section');
+  partyBar.className = 'party';
   partyBar.hidden = true;
+  partyBar.setAttribute('aria-label', 'Watch party');
   document.querySelector('.player-wrap').appendChild(partyBar);
-  // The bar is drawn once per party (so a half-typed message survives); updates change the info line.
-  partyBar.innerHTML = `<div class="party-top"><span class="party-info"></span>
-      <span class="party-react">${['😂', '😮', '❤️', '🔥', '😭', '👏'].map((e) => `<button type="button" data-emoji="${e}" aria-label="React ${e}">${e}</button>`).join('')}</span>
-      <span><button class="btn sm" type="button" data-invite>Copy invite</button> <button class="btn sm" type="button" data-leave>Leave</button></span></div>
-    <div class="party-chat"><ol class="party-log" aria-live="polite" aria-label="Party chat"></ol>
-      <form class="party-say"><input class="input" name="text" maxlength="200" autocomplete="off" placeholder="Say something to the party…" aria-label="Message the party"><button class="btn sm" type="submit">Send</button></form></div>`;
-  // Your name in the chat: your username when signed in, otherwise a guest name kept for this tab.
-  const chatName = () => {
-    if (store.currentUser()?.name) return store.currentUser().name;
+  // Drawn once; updates only change the parts that move (so a half-typed message survives).
+  partyBar.innerHTML = `
+    <header class="party-head">
+      <div class="party-title"><span class="party-dot" aria-hidden="true"></span><b>Watch party</b>
+        <button class="party-code" type="button" data-invite title="Copy the invite link"></button></div>
+      <div class="party-actions"><button class="btn sm primary" type="button" data-invite>Invite friends</button><button class="btn sm" type="button" data-leave>Leave</button></div>
+    </header>
+    <p class="party-status" role="status"></p>
+    <div class="party-invite" hidden>
+      <input class="input" readonly aria-label="Invite link">
+      <button class="btn sm" type="button" data-copy>Copy</button>
+      <button class="btn sm" type="button" data-share hidden>Share…</button>
+      <small>Anyone with this link joins. No account needed.</small>
+    </div>
+    <div class="party-people" aria-label="Who's watching"></div>
+    <div class="party-chat">
+      <ol class="party-log" aria-live="polite" aria-label="Party chat"></ol>
+      <form class="party-say">
+        <input class="input" name="text" maxlength="200" autocomplete="off" placeholder="Message the party…" aria-label="Message the party">
+        <button class="btn sm primary" type="submit">Send</button>
+      </form>
+      <div class="party-react" aria-label="Reactions">${REACTIONS.map((e) => `<button type="button" data-emoji="${e}" aria-label="React ${e}">${e}</button>`).join('')}</div>
+    </div>`;
+  const $p = (sel) => partyBar.querySelector(sel);
+
+  // Your name: your username when signed in, otherwise one you pick (kept in this browser).
+  function myName() {
     let n = '';
-    try { n = sessionStorage.getItem('animee-space:party-name') || ''; } catch { /* ignore */ }
-    if (!n) { n = `Guest ${Math.floor(1000 + Math.random() * 9000)}`; try { sessionStorage.setItem('animee-space:party-name', n); } catch { /* ignore */ } }
+    try { n = localStorage.getItem(NAME_KEY) || ''; } catch { /* ignore */ }
+    if (n) return n;
+    if (store.currentUser()?.name) return store.currentUser().name;
+    n = `Guest ${Math.floor(100 + Math.random() * 900)}`;
+    try { localStorage.setItem(NAME_KEY, n); } catch { /* ignore */ }
     return n;
-  };
-  function addChatLine(name, text, { mine = false, host = false } = {}) {
-    const log = partyBar.querySelector('.party-log');
+  }
+  const inviteUrl = () => `${location.origin}/watch/${a.id}?ep=${current.number}&party=${party.code}`;
+  const hostOf = () => party?.people?.find((x) => x.host) || null;
+  const serverLabel = (id) => servers.find((s) => s.id === id)?.name || id || 'this server';
+
+  function addLine(html, cls = '') {
+    const log = $p('.party-log');
     const li = document.createElement('li');
-    li.className = mine ? 'mine' : '';
-    li.innerHTML = `<b>${esc(name)}${host ? ' (host)' : ''}</b> ${esc(text)}`;
+    if (cls) li.className = cls;
+    li.innerHTML = html;
     log.appendChild(li);
-    while (log.children.length > 50) log.firstElementChild.remove();
+    while (log.children.length > 80) log.firstElementChild.remove();
     log.scrollTop = log.scrollHeight;
   }
-  partyBar.querySelector('.party-say').onsubmit = (e) => {
+  const addSystem = (text) => addLine(esc(text), 'sys');
+
+  function renderPeople() {
+    const p = party;
+    $p('.party-people').innerHTML = (p.people || []).map((x) => {
+      const me = x.id === p.you;
+      return `<span class="party-person${me ? ' me' : ''}" title="${esc(x.name)}${x.host ? ' (host)' : ''}">
+        <i aria-hidden="true">${esc(x.name.slice(0, 1).toUpperCase())}</i>${esc(x.name)}${x.host ? ' <b title="Host">👑</b>' : ''}${me ? ' <small>(you)</small>' : ''}
+        ${me ? '<button type="button" class="link-btn" data-rename>Change name</button>' : ''}</span>`;
+    }).join('');
+  }
+
+  // The one line that says what's actually happening, in plain words.
+  function setStatus(text, tone = '') {
+    const el = $p('.party-status');
+    el.textContent = text;
+    el.dataset.tone = tone;
+    $p('.party-dot').dataset.tone = tone;
+  }
+  function renderStatus() {
+    const p = party;
+    if (!p) return;
+    if (p.failed) return setStatus('Couldn’t join: the party may be full or over.', 'bad');
+    if (p.ws?.readyState !== 1) return setStatus(p.everOpen ? 'Reconnecting…' : 'Connecting…', 'wait');
+    if (p.role === 'host') {
+      const n = (p.people || []).length - 1;
+      if (!player.hasTime() && p.hostSince && Date.now() - p.hostSince > 20000) {
+        return setStatus(`Your server (${serverLabel(server?.id)}) doesn’t share its position, so friends can only follow your episode. For full sync pick 3ellwa, Rem, Ram or Kaze.`, 'warn');
+      }
+      return setStatus(n ? `You’re the host. ${n} ${n === 1 ? 'friend follows' : 'friends follow'} your episode, server, position and pause.` : 'You’re the host. Invite friends: they’ll follow your episode, server and position.', 'good');
+    }
+    const host = hostOf();
+    if (!host) return setStatus('The host left. You keep watching on your own until they’re back.', 'warn');
+    if (p.sync === 'unknown') return setStatus(`${host.name}’s server doesn’t share its position: you’re on the same episode, skip along by hand.`, 'warn');
+    if (p.sync === 'press-play') return setStatus(`Press ▶ in the player to join ${host.name}.`, 'warn');
+    if (p.sync === 'manual') return setStatus(`${host.name} is at ${clock(p.hostAt || 0)}. This server can’t be moved for you: skip there in the player.`, 'warn');
+    if (p.sync === 'catching-up') return setStatus(`Catching up with ${host.name}…`, 'wait');
+    return setStatus(`In sync with ${host.name}${p.hostPlaying === false ? ' (paused)' : ''}.`, 'good');
+  }
+  function renderPartyBar() {
+    const p = party;
+    if (!p) { partyBar.hidden = true; $('party-btn').hidden = false; return; }
+    $('party-btn').hidden = true;
+    partyBar.hidden = false;
+    $p('.party-code').textContent = p.code;
+    renderPeople();
+    renderStatus();
+  }
+
+  partyBar.addEventListener('keydown', (e) => { if (e.target.matches('input')) e.stopPropagation(); });
+  partyBar.onclick = async (e) => {
+    const p = party;
+    if (!p) return;
+    const emoji = e.target.closest('[data-emoji]')?.dataset.emoji;
+    if (emoji) { floatEmoji(emoji); if (p.ws?.readyState === 1) p.ws.send(JSON.stringify({ type: 'react', emoji })); return; }
+    if (e.target.closest('[data-invite]')) { showInvite(); return; }
+    if (e.target.closest('[data-copy]')) {
+      try { await navigator.clipboard.writeText(inviteUrl()); e.target.textContent = 'Copied ✓'; setTimeout(() => { e.target.textContent = 'Copy'; }, 1500); }
+      catch { $p('.party-invite input').select(); }
+      return;
+    }
+    if (e.target.closest('[data-share]')) { navigator.share?.({ title: `Watch ${T(a)} with me`, url: inviteUrl() }).catch(() => {}); return; }
+    if (e.target.closest('[data-leave]')) { leaveParty(); return; }
+    if (e.target.closest('[data-rename]')) {
+      const me = (p.people || []).find((x) => x.id === p.you);
+      const chip = e.target.closest('.party-person');
+      chip.outerHTML = `<form class="party-rename"><input class="input" name="name" maxlength="20" value="${esc(me?.name || myName())}" aria-label="Your name in the party"><button class="btn sm primary">Save</button></form>`;
+      const form = $p('.party-rename');
+      form.elements.name.select();
+      form.onsubmit = (ev) => {
+        ev.preventDefault();
+        const name = form.elements.name.value.replace(/\s+/g, ' ').trim().slice(0, 20);
+        if (name) { try { localStorage.setItem(NAME_KEY, name); } catch { /* ignore */ } p.ws?.readyState === 1 && p.ws.send(JSON.stringify({ type: 'rename', name })); }
+        renderPeople();
+      };
+    }
+  };
+  function showInvite() {
+    const box = $p('.party-invite');
+    box.hidden = false;
+    box.querySelector('input').value = inviteUrl();
+    box.querySelector('[data-share]').hidden = !navigator.share;
+    box.querySelector('input').select();
+  }
+  $p('.party-say').onsubmit = (e) => {
     e.preventDefault();
     const p = party;
     const input = e.target.elements.text;
@@ -665,31 +778,9 @@ export async function viewWatch(id, query, alive) {
     if (!p || !text || p.ws?.readyState !== 1) return;
     if (Date.now() - (p.lastSaid || 0) < 1000) return;
     p.lastSaid = Date.now();
-    p.ws.send(JSON.stringify({ type: 'chat', name: chatName(), text }));
-    addChatLine('You', text, { mine: true });
+    p.ws.send(JSON.stringify({ type: 'chat', text }));
+    addLine(`<b>You</b> ${esc(text)}`, 'mine');
     input.value = '';
-  };
-  // Keys typed in the chat box (N, P, F, arrows…) stay in the chat box.
-  partyBar.addEventListener('keydown', (e) => { if (e.target.matches('input')) e.stopPropagation(); });
-  function renderPartyBar(extra = '') {
-    const p = party;
-    if (!p) { partyBar.hidden = true; $('party-btn').hidden = false; return; }
-    $('party-btn').hidden = true;
-    const live = p.ws?.readyState === 1;
-    partyBar.hidden = false;
-    partyBar.querySelector('.party-info').innerHTML = `👥 Party <b>${p.code}</b> · ${live ? `${p.people} watching` : 'connecting…'} · ${p.role === 'host' ? 'you’re the host: everyone follows you' : 'following the host'}${extra ? ` · ${extra}` : ''}`;
-  }
-  partyBar.onclick = async (e) => {
-    const p = party;
-    if (!p) return;
-    const emoji = e.target.closest('[data-emoji]')?.dataset.emoji;
-    if (emoji) { floatEmoji(emoji); if (p.ws?.readyState === 1) p.ws.send(JSON.stringify({ type: 'react', emoji })); return; }
-    if (e.target.closest('[data-invite]')) {
-      const url = `${location.origin}/watch/${a.id}?ep=${current.number}&party=${p.code}`;
-      try { await navigator.clipboard.writeText(url); toastNote('Invite copied. Anyone with the link joins your party.'); } catch { prompt('Copy this invite', url); }
-      return;
-    }
-    if (e.target.closest('[data-leave]')) leaveParty();
   };
   function floatEmoji(emoji) {
     const el = document.createElement('span');
@@ -699,34 +790,69 @@ export async function viewWatch(id, query, alive) {
     document.querySelector('.player-wrap').appendChild(el);
     setTimeout(() => el.remove(), 2200);
   }
+
+  // Host: every 3 seconds (and on episode changes) the episode, server, position and pause.
   function sendPartyState() {
     const p = party;
     if (!p || p.role !== 'host' || p.ws?.readyState !== 1) return;
+    const known = player.hasTime();
     const t = player.getCurrentTime() || 0;
     const paused = player.isPausedHere();
     const playing = paused === null ? Math.abs(t - p.lastT) > 0.5 : !paused;
     p.lastT = t;
-    p.ws.send(JSON.stringify({ type: 'state', show: a.id, ep: current.number, t, playing }));
+    p.ws.send(JSON.stringify({ type: 'state', show: a.id, ep: current.number, t: known ? t : null, playing, server: server?.id || null, cat: server?.category || 'sub' }));
+    renderStatus();
   }
+  // Guest: follow the host's show, episode, server, then position and pause.
   function followHost(state) {
     const p = party;
     if (!p || !state) return;
     if (state.show !== String(a.id)) { go(`/watch/${state.show}?ep=${state.ep}&party=${p.code}`); return; }
-    const expected = state.t + (state.playing ? Math.max(0, (Date.now() + (p.skew || 0) - state.at) / 1000) : 0);
+    p.hostPlaying = state.playing;
+    const known = state.t !== null && state.t !== undefined;
+    const expected = known ? state.t + (state.playing ? Math.max(0, (Date.now() + (p.skew || 0) - state.at) / 1000) : 0) : null;
+    p.hostAt = expected;
     const target = episodes.find((x) => x.number === state.ep);
-    if (target && target !== current) { partyAt = expected; goTo(target); return; }
+    if (target && target !== current) {
+      addSystem(`${hostOf()?.name || 'The host'} moved to ${epName(target)}.`);
+      partyAt = expected;
+      p.sync = 'catching-up';
+      renderStatus();
+      goTo(target);
+      return;
+    }
+    // Same server as the host, so position commands work the same way (once per change).
+    const hostServer = state.server && servers.find((s) => s.id === state.server && s.category === state.cat);
+    if (hostServer && (server?.id !== hostServer.id || server?.category !== hostServer.category) && p.switchedTo !== `${hostServer.id}:${hostServer.category}`) {
+      p.switchedTo = `${hostServer.id}:${hostServer.category}`;
+      server = { id: hostServer.id, category: hostServer.category };
+      renderServers();
+      p.sync = 'catching-up';
+      renderStatus();
+      playSource(expected ?? player.getCurrentTime(), { explicit: true });
+      return;
+    }
+    if (!known) { p.sync = 'unknown'; renderStatus(); return; }
     player.partyPause(!state.playing);
     const mine = player.getCurrentTime() || 0;
-    if (Math.abs(expected - mine) <= 4) { if (p.behind) { p.behind = false; renderPartyBar(); } return; }
-    if (player.canFollow()) { player.partySeek(expected); return; }
-    // This server can't be moved from outside: say where the host is instead.
-    p.behind = true;
-    renderPartyBar(`host is at <b>${clock(expected)}</b>: skip there in the player`);
+    const started = player.hasTime();
+    if (started && Math.abs(expected - mine) <= 4) { p.sync = 'ok'; renderStatus(); return; }
+    if (!started && state.playing) {
+      // Phones (and some browsers) wait for a tap before playing: say so instead of "in sync".
+      p.sync = Date.now() - (p.loadedAt || 0) > 6000 ? 'press-play' : 'catching-up';
+      renderStatus();
+      return;
+    }
+    if (player.canFollow()) { player.partySeek(expected); p.sync = 'catching-up'; renderStatus(); return; }
+    p.sync = 'manual';
+    renderStatus();
   }
   function connectParty() {
     const p = party;
     if (!p || p.closed) return;
-    const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/party/${p.code}/ws${p.hostKey ? `?host=${p.hostKey}` : ''}`);
+    const qs = new URLSearchParams({ name: myName() });
+    if (p.hostKey) qs.set('host', p.hostKey);
+    const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/party/${p.code}/ws?${qs}`);
     p.ws = ws;
     ws.onopen = () => { p.retry = 0; p.everOpen = true; renderPartyBar(); };
     ws.onmessage = (e) => {
@@ -735,26 +861,37 @@ export async function viewWatch(id, query, alive) {
       if (d.now) p.skew = d.now - Date.now();
       if (d.type === 'hello') {
         p.role = d.role;
-        p.people = d.people;
+        p.you = d.you;
+        p.people = d.people || [];
+        if (p.role === 'host') { p.hostSince = p.hostSince || Date.now(); sendPartyState(); }
+        else { p.loadedAt = Date.now(); followHost(d.state); }
         renderPartyBar();
-        if (p.role === 'host') sendPartyState(); else followHost(d.state);
-      } else if (d.type === 'people') { p.people = d.people; renderPartyBar(); }
-      else if (d.type === 'state' && p.role === 'guest') followHost(d.state);
+      } else if (d.type === 'roster') {
+        const before = new Map((p.people || []).map((x) => [x.id, x.name]));
+        const after = new Map((d.people || []).map((x) => [x.id, x.name]));
+        for (const [id, name] of after) if (!before.has(id) && id !== p.you) addSystem(`${name} joined.`);
+        for (const [id, name] of before) if (!after.has(id)) addSystem(`${name} left.`);
+        for (const [id, name] of after) if (before.has(id) && before.get(id) !== name) addSystem(`${before.get(id)} is now ${name}.`);
+        p.people = d.people || [];
+        renderPartyBar();
+      } else if (d.type === 'state' && p.role === 'guest') followHost(d.state);
       else if (d.type === 'react') floatEmoji(d.emoji);
-      else if (d.type === 'chat') addChatLine(d.name, d.text, { host: d.host });
+      else if (d.type === 'chat') addLine(`<b>${esc(d.name)}${d.host ? ' 👑' : ''}</b> ${esc(d.text)}`);
     };
     ws.onclose = () => {
       if (p.closed || party !== p) return;
       p.ws = null;
       p.retry = (p.retry || 0) + 1;
       // Never connected after a few tries: the party is full (20 people) or gone.
-      if (!p.everOpen && p.retry >= 4) { renderPartyBar('couldn\u2019t join: the party may be full or over'); return; }
+      if (!p.everOpen && p.retry >= 4) { p.failed = true; renderPartyBar(); return; }
       renderPartyBar();
       setTimeout(connectParty, Math.min(15000, 1000 * 2 ** p.retry));
     };
   }
   function startParty(code, hostKey) {
-    party = { code, hostKey: hostKey || '', role: hostKey ? 'host' : 'guest', people: 1, ws: null, lastT: 0, skew: 0, closed: false };
+    party = { code, hostKey: hostKey || '', role: hostKey ? 'host' : 'guest', people: [], ws: null, lastT: 0, skew: 0, closed: false, sync: 'catching-up' };
+    $p('.party-log').innerHTML = '';
+    $p('.party-invite').hidden = true;
     renderPartyBar();
     connectParty();
   }
@@ -764,21 +901,21 @@ export async function viewWatch(id, query, alive) {
     try { party.ws?.close(); } catch { /* ignore */ }
     party = null;
     history.replaceState(null, '', `/watch/${a.id}?ep=${current.number}`);
-    partyBar.querySelector('.party-log').innerHTML = '';
     renderPartyBar();
   }
-  $('party-btn').onclick = async () => {
+  $('party-btn').onclick = () => {
     const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     const code = Array.from(crypto.getRandomValues(new Uint8Array(6)), (n) => letters[n % letters.length]).join('');
     const hostKey = crypto.randomUUID().replace(/-/g, '');
     try { sessionStorage.setItem(PARTY_KEY(code), hostKey); } catch { /* ignore */ }
     startParty(code, hostKey);
     history.replaceState(null, '', `/watch/${a.id}?ep=${current.number}&party=${code}`);
-    const url = `${location.origin}/watch/${a.id}?ep=${current.number}&party=${code}`;
-    try { await navigator.clipboard.writeText(url); toastNote('Party started, invite copied. Send it to your friends: they follow your episode and position.'); }
-    catch { prompt('Send this invite to your friends', url); }
+    addSystem('Party started. Send the invite link to your friends.');
+    showInvite();
+    partyBar.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   };
-  const partyTimer = setInterval(sendPartyState, 3000);
+  // State every 3 s; the status line also re-checks itself (e.g. "press play" → "in sync").
+  const partyTimer = setInterval(() => { sendPartyState(); if (party?.role === 'guest') renderStatus(); }, 3000);
   let visibleFor = 0;
   const playCounter = setInterval(() => {
     if (document.visibilityState === 'visible') visibleFor += 15;

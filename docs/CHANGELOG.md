@@ -1,3 +1,10 @@
+## Watch party, rebuilt
+
+- **Why:** it said "following the host" even when nothing was synced. Guests stayed on their own default server (JoJo/Hoshi can't be moved, so they never followed); a host on a server that doesn't report its time sent "0:00, paused", pulling guests back to the start; phones waiting for a tap looked "in sync".
+- **Sync:** guests switch to the host's server automatically; the host's position is only sent when their player reports it (otherwise guests follow the episode and are told to skip by hand); "Press ▶ to join" when a guest's player is waiting for a tap.
+- **Panel:** a real party panel under the player: live dot and party code, one plain status line (in sync / catching up / press play / host left / the host's server can't share its position), an invite box with Copy and Share, who's watching (with a crown for the host and "(you)"), change your name (works without an account), a proper chat with "joined / left / moved to episode" lines and an empty state, and reactions under the chat.
+- **Room** (`functions/_lib/party.js`): keeps who's connected (display name, host or not) on the open connections and broadcasts the list; chat names come from the connection, not the message; the host's state carries their server and sub/dub.
+
 ## Two more anime servers: Rem and Ram
 
 - **Rem** (animeembed.com), second after 3ellwa: MyAnimeList ids, sub/dub, resumes (`start`), its own intro skip, lime accent, progress/ended messages and seek/play/pause commands (so it follows watch parties).

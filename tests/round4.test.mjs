@@ -7,7 +7,13 @@ import * as tmdb from '../functions/_lib/providers/tmdb.js';
 
 test('party state is cleaned: only sane show, episode and time numbers get through', () => {
   const s = cleanState({ show: '52991', ep: 3, t: 754.37, playing: 1 });
-  assert.deepEqual({ ...s, at: 0 }, { show: '52991', ep: 3, t: 754.4, playing: true, at: 0 });
+  assert.deepEqual({ ...s, at: 0 }, { show: '52991', ep: 3, t: 754.4, playing: true, server: null, cat: 'sub', at: 0 });
+  // The host's server goes along; a host whose player doesn't share its position sends t: null.
+  const t = cleanState({ show: '52991', ep: 3, t: null, playing: true, server: 'animeembed', cat: 'dub' });
+  assert.equal(t.t, null);
+  assert.equal(t.server, 'animeembed');
+  assert.equal(t.cat, 'dub');
+  assert.equal(cleanState({ show: '1', ep: 1, t: 5, server: '<b>' }).server, null);
   assert.equal(cleanState({ show: 'x', ep: 3, t: 1 }), null);
   assert.equal(cleanState({ show: '1', ep: 0, t: 1 }), null);
   assert.equal(cleanState({ show: '1', ep: 1, t: -5 }), null);
@@ -25,11 +31,12 @@ function fakeRoom() {
   };
   return { room: new PartyRoom(state), sockets, store };
 }
-const socket = () => ({ sent: [], send(m) { this.sent.push(JSON.parse(m)); }, close() {} });
+const socket = (name = 'Guest') => ({ sent: [], att: { id: name.toLowerCase(), name, lastChat: 0 }, send(m) { this.sent.push(JSON.parse(m)); }, close() {},
+  serializeAttachment(v) { this.att = v; }, deserializeAttachment() { return this.att; } });
 
 test('the party room: the first host key becomes the host, only the host moves everyone, reactions are passed on', async () => {
   const { room, store } = fakeRoom();
-  const host = socket(), guest = socket(), faker = socket();
+  const host = socket('Ali'), guest = socket('Sam'), faker = socket('Faker');
   room.state.acceptWebSocket(host, ['host']);
   room.state.acceptWebSocket(guest, ['guest']);
   room.state.acceptWebSocket(faker, ['guest']);
@@ -40,9 +47,17 @@ test('the party room: the first host key becomes the host, only the host moves e
   await room.webSocketMessage(faker, JSON.stringify({ type: 'state', show: '5501', ep: 9, t: 1, playing: true }));
   assert.equal(store.get('state').ep, 1, 'a guest cannot move the party');
   await room.webSocketMessage(guest, JSON.stringify({ type: 'react', emoji: '🔥' }));
-  assert.deepEqual(host.sent.at(-1), { type: 'react', emoji: '🔥' });
+  assert.deepEqual(host.sent.at(-1), { type: 'react', emoji: '🔥', name: 'Sam' });
   await room.webSocketMessage(guest, JSON.stringify({ type: 'react', emoji: '<script>' }));
-  assert.deepEqual(host.sent.at(-1), { type: 'react', emoji: '🔥' }, 'only the listed reactions');
+  assert.deepEqual(host.sent.at(-1), { type: 'react', emoji: '🔥', name: 'Sam' }, 'only the listed reactions');
+  // Chat uses the connection's name (a message can't pretend to be someone else).
+  await room.webSocketMessage(guest, JSON.stringify({ type: 'chat', text: 'hi', name: 'Ali' }));
+  assert.deepEqual(host.sent.at(-1), { type: 'chat', name: 'Sam', text: 'hi', host: false });
+  // Renaming updates everyone's list of who's watching.
+  await room.webSocketMessage(guest, JSON.stringify({ type: 'rename', name: 'Sammy <3' }));
+  assert.deepEqual(host.sent.at(-1).people.map((x) => [x.name, x.host]), [['Ali', true], ['Sammy 3', false], ['Faker', false]]);
+  await room.webSocketClose(faker);
+  assert.deepEqual(host.sent.at(-1).people.map((x) => x.name), ['Ali', 'Sammy 3'], 'leaving updates the list');
 });
 
 test('party requests need a good code, a WebSocket and the same origin', async () => {
