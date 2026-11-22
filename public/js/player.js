@@ -129,6 +129,14 @@ export class Player {
       this.frameTimer = setTimeout(() => {
         if (token === this.loadToken && this.busyShown) this.fail('The player did not load.');
       }, 20000);
+      // Rem and Ram say "ready" once the episode loads; their page loads fine even when the
+      // episode is missing, so no word within 25 seconds means it isn't there.
+      if (/^https:\/\/(www\.)?(animeembed\.com|aniembed\.se)\//.test(src)) {
+        clearTimeout(this.readyTimer);
+        this.readyTimer = setTimeout(() => {
+          if (token === this.loadToken && this.embedReady !== token) this.fail(`This server didn't start the episode.${this.serverHint()}`);
+        }, 25000);
+      }
     }
     this.iframe.replaceWith(frame);
     this.iframe = frame;
@@ -198,6 +206,7 @@ export class Player {
   // Playback failed: let the page try another server; show the message only if it can't.
   fail(message) {
     clearTimeout(this.frameTimer);
+    clearTimeout(this.readyTimer);
     if (this.opts.onFail?.(message)) return;
     this.msg(message);
   }
@@ -214,12 +223,14 @@ export class Player {
     this.msg('');
     this.cancelUpNext();
     clearTimeout(this.frameTimer);
+    clearTimeout(this.readyTimer);
     clearTimeout(this.errorTimer);
     this.errorTimer = null;
     this.loadToken = (this.loadToken || 0) + 1;
     this.freshIframe();
     this.video.hidden = false;
     this.embedTime = 0;
+    this.embedPaused = null;
     this.embedLastSave = 0;
     this.embedOrigin = null;
   }
@@ -240,9 +251,11 @@ export class Player {
       this.fullscreenBtn.hidden = false;
       this.embedOrigin = data.embedOrigin || new URL(data.embedUrl).origin;
       let embedUrl = data.embedUrl;
-      if (['vidnest', 'tryembed', 'vidnext', 'vidcore'].includes(data.provider) && Number.isFinite(Number(startAt)) && startAt > 5) {
+      // The start-time parameter each server understands (Rem: start, Ram: t, the rest startAt).
+      const START_PARAM = { vidnest: 'startAt', tryembed: 'startAt', vidnext: 'startAt', vidcore: 'startAt', animeembed: 'start', aniembed: 't' };
+      if (START_PARAM[data.provider] && Number.isFinite(Number(startAt)) && startAt > 5) {
         const target = new URL(embedUrl);
-        target.searchParams.set('startAt', String(Math.floor(startAt)));
+        target.searchParams.set(START_PARAM[data.provider], String(Math.floor(startAt)));
         if (data.provider === 'tryembed') target.searchParams.set('autoNext', 'false');
         embedUrl = target.toString();
       } else if (data.provider === 'tryembed') {
@@ -343,7 +356,7 @@ export class Player {
   /** Jump n seconds forward or back (arrow keys). Native video and MegaPlay. */
   seekBy(seconds) {
     if (!this.iframe.hidden) {
-      if (!this.isMegaPlay() && !this.isVidnext() && !this.isEmbedMaster()) return false;
+      if (!this.isMegaPlay() && !this.isVidnext() && !this.isEmbedMaster() && !this.isRem() && !this.isRam()) return false;
       this.userSeek = true;
       this.seekTo(Math.max(0, (this.embedTime || 0) + seconds));
       return true;
@@ -364,13 +377,14 @@ export class Player {
     if (this.isEmbedMaster()) {
       try { this.iframe.contentWindow.postMessage({ source: 'embedmaster_player_command', command: 'seek', value: Math.max(0, Math.floor(seconds)) }, this.embedOrigin); } catch { /* frame gone */ }
     }
+    this.commandEmbed('seek', { time: Math.max(0, Math.floor(seconds)) });
     this.embedTime = Math.max(0, seconds);
   }
   // ---------- watch party ----------
   /** True when this player can be moved to a time from outside (our own video, or an embed that takes seek commands). */
   canFollow() {
     if (this.iframe.hidden) return Boolean(this.video.currentSrc || this.video.src);
-    return this.isMegaPlay() || this.isVidnext() || this.isEmbedMaster();
+    return this.isMegaPlay() || this.isVidnext() || this.isEmbedMaster() || this.isRem() || this.isRam();
   }
   partySeek(seconds) {
     if (this.iframe.hidden) {
@@ -381,16 +395,39 @@ export class Player {
   }
   /** Pause or play: only our own video can be told (embedded players don't take it). */
   partyPause(paused) {
+    // Rem and Ram take play/pause commands too.
+    if (!this.iframe.hidden && (this.isRem() || this.isRam())) {
+      if (paused && this.embedPaused === false) this.commandEmbed('pause');
+      else if (!paused && this.embedPaused) this.commandEmbed('play');
+      return;
+    }
     if (!this.iframe.hidden || !this.video.src) return;
     if (paused && !this.video.paused) this.video.pause();
     else if (!paused && this.video.paused) this.video.play().catch(() => {});
   }
-  isPausedHere() { return this.iframe.hidden ? this.video.paused : null; }
+  isPausedHere() {
+    if (this.iframe.hidden) return this.video.paused;
+    return (this.isRem() || this.isRam()) && typeof this.embedPaused === 'boolean' ? this.embedPaused : null;
+  }
   /** True while our own video (Kaze) plays, not an embedded player. */
   isNative() { return this.iframe.hidden && Boolean(this.video.currentSrc || this.video.src); }
   setRate(rate) { if (this.isNative()) this.video.playbackRate = rate; }
   getRate() { return this.isNative() ? this.video.playbackRate : 1; }
 
+  isRem() { return this.embedHost() === 'animeembed.com'; }
+  isRam() { return this.embedHost() === 'aniembed.se'; }
+  embedHost() { try { return this.embedOrigin ? new URL(this.embedOrigin).hostname.replace(/^www\./, '') : ''; } catch { return ''; } }
+  /** Rem and Ram take commands (play, pause, seek), each in its own message shape. */
+  commandEmbed(name, data = {}) {
+    const w = this.iframe?.contentWindow;
+    if (!w || this.iframe.hidden) return;
+    this.commandSerial = (this.commandSerial || 0) + 1;
+    const requestId = `animee-${this.commandSerial}`;
+    try {
+      if (this.isRem()) w.postMessage({ channel: 'animeembed', version: 1, requestId, command: name, data }, this.embedOrigin);
+      else if (this.isRam()) w.postMessage({ source: 'aniembed', version: 1, type: 'command', name, requestId, data }, this.embedOrigin);
+    } catch { /* frame gone */ }
+  }
   isEmbedMaster() {
     try { return Boolean(this.embedOrigin) && /(^|\.)embedmaster\.link$/.test(new URL(this.embedOrigin).hostname); } catch { return false; }
   }
@@ -452,6 +489,31 @@ export class Player {
         this.nextBtn.hidden = !this.opts.hasNext?.();
         this.opts.onEnded?.();
       }
+      return;
+    }
+    // Rem (animeembed.com):  { channel: 'animeembed', version: 1, event, data }.
+    // Ram (aniembed.se):    { source: 'aniembed', version: 1, name, data } (progress every 5 s).
+    const rem = data.channel === 'animeembed' && data.version === 1;
+    const ram = data.source === 'aniembed' && data.version === 1 && data.type !== 'command';
+    if (rem || ram) {
+      const eventName = String(rem ? data.event : data.name || '').toLowerCase();
+      const d = data.data && typeof data.data === 'object' ? data.data : {};
+      const currentTime = Number(d.currentTime ?? d.time ?? d.position);
+      const duration = Number(d.duration);
+      this.embedReady = this.loadToken;
+      this.embedPaused = eventName === 'pause' ? true : eventName === 'play' || eventName === 'progress' ? false : this.embedPaused;
+      if (eventName === 'play' || eventName === 'progress' || currentTime > 0) this.markStarted();
+      if (Number.isFinite(currentTime) && currentTime >= 0) {
+        this.embedTime = currentTime;
+        if (eventName === 'progress' || eventName === 'pause' || eventName === 'seeked') this.saveEmbed(false, Number.isFinite(duration) ? duration : 0);
+      }
+      if (eventName === 'ended') {
+        this.embedTime = Number.isFinite(duration) && duration > 0 ? duration : this.embedTime;
+        this.saveEmbed(true, Number.isFinite(duration) ? duration : 0);
+        this.nextBtn.hidden = !this.opts.hasNext?.();
+        this.opts.onEnded?.();
+      }
+      if (eventName === 'error' && this.startedToken !== this.loadToken) this.fail(`The player reported a playback error.${this.serverHint()}`);
       return;
     }
     // vidnext (and VidNest's player) tag their messages source:'vidnest-player', with the event,

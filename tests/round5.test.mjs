@@ -80,3 +80,34 @@ test('review fixes: shared total counts every visible title; uploads may be raw 
   assert.equal(res.status, 200);
   assert.match(saved[0][1], /^WEBVTT\n\n00:00:01\.000 --> 00:00:02\.000/);
 });
+
+test('Rem (animeembed.com) and Ram (aniembed.se) are animee servers with sub and dub', async () => {
+  const { getProviderList, getSources } = await import('../functions/_lib/providers/registry.js');
+  const list = getProviderList({}).map((p) => [p.id, p.name]);
+  assert.deepEqual(list.slice(0, 2), [['megaplay', '3ellwa'], ['animeembed', 'Rem']]);
+  assert.deepEqual(list.at(-1), ['aniembed', 'Ram']);
+  const rem = await getSources('52991', 3, 'animeembed', 'dub', {});
+  assert.equal(rem.embedUrl, 'https://animeembed.com/embed/mal/52991/3?track=dub&autoPlay=1&autoNext=0&autoSkip=1&accent=C6FF3D');
+  const ram = await getSources('52991', 3, 'aniembed', 'sub', {}, { aniListId: '154587' });
+  assert.equal(ram.embedUrl, 'https://aniembed.se/e/154587/3?lang=sub&autoplay=1');
+});
+
+test('Rem and Ram are skipped when they do not have the episode, and a dead one counts as an outage', async () => {
+  const ae = await import('../functions/_lib/providers/animeembed.js');
+  const an = await import('../functions/_lib/providers/aniembed.js');
+  const original = globalThis.fetch;
+  try {
+    globalThis.fetch = async (url) => {
+      const u = new URL(String(url));
+      if (u.hostname === 'animeembed.com') return new Response('x', { status: u.pathname.includes('/99999999/') ? 404 : 200 });
+      if (u.hostname === 'aniembed.se') return new Response(u.pathname.endsWith('/999') ? "<p>Couldn't load the player</p><p>API responded with 404</p>" : '<div class="player"></div>');
+      throw new Error('unexpected ' + u);
+    };
+    assert.equal(await ae.isAvailable('99999999', 1, 'sub'), false);
+    assert.equal(await ae.isAvailable('52991', 1, 'sub'), true);
+    assert.equal(await an.isAvailable('52991', 999, 'sub', '154587'), false);
+    assert.equal(await an.isAvailable('52991', 1, 'sub', '154587'), true);
+    globalThis.fetch = async () => { throw new Error('offline'); };
+    await assert.rejects(ae.isAvailable('52991', 2, 'sub'), (e) => e.status === 502);
+  } finally { globalThis.fetch = original; }
+});

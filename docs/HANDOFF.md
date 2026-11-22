@@ -73,9 +73,13 @@ Names are deliberately neutral; ids stay real in settings, reports, logs and /ad
 
 **animee** (tried in this order, preferred server first):
 1. **3ellwa** = MegaPlay (sub/dub). Resumes and auto-skips via MegaPlay commands; fullscreen handshake.
-2. **Kaze** = AnimeParadise (sub, direct HLS in our own `<video>`, no ads).
-3. **JoJo** = VidNest (sub/dub, AniList id looked up in the browser).
-4. **Hoshi** = TryEmbed (sub/dub, AniList id; blocks automated browsers, fine for real visitors).
+2. **Rem** = animeembed.com (sub/dub, MAL id; `start`, `autoSkip`, lime `accent`; postMessage `{channel:'animeembed', version:1, event, data}`, commands play/pause/seek; operator may show ads; refuses sandboxing).
+3. **Kaze** = AnimeParadise (sub, direct HLS in our own `<video>`, no ads).
+4. **JoJo** = VidNest (sub/dub, AniList id looked up in the browser).
+5. **Hoshi** = TryEmbed (sub/dub, AniList id; blocks automated browsers, fine for real visitors).
+6. **Ram** = aniembed.se (sub/dub, AniList id; `t`, `lang`; postMessage `{source:'aniembed', version:1, name, data}`, progress every 5 s; commands `{type:'command', name, data}`).
+
+Rem and Ram are checked before the fallback uses them (Rem: 404 for unknown shows; Ram: "Couldn't load the player" for missing episodes), and in the browser a Rem/Ram player that never says "ready" within 25 s counts as failed. Don't rename them Sora/Yuki: aniembed.se has internal servers with those names.
 
 **cinemee**:
 1. **Orion** = vidnext.pro (red theme, `startAt`, progress messages, seek; Arabic subtitles). Best one.

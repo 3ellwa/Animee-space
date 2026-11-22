@@ -863,6 +863,8 @@ kbd { display: inline-block; min-width: 1.5em; padding: 0 5px; border-radius: 5p
   .btn.sm, .chip, .tab, .srv, .ep, .link-btn, .party-react button { min-height: 40px; }
   .chip, .btn.sm { display: inline-flex; align-items: center; }
 }
+/* Anything marked hidden stays hidden, even when a rule above gives it a display. */
+[hidden] { display: none !important; }
 .hist-day { margin: 20px 0 8px; font-size: 13px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--fog); }
 .hist-row { position: relative; }
 .hist-row .sched-row { padding-right: 48px; }

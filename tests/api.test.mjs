@@ -265,7 +265,7 @@ test('MAL details, episode references, and MegaPlay embeds share one stable ID',
   assert.equal(episodeData.episodes[1].number, 2);
   assert.equal(episodeData.episodes[1].isFiller, true);
   const servers = await onRequest(context('episode/20%3A2/servers'));
-  assert.deepEqual((await servers.json()).servers.map(server => server.category), ['sub', 'dub', 'sub', 'sub', 'dub', 'sub', 'dub']);
+  assert.deepEqual((await servers.json()).servers.map(server => server.category), ['sub', 'dub', 'sub', 'dub', 'sub', 'sub', 'dub', 'sub', 'dub', 'sub', 'dub']);
   const source = await onRequest(context('episode/20%3A2/sources?category=sub'));
   assert.equal((await source.json()).embedUrl, 'https://megaplay.buzz/stream/mal/20/2/sub');
 });
@@ -299,11 +299,15 @@ test('playback registry returns real provider IDs and routes sources to the sele
     [
       ['megaplay', '3ellwa', 'sub'],
       ['megaplay', '3ellwa', 'dub'],
+      ['animeembed', 'Rem', 'sub'],
+      ['animeembed', 'Rem', 'dub'],
       ['animeparadise', 'Kaze', 'sub'],
       ['vidnest', 'JoJo', 'sub'],
       ['vidnest', 'JoJo', 'dub'],
       ['tryembed', 'Hoshi', 'sub'],
       ['tryembed', 'Hoshi', 'dub'],
+      ['aniembed', 'Ram', 'sub'],
+      ['aniembed', 'Ram', 'dub'],
       ['backup-one', 'Backup One', 'sub'],
       ['backup-one', 'Backup One', 'dub'],
       ['backup-two', 'Backup Two', 'sub'],
@@ -345,11 +349,11 @@ test('strict content filtering rejects directly requested mature ratings', async
 
 test('built-in playback providers require no optional backend configuration', async () => {
   const providers = getProviderList({});
-  assert.deepEqual(providers.map(provider => provider.id), ['megaplay', 'animeparadise', 'vidnest', 'tryembed']);
+  assert.deepEqual(providers.map(provider => provider.id), ['megaplay', 'animeembed', 'animeparadise', 'vidnest', 'tryembed', 'aniembed']);
   const servers = await getServers('20', 1, {});
   assert.deepEqual(servers.map(server => [server.id, server.category]), [
-    ['megaplay', 'sub'], ['megaplay', 'dub'], ['animeparadise', 'sub'],
-    ['vidnest', 'sub'], ['vidnest', 'dub'], ['tryembed', 'sub'], ['tryembed', 'dub'],
+    ['megaplay', 'sub'], ['megaplay', 'dub'], ['animeembed', 'sub'], ['animeembed', 'dub'], ['animeparadise', 'sub'],
+    ['vidnest', 'sub'], ['vidnest', 'dub'], ['tryembed', 'sub'], ['tryembed', 'dub'], ['aniembed', 'sub'], ['aniembed', 'dub'],
   ]);
   assert.ok(!providers.some(provider => provider.id === 'anikoto'), 'Anikoto playback uses MegaPlay and is not counted as an independent source');
 });
@@ -462,6 +466,7 @@ test('automatic fallback tries providers sequentially when earlier providers fai
     const target = new URL(String(url));
     calls.push(target.toString());
     if (target.hostname === 'megaplay.buzz') return new Response('<title>Error - MegaPlay</title>');
+    if (target.hostname === 'animeembed.com') return new Response('not found', { status: 404 }); // Rem doesn't have it
     if (target.hostname === 'api.tenrai.org' && target.pathname.endsWith('/full')) return Response.json(detailPayload(Number(id)));
     if (target.hostname === 'api.animeparadise.moe' && target.pathname === '/search') {
       return Response.json({ data: [{ _id: 'ap-show', title: 'Sample Anime', year: 2020 }] });
@@ -689,7 +694,7 @@ test('when no server plays, visitors see a plain message without upstream site n
     assert.equal(res.status, 502);
     const { error } = await res.json();
     assert.match(error, /No server could play this episode/);
-    assert.doesNotMatch(error, /megaplay|animeparadise|vidnest|tryembed|anilist/i);
+    assert.doesNotMatch(error, /megaplay|animeparadise|vidnest|tryembed|animeembed|aniembed|anilist/i);
   } finally {
     console.warn = warn;
   }

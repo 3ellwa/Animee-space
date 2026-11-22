@@ -10,6 +10,7 @@ anything that fails, note the page, the server name and what you saw.
 - [ ] **Search:** type `frirean` → Frieren is first. Click the empty box → recent searches.
 - [ ] **Title page:** rate it (★ Rate it), click the trailer → it plays. Poster ＋ menu → rate from there too.
 - [ ] **Watch (3ellwa):** plays, resumes where you left off, ← → jump 10 s, auto-skip intro works.
+- [ ] **Watch (Rem and Ram):** each plays, resumes where you left off, and ← → jumps 10 s (Rem also in a party: pause follows).
 - [ ] **Watch (Kaze):** speed button appears; set 1.5×, go to the next episode → still 1.5×.
 - [ ] **Click a server that fails** → a note says which one is playing instead, and next time your old
       default is still the default.

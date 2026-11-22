@@ -1,3 +1,10 @@
+## Two more anime servers: Rem and Ram
+
+- **Rem** (animeembed.com), second after 3ellwa: MyAnimeList ids, sub/dub, resumes (`start`), its own intro skip, lime accent, progress/ended messages and seek/play/pause commands (so it follows watch parties).
+- **Ram** (aniembed.se), last: AniList ids, sub/dub, resumes (`t`), progress every 5 s and seek/play/pause commands.
+- The fallback checks Rem and Ram have the show/episode before using them (and counts an unreachable one as an outage); a Rem/Ram player that never says "ready" within 25 s moves on to the next server.
+- Fix: the watch-party bar and the speed button showed on every watch page (a `display` rule beat `hidden`); `[hidden]` now always wins.
+
 ## Audit fixes, code review fixes, app.js split, browser tests
 
 - From the November audit (most of it was already done): a clicked server only becomes your default once it actually plays, and a note says which one played instead; "Not interested" once on title pages; trailers load on click; recommendation titles follow the English-titles setting; ~40 px tap targets on phones; "Sign in" no longer wraps. Fixed along the way: `split(/s+/)` and `[^p{L}p{N}]` in tenrai.js had lost their backslashes.
