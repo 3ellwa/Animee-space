@@ -1,3 +1,9 @@
+## my space: the desktop app, and my.animee.space
+
+- `desktop/`: an Electron app for Windows showing animee, cinemee and mangee (Ctrl+1/2/3), with Discord presence built in (reads `#now-playing`), Ghostery's ad and tracker blocker, links to other sites opening in your browser, and self-updates from GitHub releases. See `desktop/README.md` for releasing.
+- my.animee.space (`functions/_lib/myspace.js`, `public/sites/my/`): the download page; `/download` goes straight to the newest installer, `/latest.json` gives its version and size.
+- "Get the app" in every site's footer (hidden inside the app). New icon: the ^^. mark in all three colours (`scripts/make-icons.mjs`).
+
 ## Discord presence
 
 - The watch page and the reader publish what's playing as JSON in `<script id="now-playing" type="application/json">` (`public/js/nowplaying.js`): site, title, episode or chapter, season, position, length, paused, cover, link. Updated every 5 s while watching, on every page turn while reading, removed when you leave.

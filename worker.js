@@ -3,6 +3,7 @@ import { onRequest } from "./functions/api/[[path]].js";
 import { ASSETS } from "./worker-assets.js";
 import * as seo from "./functions/_lib/seo.js";
 import { runPushCheck } from "./functions/_lib/push.js";
+import { handleMy } from "./functions/_lib/myspace.js";
 import { SITES, siteOf, siteEnv, brandShell, brandServiceWorker } from "./functions/_lib/site.js";
 
 const TYPES = {".html":"text/html; charset=utf-8",".css":"text/css; charset=utf-8",".js":"text/javascript; charset=utf-8",".svg":"image/svg+xml",".txt":"text/plain; charset=utf-8",".png":"image/png",".webmanifest":"application/manifest+json",".woff2":"font/woff2",".xml":"application/xml; charset=utf-8"};
@@ -102,6 +103,10 @@ export default {
     if (url.protocol === "http:" && !/^(localhost|127\.0\.0\.1|\[::1\])$|\.localhost$/.test(url.hostname)) {
       url.protocol = "https:";
       return Response.redirect(url.toString(), 301);
+    }
+    // my.animee.space: the desktop app's download page (functions/_lib/myspace.js).
+    if (/^my\./.test(url.hostname)) {
+      return (await handleMy(request, url, ctx, file)) || new Response("Not found", { status: 404, headers: { "X-Robots-Tag": "noindex" } });
     }
     // animee or cinemee, by address; cinemee gets its own database (see functions/_lib/site.js).
     const site = siteOf(request.url);

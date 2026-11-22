@@ -588,6 +588,9 @@ button.tab { color: inherit; }
 .footer-links { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 12px; font-size: 14px; max-width: 560px; }
 .footer-links a { color: var(--fog); transition: color var(--dur-fast); }
 .footer-links a:hover { color: var(--lime); }
+/* "Get the app": my space in its colours; hidden inside the app itself (desktop/preload.js). */
+.footer-links .app-link { background: linear-gradient(120deg, #c6ff3d, #ff3d52 55%, #ffe81f); -webkit-background-clip: text; background-clip: text; color: transparent; font-weight: 600; }
+.in-app .app-link { display: none; }
 
 /* ---------- idle whisper ---------- */
 .whisper { position: fixed; inset: 0; z-index: 140; display: grid; place-items: center; pointer-events: none; opacity: 0;
