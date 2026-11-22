@@ -11,8 +11,8 @@ const browsingTimestamp = Math.floor(Date.now() / 1000)
 
 const LOGOS: Record<string, string> = {
   animee: 'https://animee.space/icons/icon-512.png',
-  cinemee: 'https://animee.space/sites/cinemee/icons/icon-512.png',
-  mangee: 'https://animee.space/sites/mangee/icons/icon-512.png',
+  cinemee: 'https://cinemee.animee.space/icons/icon-512.png',
+  mangee: 'https://mangee.animee.space/icons/icon-512.png',
 }
 
 interface NowPlaying {
