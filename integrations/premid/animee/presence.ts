@@ -4,6 +4,8 @@
 // <script id="now-playing" type="application/json"> (public/js/nowplaying.js), so this file
 // only reads that block. Elsewhere on the sites it shows "Browsing".
 
+import { ActivityType, Assets } from 'premid'
+
 const presence = new Presence({ clientId: '1574094254597341214' })
 const browsingTimestamp = Math.floor(Date.now() / 1000)
 
