@@ -82,6 +82,13 @@
   --zest: #FF8F9B;
   --moss: #C21430;
 }
+/* mangee (manga) is the same design in neon yellow. */
+:root[data-site="mangee"] {
+  --lime: #FFE81F;
+  --lime-rgb: 255 232 31;
+  --zest: #FFF59A;
+  --moss: #B8A400;
+}
 
 /* ---------- base ---------- */
 * { box-sizing: border-box; }
@@ -827,6 +834,7 @@ kbd { display: inline-block; min-width: 1.5em; padding: 0 5px; border-radius: 5p
 .cont.sibling { border-color: rgb(var(--sib-rgb) / .35); }
 :root { --sib-rgb: 255 61 82; }
 :root[data-site="cinemee"] { --sib-rgb: 198 255 61; }
+:root[data-site="mangee"] { --sib-rgb: 198 255 61; }
 .hover-card { position: fixed; z-index: 90; width: 340px; border-radius: 16px; overflow: hidden; background: rgb(14 16 18 / .98); border: 1px solid rgb(var(--lime-rgb) / .35); box-shadow: 0 20px 60px rgb(0 0 0 / .6); animation: hc-in .18s var(--ease, ease-out); }
 .hover-card iframe, .hover-card > img { display: block; width: 100%; aspect-ratio: 16 / 9; border: 0; object-fit: cover; background: #000; pointer-events: none; }
 .hover-card .hc-body { padding: 12px 14px 14px; }
@@ -921,7 +929,7 @@ kbd { display: inline-block; min-width: 1.5em; padding: 0 5px; border-radius: 5p
 .footer-credit a { color: var(--fog); }
 
 /* cinemee: hide what only applies to anime (sub/dub, Japanese titles, AniList/MAL import, JST calendar). */
-:root[data-site="cinemee"] .anime-only { display: none !important; }
+:root[data-site="cinemee"] .anime-only, :root[data-site="mangee"] .anime-only, :root[data-site="mangee"] .video-only { display: none !important; }
 /* A movie has a single "episode": no episode list beside the player. */
 .watch-grid.is-movie > aside { display: none; }
 .watch-grid.is-movie { grid-template-columns: 1fr; }
@@ -1094,4 +1102,32 @@ kbd { display: inline-block; min-width: 1.5em; padding: 0 5px; border-radius: 5p
   .list-status-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-right: -10px; padding-right: 10px; }
   .list-status-tabs::-webkit-scrollbar { display: none; }
   .list-status-tabs .tab small { display: inline; margin-left: 4px; }
+}
+
+/* ---------- mangee's reader ---------- */
+.reader { margin-top: 10px; }
+.rd-bar { position: sticky; top: calc(var(--nav-h, 70px) + 8px); z-index: 20; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; border-radius: 16px; border: 1px solid var(--line); background: rgb(14 16 18 / .94); backdrop-filter: blur(10px); }
+.rd-title { display: grid; gap: 2px; min-width: 0; }
+.rd-title > a { color: var(--fog); font-size: 12.5px; }
+.rd-title b { font-size: 15px; }
+.rd-title small { color: var(--fog); font-size: 12px; }
+.rd-title small a { color: var(--lime); }
+.rd-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.rd-select { max-width: 220px; padding: 6px 10px; border-radius: 999px; border: 1px solid var(--line); background: rgb(26 29 34 / .8); color: var(--paper); font: inherit; font-size: 13px; }
+.rd-pages { margin: 14px auto 0; max-width: 860px; }
+.rd-pages.scroll { display: flex; flex-direction: column; }
+.rd-pages.scroll img { display: block; width: 100%; height: auto; min-height: 200px; background: #111; }
+.rd-pages.pages { position: relative; display: grid; place-items: center; }
+.rd-pages.pages img { display: block; max-width: 100%; max-height: calc(100vh - 150px); height: auto; background: #111; }
+.rd-tap { position: absolute; top: 0; bottom: 0; width: 40%; border: 0; background: transparent; cursor: pointer; z-index: 2; }
+.rd-tap-l { left: 0; cursor: w-resize; }
+.rd-tap-r { right: 0; cursor: e-resize; }
+.rd-count { margin-top: 8px; color: var(--fog); font-size: 13px; text-align: center; }
+.rd-end { margin: 22px auto 40px; max-width: 860px; text-align: center; display: grid; gap: 10px; justify-items: center; }
+.reader-loading { padding: 80px 0; }
+@media (max-width: 600px) {
+  .rd-bar { position: static; padding: 8px 10px; border-radius: 12px; } /* on a phone the pages get the whole screen */
+  .rd-title b { font-size: 14px; }
+  .rd-pages { margin: 10px -10px 0; }
+  .rd-select { max-width: 140px; }
 }

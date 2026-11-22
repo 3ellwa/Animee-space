@@ -10,7 +10,7 @@
 //   m  cached title/cover for display — local only, never uploaded
 
 import { api } from './api.js';
-import { BRAND } from './site.js';
+import { BRAND, IS_MANGEE } from './site.js';
 
 const PREFIX = 'animee-space:';
 const read = (key, fallback) => {
@@ -30,8 +30,8 @@ const learnClock = (serverNow) => {
 const now = () => Math.floor(Date.now() / 1000) + clockOffset;
 
 export const LIST_STATUSES = [
-  ['watching', 'Watching'],
-  ['planning', 'Plan to watch'],
+  ['watching', IS_MANGEE ? 'Reading' : 'Watching'],
+  ['planning', IS_MANGEE ? 'Plan to read' : 'Plan to watch'],
   ['completed', 'Completed'],
   ['paused', 'On hold'],
   ['dropped', 'Dropped'],

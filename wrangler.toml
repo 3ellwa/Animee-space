@@ -16,6 +16,14 @@ database_name = "cinemee"
 database_id = "8d5e8fed-c4a9-45c1-b980-da965bd249d2"
 migrations_dir = "migrations"
 
+# mangee (mangee.animee.space): manga from MangaDex. Its own lists and progress; accounts are shared
+# with animee (functions/_lib/site.js). Same tables, plus titles (MangaDex id -> number).
+[[d1_databases]]
+binding = "MANGEE_DB"
+database_name = "mangee"
+database_id = "0244986e-ea88-43ac-9639-eb39b5653353"
+migrations_dir = "migrations"
+
 [vars]
 ANIMEE_EMBED_PROVIDERS = "[]"
 

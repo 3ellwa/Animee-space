@@ -5,7 +5,7 @@ import { Player } from '../player.js';
 import * as inbox from '../inbox.js';
 import * as push from '../push.js';
 import * as aniList from '../anilist.js';
-import { BRAND, IS_CINEMEE, SIBLING } from '../site.js';
+import { BRAND, IS_CINEMEE, IS_MANGEE, SIBLING } from '../site.js';
 import { app, card, checkNewEpisodes, contCard, esc, grid, loader, parseHash, section } from '../app.js';
 
 // ---------- new for you ----------
@@ -50,7 +50,9 @@ export async function viewNew(alive) {
 // ---------- what's new ----------
 // A small bar under the menu after an update, with the dated list one tap away. "Got it" hides it
 // until the next update (per browser).
-export const NEWS = IS_CINEMEE ? [
+export const NEWS = IS_MANGEE ? [
+  ['Nov 25', ['Welcome to mangee: manga from MangaDex, with the same lists, sync and pop-ups', 'Read by scrolling or one page at a time', 'Your exact page is saved', 'Arabic chapters in Settings', 'One account for animee, cinemee and mangee']],
+] : IS_CINEMEE ? [
   ['Nov 24', ['Rate anything 1-10, and see your ratings in Stats', 'Share your list with a link (Account)', 'Popular on cinemee this week', 'Chat in watch parties', 'Use your own .srt subtitles (CC button, Atlas server)']],
   ['Nov 23', ['Watch party: friends follow your episode and position, with reactions', 'Search finds titles even with typos, and remembers your recent searches', 'Weekly summary pop-ups (Settings)', 'Switch to where you are on your other device', 'My list, History and Stats open offline']],
   ['Nov 22', ['Seasons on TV pages, and season by season in the episode list', 'Hover a poster for its trailer', 'Share a moment: a link that opens at the exact minute', 'Continue on animee, right here', 'Real air times for TV', 'IMDb and Rotten Tomatoes scores', 'Search and remove items in History']],

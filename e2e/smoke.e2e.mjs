@@ -14,6 +14,7 @@ import { chromium } from 'playwright-core';
 
 const BASE = process.env.BASE || 'http://localhost:8787';
 const CINEMEE = process.env.CINEMEE_BASE || 'http://cinemee.localhost:8787';
+const MANGEE = process.env.MANGEE_BASE || 'http://mangee.localhost:8787';
 const BROWSERS = [
   process.env.CHROME_PATH,
   'C:/Program Files/Google/Chrome/Application/chrome.exe',
@@ -25,7 +26,7 @@ let browser;
 before(async () => {
   const executablePath = BROWSERS.find((p) => existsSync(p));
   assert.ok(executablePath, 'No Chrome or Edge found: set CHROME_PATH');
-  browser = await chromium.launch({ executablePath, headless: true, args: ['--host-resolver-rules=MAP cinemee.localhost 127.0.0.1'] });
+  browser = await chromium.launch({ executablePath, headless: true, args: ['--host-resolver-rules=MAP cinemee.localhost 127.0.0.1, MAP mangee.localhost 127.0.0.1'] });
 });
 after(async () => { await browser?.close(); });
 
@@ -103,3 +104,34 @@ test('cinemee watch page picks episodes season by season (?season=2 opens S2 E1)
 });
 test('cinemee schedule', () => check(CINEMEE + '/schedule', '#sched .sched-row, #sched .empty'));
 test('cinemee search corrects typos', () => check(CINEMEE + '/search?q=intersteller', '.grid .card', { text: /Interstellar/i }));
+
+// ---------- mangee ----------
+test('mangee home is neon yellow and has manga rows', async () => {
+  const { page, errors, close } = await open(MANGEE + '/');
+  try {
+    assert.equal(await page.getAttribute('html', 'data-site'), 'mangee');
+    await page.waitForSelector('#home-genres .chip', { timeout: 30000 });
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+test('mangee search finds a manga and its page offers reading', async () => {
+  const { page, errors, close } = await open(MANGEE + '/search?q=chainsaw%20man', { wait: '.grid .card' });
+  try {
+    await page.click('.grid .card');
+    await page.waitForSelector('.hero .btn.primary', { timeout: 30000 });
+    assert.match(await page.locator('.hero .btn.primary').first().innerText(), /Read now|Continue reading|Read it officially/);
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+test('the mangee reader shows real pages and credits the group', async () => {
+  const { page, errors, close } = await open(MANGEE + '/search?q=chainsaw%20man', { wait: '.grid .card' });
+  try {
+    const href = await page.locator('.grid .card').first().getAttribute('href');
+    const id = href.split('/')[2];
+    await page.goto(`${MANGEE}/watch/${id}?ep=1`);
+    await page.waitForSelector('#rd-pages img', { timeout: 30000 });
+    await page.waitForFunction(() => { const i = document.querySelector('#rd-pages img'); return i && i.complete && i.naturalWidth > 100; }, null, { timeout: 30000 });
+    assert.match(await page.locator('#rd-credit').innerText(), /MangaDex/);
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});

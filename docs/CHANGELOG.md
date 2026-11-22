@@ -1,3 +1,11 @@
+## One account for every site, and mangee (manga)
+
+- **One account:** accounts live in animee's database (`USERS_DB` in `siteEnv`); each site keeps its own lists and progress in its own database under the same id. The login cookie is now `am_session` with `Domain=animee.space` on the live sites, so signing in once works on all three (old `as_session` cookies no longer count: sign in once more). Deleting an account clears it on every site. The existing cinemee account had the same name and id as the animee one, so nothing needed moving.
+- **mangee** (mangee.animee.space, neon yellow `#FFE81F`): manga from MangaDex (`functions/_lib/providers/mangadex.js`, same shape as the other catalogues). MangaDex UUIDs get plain numbers in mangee's own D1 database (`MANGEE_DB`, table `titles`, migration 0005). Home rows only show series with readable English chapters; licensed series are still searchable, marked "No chapters here" with the official link when MangaDex has one.
+- **Reader** (`public/js/views/read.js`, at `/watch/<id>?ep=N`): scroll down (default) or one page at a time (tap the sides, ← →), chapter picker, Prev/Next, data saver or full quality, your exact page saved and restored, chapters marked read at the last page, scanlation group credited on every chapter. Settings → Reading: English, Arabic, or both (Arabic first).
+- **Images** (`functions/_lib/mdimg.js`, `/api/mdimg?u=`): covers and pages proxied (MangaDex blocks hotlinking), only MangaDex hosts, pages edge-cached by content hash, MangaDex@Home loads reported to api.mangadex.network as their rules ask.
+- Also: pop-ups for new chapters (cron), "Continue on…" works between all three sites, search-engine pages for /manga/<id>/<slug>, footer credit to MangaDex.
+
 ## Polish: phones, the watch page, small rough edges
 
 - **Phones are a step smaller and calmer:** 14 px text, tighter spacing, compact buttons/chips/tabs (touch targets ≥ 34 px), smaller headlines and spotlight, 16 px inputs (no iOS zoom). One block at the end of style.css.

@@ -12,7 +12,7 @@
 //
 // A row is { a, s, ep, t, d, w, u } — see migrations/0001_accounts.sql.
 
-import { hashPassword, verifyPassword, sessionCookie, clearCookie, currentUser, calendarToken } from './auth.js';
+import { hashPassword, verifyPassword, sessionCookie, clearCookie, currentUser, calendarToken, usersDb } from './auth.js';
 import { SHARE_BITS, shareMode, shareBits } from './share.js';
 
 const MAX_ROWS_PER_USER = 5000;
@@ -115,6 +115,11 @@ async function limit(binding, keys) {
 }
 const clientIp = (request) => request.headers.get('CF-Connecting-IP') || 'local';
 
+/** Every site's own database (lists, progress, requests): animee's, cinemee's, mangee's. */
+function siteDatabases(env) {
+  return [...new Set([usersDb(env), env.DB, env.CINEMEE_DB, env.MANGEE_DB].filter(Boolean))];
+}
+
 // ---------- handlers ----------
 const USERNAME = /^[a-z0-9_]{3,20}$/;
 
@@ -126,13 +131,13 @@ async function register(request, env) {
   if (password.length < 8 || password.length > 128) throw fail(400, 'Password must be at least 8 characters');
   await limit(env.REGISTER_LIMITER, ['reg:' + clientIp(request)]);
 
-  const exists = await env.DB.prepare('SELECT 1 FROM users WHERE name = ?').bind(name).first();
+  const exists = await usersDb(env).prepare('SELECT 1 FROM users WHERE name = ?').bind(name).first();
   if (exists) throw fail(409, 'That username is taken');
 
   const pass = await hashPassword(password);
-  const user = await env.DB.prepare('INSERT INTO users (name, pass, created) VALUES (?, ?, ?) RETURNING id, name, ver, prefs')
+  const user = await usersDb(env).prepare('INSERT INTO users (name, pass, created) VALUES (?, ?, ?) RETURNING id, name, ver, prefs')
     .bind(name, pass, now()).first();
-  return json({ user: { id: user.id, name: user.name } }, 201, { 'Set-Cookie': await sessionCookie(env, user) });
+  return json({ user: { id: user.id, name: user.name } }, 201, { 'Set-Cookie': await sessionCookie(env, user, request.url) });
 }
 
 async function login(request, env) {
@@ -141,12 +146,12 @@ async function login(request, env) {
   const password = String(body.password || '');
   await limit(env.LOGIN_LIMITER, ['ip:' + clientIp(request), ...(USERNAME.test(name) ? ['user:' + name] : [])]);
   const user = USERNAME.test(name)
-    ? await env.DB.prepare('SELECT id, name, pass, ver, prefs FROM users WHERE name = ?').bind(name).first()
+    ? await usersDb(env).prepare('SELECT id, name, pass, ver, prefs FROM users WHERE name = ?').bind(name).first()
     : null;
   // always run a hash so response time doesn't reveal which usernames exist
   const ok = user ? await verifyPassword(password, user.pass) : (await hashPassword(password), false);
   if (!ok) throw fail(401, 'Wrong username or password');
-  return json({ user: { id: user.id, name: user.name } }, 200, { 'Set-Cookie': await sessionCookie(env, user) });
+  return json({ user: { id: user.id, name: user.name } }, 200, { 'Set-Cookie': await sessionCookie(env, user, request.url) });
 }
 
 async function pull(env, user) {
@@ -162,7 +167,8 @@ async function push(request, env, user) {
 
   // Playback prefs are the low 4 bits; the list-sharing bits (share.js) are left as they are.
   if (Number.isInteger(body.prefs) && body.prefs >= 0 && body.prefs < 16 && body.prefs !== (user.prefs & 15)) {
-    stmts.push(env.DB.prepare('UPDATE users SET prefs = (prefs & ?) | ? WHERE id = ?').bind(SHARE_BITS, body.prefs, user.id));
+    // Accounts live in the shared users database; this runs on its own, not in the site's batch.
+    await usersDb(env).prepare('UPDATE users SET prefs = (prefs & ?) | ? WHERE id = ?').bind(SHARE_BITS, body.prefs, user.id).run();
     user.prefs = (user.prefs & SHARE_BITS) | body.prefs;
   }
 
@@ -221,7 +227,7 @@ export async function handleAccount(context, parts) {
     if (area === 'auth') {
       if (action === 'register' && method === 'POST') return await register(request, env);
       if (action === 'login' && method === 'POST') return await login(request, env);
-      if (action === 'logout' && method === 'POST') return json({ ok: true }, 200, { 'Set-Cookie': clearCookie() });
+      if (action === 'logout' && method === 'POST') return json({ ok: true }, 200, { 'Set-Cookie': clearCookie(request.url) });
       if (action === 'me' && method === 'GET') {
         const user = await currentUser(request, env);
         return json({ user: user ? { id: user.id, name: user.name } : null });
@@ -233,26 +239,26 @@ export async function handleAccount(context, parts) {
         if (!user) throw fail(401, 'Not signed in');
         const body = await readBody(request);
         await limit(env.LOGIN_LIMITER, ['ip:' + clientIp(request), 'user:' + user.name]);
-        const row = await env.DB.prepare('SELECT pass FROM users WHERE id = ?').bind(user.id).first();
+        const row = await usersDb(env).prepare('SELECT pass FROM users WHERE id = ?').bind(user.id).first();
         if (!row || !(await verifyPassword(String(body.password || ''), row.pass))) throw fail(401, 'Wrong password');
-        await env.DB.batch([
-          env.DB.prepare('DELETE FROM library WHERE user_id = ?').bind(user.id),
-          env.DB.prepare('UPDATE requests SET user_id = NULL WHERE user_id = ?').bind(user.id),
-          env.DB.prepare('DELETE FROM users WHERE id = ?').bind(user.id),
-        ]).catch(async (err) => {
-          // The requests table may not exist yet; delete the rest without it.
-          if (!/no such table/i.test(String(err?.message))) throw err;
-          await env.DB.batch([
-            env.DB.prepare('DELETE FROM library WHERE user_id = ?').bind(user.id),
-            env.DB.prepare('DELETE FROM users WHERE id = ?').bind(user.id),
-          ]);
-        });
-        return json({ ok: true }, 200, { 'Set-Cookie': clearCookie() });
+        // One account, several sites: clear its lists and requests on every site's database.
+        for (const db of siteDatabases(env)) {
+          await db.batch([
+            db.prepare('DELETE FROM library WHERE user_id = ?').bind(user.id),
+            db.prepare('UPDATE requests SET user_id = NULL WHERE user_id = ?').bind(user.id),
+          ]).catch(async (err) => {
+            // The requests table may not exist yet there; delete the list without it.
+            if (!/no such table/i.test(String(err?.message))) throw err;
+            await db.prepare('DELETE FROM library WHERE user_id = ?').bind(user.id).run();
+          });
+        }
+        await usersDb(env).prepare('DELETE FROM users WHERE id = ?').bind(user.id).run();
+        return json({ ok: true }, 200, { 'Set-Cookie': clearCookie(request.url) });
       }
       if (action === 'logout-all' && method === 'POST') {
         const user = await currentUser(request, env);
-        if (user) await env.DB.prepare('UPDATE users SET ver = ver + 1 WHERE id = ?').bind(user.id).run();
-        return json({ ok: true }, 200, { 'Set-Cookie': clearCookie() });
+        if (user) await usersDb(env).prepare('UPDATE users SET ver = ver + 1 WHERE id = ?').bind(user.id).run();
+        return json({ ok: true }, 200, { 'Set-Cookie': clearCookie(request.url) });
       }
     }
 
@@ -267,7 +273,7 @@ export async function handleAccount(context, parts) {
       if (action === 'share' && method === 'POST') {
         const body = await readBody(request);
         const mode = ['off', 'all', 'favourites'].includes(body.mode) ? body.mode : 'off';
-        await env.DB.prepare('UPDATE users SET prefs = (prefs & ?) | ? WHERE id = ?').bind(~SHARE_BITS & 0xffff, shareBits(mode), user.id).run();
+        await usersDb(env).prepare('UPDATE users SET prefs = (prefs & ?) | ? WHERE id = ?').bind(~SHARE_BITS & 0xffff, shareBits(mode), user.id).run();
         return json({ mode, url: `${new URL(request.url).origin}/u/${user.name}` });
       }
       if (action === 'calendar' && method === 'GET') {

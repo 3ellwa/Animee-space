@@ -14,7 +14,7 @@ function bodyOf(key, value) { if (typeof value === "string") return value; if (!
 // Scripts: only this site, Cloudflare analytics, and the one pinned hls.js version (player.js loads it
 // on demand and checks its hash). JSON-LD blocks are data, not scripts, so CSP doesn't apply to them.
 // frame-src stays open to https: because ANIMEE_EMBED_PROVIDERS can add embed hosts without a code change.
-const CSP = ["default-src 'self'","script-src 'self' https://static.cloudflareinsights.com https://cdn.jsdelivr.net/npm/hls.js@1.7.4/","style-src 'self' 'unsafe-inline'","img-src 'self' data: https:","connect-src 'self' https: https://cloudflareinsights.com http://localhost:8787 http://cinemee.localhost:8787 wss: ws://localhost:8787 ws://cinemee.localhost:8787","media-src 'self' blob: https:","worker-src 'self' blob:","frame-src https://megaplay.buzz https://www.youtube-nocookie.com https:","object-src 'none'","base-uri 'self'","form-action 'self'","frame-ancestors 'none'"].join("; ");
+const CSP = ["default-src 'self'","script-src 'self' https://static.cloudflareinsights.com https://cdn.jsdelivr.net/npm/hls.js@1.7.4/","style-src 'self' 'unsafe-inline'","img-src 'self' data: https:","connect-src 'self' https: https://cloudflareinsights.com http://localhost:8787 http://cinemee.localhost:8787 http://mangee.localhost:8787 wss: ws://localhost:8787 ws://cinemee.localhost:8787 ws://mangee.localhost:8787","media-src 'self' blob: https:","worker-src 'self' blob:","frame-src https://megaplay.buzz https://www.youtube-nocookie.com https:","object-src 'none'","base-uri 'self'","form-action 'self'","frame-ancestors 'none'"].join("; ");
 const SECURITY = {"X-Content-Type-Options":"nosniff","Referrer-Policy":"strict-origin-when-cross-origin","Content-Security-Policy":CSP,"X-Frame-Options":"DENY","Strict-Transport-Security":"max-age=31536000","Permissions-Policy":"camera=(), microphone=(), geolocation=(), payment=(), usb=()"};
 
 function cacheControl(key) {
@@ -134,5 +134,6 @@ export default {
   async scheduled(event, env, ctx) {
     ctx.waitUntil(runPushCheck(siteEnv(env, "animee")).catch((err) => console.error("push check failed", err)));
     if (env.CINEMEE_DB) ctx.waitUntil(runPushCheck(siteEnv(env, "cinemee")).catch((err) => console.error("cinemee push check failed", err)));
+    if (env.MANGEE_DB) ctx.waitUntil(runPushCheck(siteEnv(env, "mangee")).catch((err) => console.error("mangee push check failed", err)));
   },
 };

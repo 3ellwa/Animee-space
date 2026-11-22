@@ -5,7 +5,7 @@ import './fx.js';
 import * as inbox from './inbox.js';
 import * as push from './push.js';
 import * as aniList from './anilist.js';
-import { BRAND, IS_CINEMEE, SIBLING } from './site.js';
+import { BRAND, IS_CINEMEE, IS_MANGEE, SIBLING, WORDS } from './site.js';
 import { viewAccount } from './views/account.js';
 import { viewAdmin } from './views/admin.js';
 import { viewAZ, viewPick, viewSchedule } from './views/discover.js';
@@ -13,6 +13,7 @@ import { showNews, viewMe, viewNew, viewRequests } from './views/hub.js';
 import { viewShared, viewStats, viewWatchlist } from './views/lists.js';
 import { viewSettings } from './views/settings.js';
 import { viewWatch } from './views/watch.js';
+import { viewRead } from './views/read.js';
 
 export const app = document.getElementById('app');
 export let cleanups = [];
@@ -20,10 +21,12 @@ export let navToken = 0;
 
 // ---------- helpers ----------
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-export const FORMAT = { TV: IS_CINEMEE ? 'TV series' : 'TV', TV_SHORT: 'TV Short', TV_SPECIAL: 'TV Special', MOVIE: 'Movie', SPECIAL: 'Special', OVA: 'OVA', ONA: 'ONA', MUSIC: 'Music' };
+export const FORMAT = { TV: IS_CINEMEE ? 'TV series' : 'TV', TV_SHORT: 'TV Short', TV_SPECIAL: 'TV Special', MOVIE: 'Movie', SPECIAL: 'Special', OVA: 'OVA', ONA: 'ONA', MUSIC: 'Music', MANGA: 'Manga', MANHWA: 'Manhwa', MANHUA: 'Manhua', ONE_SHOT: 'Oneshot' };
 export const STATUS = IS_CINEMEE
   ? { RELEASING: 'On air', FINISHED: 'Complete', NOT_YET_RELEASED: 'Coming soon', CANCELLED: 'Cancelled', HIATUS: 'Hiatus' }
-  : { RELEASING: 'Airing', FINISHED: 'Finished', NOT_YET_RELEASED: 'Upcoming', CANCELLED: 'Cancelled', HIATUS: 'Hiatus' };
+  : IS_MANGEE
+    ? { RELEASING: 'Ongoing', FINISHED: 'Completed', NOT_YET_RELEASED: 'Upcoming', CANCELLED: 'Cancelled', HIATUS: 'Hiatus' }
+    : { RELEASING: 'Airing', FINISHED: 'Finished', NOT_YET_RELEASED: 'Upcoming', CANCELLED: 'Cancelled', HIATUS: 'Hiatus' };
 export const SEASON = { WINTER: 'Winter', SPRING: 'Spring', SUMMER: 'Summer', FALL: 'Fall' };
 export const TYPE_OPTIONS = IS_CINEMEE ? [['movie', 'Movie'], ['tv', 'TV show']]
   : [['tv', 'TV series'], ['movie', 'Movie'], ['ova', 'OVA'], ['ona', 'ONA'], ['special', 'Special'], ['music', 'Music']];
@@ -45,6 +48,7 @@ export const isMovie = (a) => IS_CINEMEE && (a?.format === 'MOVIE' || /1$/.test(
 export const epName = (ep) => (ep?.label ? ep.label : `Episode ${ep?.number ?? ep}`);
 // How long a title is, for chips and cards.
 export function lengthLabel(a) {
+  if (IS_MANGEE) return a.availableEpisodes ? plural(a.availableEpisodes, 'chapter') : (a.episodes ? plural(a.episodes, 'chapter') : '');
   if (!IS_CINEMEE) return `${epsLabel(a)} eps`;
   if (isMovie(a)) return a.duration ? `${Math.floor(a.duration / 60) ? `${Math.floor(a.duration / 60)}h ` : ''}${a.duration % 60}m` : '';
   return [a.seasonCount ? `${a.seasonCount} season${a.seasonCount === 1 ? '' : 's'}` : '', a.availableEpisodes ? plural(a.availableEpisodes, 'episode') : ''].filter(Boolean).join(' · ');
@@ -230,7 +234,7 @@ export function parseHash() {
 export const slugify = (t) => String(t || '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80);
 // The English title makes the slug, so a show keeps one address whatever the title setting.
 // animee: /anime/123/slug. cinemee: /movie/5501/fight-club or /tv/13992/game-of-thrones.
-export const animeHref = (a) => `/${IS_CINEMEE ? (/1$/.test(String(a.id)) ? 'movie' : 'tv') : 'anime'}/${a.id}${a.title ? '/' + slugify(a.title) : ''}`;
+export const animeHref = (a) => `/${IS_CINEMEE ? (/1$/.test(String(a.id)) ? 'movie' : 'tv') : IS_MANGEE ? 'manga' : 'anime'}/${a.id}${a.title ? '/' + slugify(a.title) : ''}`;
 export function go(url, { replace = false } = {}) {
   history[replace ? 'replaceState' : 'pushState'](null, '', url);
   route();
@@ -268,7 +272,10 @@ export async function route() {
       case 'settings': return viewSettings(alive);
       case 'anime': return await viewAnime(parts[1], alive, query);
       case 'movie': case 'tv': return IS_CINEMEE ? await viewAnime(parts[1], alive, query) : viewNotFound();
-      case 'watch': return await viewWatch(parts[1], query, alive);
+      case 'manga': return IS_MANGEE ? await viewAnime(parts[1], alive, query) : viewNotFound();
+      case 'read': return IS_MANGEE ? await viewRead(parts[1], query, alive) : viewNotFound();
+      // mangee reads chapters at /watch/<id>?ep=N too (every "continue" link works unchanged).
+      case 'watch': return IS_MANGEE ? await viewRead(parts[1], query, alive) : await viewWatch(parts[1], query, alive);
       case 'watchlist': return viewWatchlist(query);
       case 'schedule': return await viewSchedule(query, alive);
       case 'new': return await viewNew(alive);
@@ -305,19 +312,32 @@ export async function viewHome(alive) {
   if (!alive()) return;
   const season = d.recent || [];
   const cont = store.getSettings().showContinue ? store.continueList().filter(p => p.title) : [];
-  const quick = IS_CINEMEE
+  const quick = IS_MANGEE
+    ? [['Latest updates', '/top/airing'], ['Most followed', '/top/popular'], ['Top rated', '/top/favorite'], ['Completed', '/top/completed'],
+      ['Manhwa', '/search?type=manhwa'], ['Help me pick', '/pick'], ['All filters', '/search'], ['Random', '/random']]
+    : IS_CINEMEE
     ? [['Movies', '/movies'], ['TV shows', '/tv'], ['On air now', '/airing'], ['Coming soon', '/upcoming'],
       ['Schedule', '/schedule'], ['Help me pick', '/pick'], ['All filters', '/search'], ['Random', '/random']]
     : [['TV series', '/tv'], ['Movies', '/movies'], ['Airing now', '/airing'], ['Coming soon', '/upcoming'],
       ['Schedule', '/schedule'], ['Help me pick', '/pick'], ['A-Z', '/az'], ['All filters', '/search'], ['Random', '/random']];
   app.innerHTML =
-    `<h1 class="sr-only">${BRAND.title}: ${IS_CINEMEE ? 'watch movies and TV' : 'watch anime'}</h1>` +
+    `<h1 class="sr-only">${BRAND.title}: ${IS_CINEMEE ? 'watch movies and TV' : IS_MANGEE ? 'read manga' : 'watch anime'}</h1>` +
     spotlight(season.filter((x) => !store.notInterestedIds().has(String(x.id))).slice(0, 8)) +
     `<nav class="quick" aria-label="Shortcuts">${quick.map(([label, href]) => `<a class="chip" href="${href}">${label}</a>`).join('')}</nav>` +
-    (cont.length ? section('Continue watching', '<div class="row">' + cont.map(contCard).join('') + '</div>') : '') +
+    (cont.length ? section(`Continue ${WORDS.watching}`, '<div class="row">' + cont.map(contCard).join('') + '</div>') : '') +
     '<div id="sibling-cont"></div>' +
     '<div id="picked"></div>' +
-    (IS_CINEMEE
+    (IS_MANGEE
+      ? shelf('shelf-top', 'Top 10 right now', 'the most followed series still coming out') +
+        '<div id="popular-here"></div>' +
+        shelf('shelf-airing', 'Latest updates', 'fresh chapters', '<a href="/top/airing">See all ›</a>') +
+        '<div id="sibling-promo"></div>' +
+        shelf('shelf-season', 'New on mangee', 'recently added series', '<a href="/top/season">See all ›</a>') +
+        shelf('shelf-upcoming', 'Top rated, still going', 'great series with more on the way', '<a href="/top/upcoming">See all ›</a>') +
+        shelf('shelf-completed', 'Completed', 'finished, so you can read it all', '<a href="/top/completed">See all ›</a>') +
+        shelf('shelf-popular', 'Most followed', 'the series everyone reads', '<a href="/top/popular">See all ›</a>') +
+        shelf('shelf-favorite', 'Top rated', 'the best rated of all', '<a href="/top/favorite">See all ›</a>')
+      : IS_CINEMEE
       ? shelf('shelf-top', 'Top 10 today', 'what everyone is watching right now') +
         '<div id="popular-here"></div>' +
         shelf('shelf-airing', 'On TV this week', 'new episodes out now', '<a href="/top/airing">See all ›</a>') +
@@ -405,7 +425,7 @@ export async function viewHome(alive) {
   }).catch(() => {});
 }
 
-// The other site on the home page: what you're watching there (signed in on both), otherwise a
+// The other site on the home page: what you're watching there (one account signs you in on every site), otherwise a
 // small card about it that can be closed (it comes back after 60 days).
 export const SIBLING_CACHE = 'animee-space:sibling-continue';
 export const PROMO_KEY = 'animee-space:sibling-promo-closed';
@@ -445,7 +465,7 @@ export function loadSibling(alive) {
     const slot = document.getElementById('sibling-promo');
     if (!slot) return;
     slot.innerHTML = `<section class="section"><div class="sibling-promo">
-      <div><b>Also by us: <span class="sib-name">${SIBLING.name}</span></b><p>${esc(SIBLING.pitch)} Free, same as here (it has its own account).</p></div>
+      <div><b>Also by us: <span class="sib-name">${SIBLING.name}</span></b><p>${esc(SIBLING.pitch)} Free, and your account works there too.</p></div>
       <div class="actions"><a class="btn primary" href="${esc(SIBLING.origin)}/">Open ${SIBLING.name} ↗</a><button class="link-btn" type="button" data-close>Not now</button></div>
     </div></section>`;
     slot.querySelector('[data-close]').onclick = () => {
@@ -595,7 +615,7 @@ export function spotlight(list) {
           </div>
           <p>${esc(a.description)}</p>
           <div class="actions">
-            <a class="btn primary" href="/watch/${a.id}">▶ Watch now</a>
+            <a class="btn primary" href="/watch/${a.id}">▶ ${WORDS.Watch} now</a>
             <a class="btn" href="${animeHref(a)}">Details ›</a>
           </div>
         </div>
@@ -610,7 +630,7 @@ export function contCard(p) {
     <img src="${esc(p.cover)}" alt="${esc(p.title)} poster" loading="lazy">
     <div style="min-width:0;flex:1">
       <div class="c-title">${esc(p.title)}</div>
-      <div class="c-meta">${isMovie(p) ? 'Movie' : `Episode ${p.ep}`}</div>
+      <div class="c-meta">${isMovie(p) ? 'Movie' : IS_MANGEE ? `Page ${(p.time || 0) + 1}${p.duration ? ` of ${p.duration}` : ''}` : `Episode ${p.ep}`}</div>
       <span class="new-ep" hidden></span>
       <div class="progress"><i style="width:${pct.toFixed(1)}%"></i></div>
     </div>
@@ -1133,7 +1153,8 @@ export async function viewAnime(id, alive, query = new URLSearchParams()) {
   if (location.pathname !== animeHref(a)) history.replaceState(null, '', animeHref(a) + location.search);
   const prog = store.getProgress(a.id);
   // An airing show can be missing its episode count; it still has episodes to watch.
-  const canWatch = a.availableEpisodes > 0 || a.status === 'RELEASING';
+  // A manga is readable only when chapters are here (licensed series often have none on MangaDex).
+  const canWatch = a.availableEpisodes > 0 || (!IS_MANGEE && a.status === 'RELEASING');
 
   app.innerHTML = `
     <section class="hero">
@@ -1149,17 +1170,19 @@ export async function viewAnime(id, alive, query = new URLSearchParams()) {
             <span class="chip">${STATUS[a.status] || a.status}</span>
             ${lengthLabel(a) ? `<span class="chip">${lengthLabel(a)}</span>` : ''}
             ${a.duration ? `<span class="chip">${a.duration} min</span>` : ''}
-            ${canWatch && !IS_CINEMEE ? '<span class="chip avail" id="avail-chip" hidden></span>' : ''}
+            ${canWatch && !IS_CINEMEE && !IS_MANGEE ? '<span class="chip avail" id="avail-chip" hidden></span>' : ''}
             ${[...a.genres, ...(a.themes || [])].map((g) => `<a class="chip" href="/search?genres=${encodeURIComponent(g)}">${esc(g)}</a>`).join('')}
           </div>
           <div class="actions">
             ${canWatch
-              ? `<a class="btn primary" href="/watch/${a.id}${prog ? `?ep=${prog.ep}` : ''}">▶ ${prog ? (isMovie(a) ? 'Resume' : IS_CINEMEE ? `Continue episode ${prog.ep}` : `Continue EP ${prog.ep}`) : 'Watch now'}</a>`
-              : '<span class="btn" aria-disabled="true">Not released yet</span>'}
+              ? `<a class="btn primary" href="/watch/${a.id}${prog ? `?ep=${prog.ep}` : ''}">▶ ${prog ? (isMovie(a) ? 'Resume' : IS_CINEMEE ? `Continue episode ${prog.ep}` : IS_MANGEE ? `Continue reading` : `Continue EP ${prog.ep}`) : `${WORDS.Watch} now`}</a>`
+              : IS_MANGEE
+                ? `<span class="btn" aria-disabled="true">No chapters here</span>${a.officialUrl ? `<a class="btn primary" href="${esc(a.officialUrl)}" target="_blank" rel="noopener">Read it officially ↗</a>` : ''}`
+                : '<span class="btn" aria-disabled="true">Not released yet</span>'}
             ${listSelect(a)}
             ${followButton(a)}
-            ${canWatch && !isMovie(a) && a.availableEpisodes > 1 ? `<a class="btn" href="/watch/${a.id}?ep=${a.availableEpisodes}">Newest: episode ${a.availableEpisodes}</a>` : ''}
-            ${canWatch && prog && !isMovie(a) && prog.ep > 1 ? `<a class="btn" href="/watch/${a.id}?ep=1">From episode 1</a>` : ''}
+            ${canWatch && !isMovie(a) && a.availableEpisodes > 1 ? `<a class="btn" href="/watch/${a.id}?ep=${a.availableEpisodes}">${IS_MANGEE ? 'Newest chapter' : `Newest: episode ${a.availableEpisodes}`}</a>` : ''}
+            ${canWatch && prog && !isMovie(a) && prog.ep > 1 ? `<a class="btn" href="/watch/${a.id}?ep=1">From ${WORDS.ep} 1</a>` : ''}
             ${listButtons(a)}
             ${ratingSelect(a)}
             <button class="btn" id="share" type="button">Share</button>
@@ -1189,15 +1212,18 @@ export async function viewAnime(id, alive, query = new URLSearchParams()) {
         <section class="section" style="margin-top:12px">
           <div class="info-box" id="info-box">
             ${isMovie(a) ? `<div><b>Released</b><span>${fmtDate(a.startDate)}</span></div>`
+              : IS_MANGEE ? (a.year ? `<div><b>Started</b><span>${a.year}</span></div>` : '')
               : `<div><b>Aired</b><span>${fmtDate(a.startDate)} – ${a.status === 'RELEASING' ? 'now' : fmtDate(a.endDate)}</span></div>`}
             ${IS_CINEMEE && a.nextAiring?.airDate ? `<div><b>Next episode</b><span>S${a.nextAiring.season} · E${a.nextAiring.episode}, ${a.nextAiring.airingAt ? new Date(a.nextAiring.airingAt).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : new Date(a.nextAiring.airDate + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}</span></div>` : ''}
             ${IS_CINEMEE && a.rating ? `<div><b>Rated</b><span>${esc(a.rating)}</span></div>` : ''}
             ${a.season ? `<div><b>Season</b><span>${SEASON[a.season]} ${a.year || ''}</span></div>` : ''}
-            ${a.studios.length ? `<div><b>${IS_CINEMEE && !isMovie(a) ? 'Network' : 'Studio'}</b><span>${(a.studioLinks?.length ? a.studioLinks.map((st) => `<a href="/search?studio=${st.id}&studioName=${encodeURIComponent(st.name)}">${esc(st.name)}</a>`) : a.studios.map(esc)).join(', ')}</span></div>` : ''}
+            ${a.studios.length ? `<div><b>${IS_CINEMEE && !isMovie(a) ? 'Network' : IS_MANGEE ? 'By' : 'Studio'}</b><span>${(a.studioLinks?.length ? a.studioLinks.map((st) => `<a href="/search?studio=${st.id}&studioName=${encodeURIComponent(st.name)}">${esc(st.name)}</a>`) : a.studios.map(esc)).join(', ')}</span></div>` : ''}
             ${a.source ? `<div><b>Source</b><span>${esc(a.source.replace(/_/g, ' ').toLowerCase().replace(/^./, (c) => c.toUpperCase()))}</span></div>` : ''}
-            ${a.popularity ? `<div><b>${IS_CINEMEE ? 'Votes' : 'Members'}</b><span>${a.popularity.toLocaleString()}</span></div>` : ''}
+            ${a.popularity ? `<div><b>${IS_CINEMEE ? 'Votes' : IS_MANGEE ? 'Followers' : 'Members'}</b><span>${a.popularity.toLocaleString()}</span></div>` : ''}
             ${a.synonyms.length ? `<div><b>Also</b><span>${esc(a.synonyms.slice(0, 3).join(', '))}</span></div>` : ''}
-            <div><b>Elsewhere</b><span class="out-links">${IS_CINEMEE && a.tmdbId
+            <div><b>Elsewhere</b><span class="out-links">${IS_MANGEE && a.mdId
+              ? `<a href="https://mangadex.org/title/${esc(a.mdId)}" target="_blank" rel="noopener">MangaDex ↗</a>${a.officialUrl ? ` <a href="${esc(a.officialUrl)}" target="_blank" rel="noopener">Official ↗</a>` : ''}`
+              : IS_CINEMEE && a.tmdbId
               ? `<a href="https://www.themoviedb.org/${isMovie(a) ? 'movie' : 'tv'}/${esc(a.tmdbId)}" target="_blank" rel="noopener">TMDB ↗</a>`
               : `<a href="https://myanimelist.net/anime/${esc(a.id)}" target="_blank" rel="noopener">MyAnimeList ↗</a> <a id="anilist-link" hidden target="_blank" rel="noopener">AniList ↗</a>`}</span></div>
           </div>
@@ -1209,7 +1235,7 @@ export async function viewAnime(id, alive, query = new URLSearchParams()) {
   bindListSelect(a);
   bindFollow(a);
   // AniList link: its id is looked up in the browser (AniList refuses Cloudflare's servers).
-  if (!IS_CINEMEE) aniList.aniListIdFor(a.id).then((al) => {
+  if (!IS_CINEMEE && !IS_MANGEE) aniList.aniListIdFor(a.id).then((al) => {
     const link = document.getElementById('anilist-link');
     if (al && link) { link.href = `https://anilist.co/anime/${al}`; link.hidden = false; }
   });

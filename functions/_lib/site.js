@@ -1,8 +1,9 @@
-// One Worker serves two sites: animee (anime, animee.space) and cinemee (movies and TV,
-// cinemee.animee.space). The address decides which one a request belongs to.
+// One Worker serves three sites: animee (anime, animee.space), cinemee (movies and TV,
+// cinemee.animee.space) and mangee (manga from MangaDex, mangee.animee.space). The address
+// decides which one a request belongs to.
 //
-// cinemee keeps its own saved data in its own D1 database (binding CINEMEE_DB), so accounts,
-// lists, reports, requests and pop-up subscriptions never mix between the two sites.
+// Accounts are shared (animee's database); each site keeps its own lists, progress, reports,
+// requests and pop-up subscriptions in its own D1 database (DB, CINEMEE_DB, MANGEE_DB).
 
 export const SITES = {
   animee: {
@@ -21,22 +22,42 @@ export const SITES = {
     word: 'cinem',
     themeColor: '#08090A',
   },
+  mangee: {
+    id: 'mangee',
+    name: 'mangee',
+    title: 'mangee',
+    origin: 'https://mangee.animee.space',
+    word: 'mang',
+    themeColor: '#08090A',
+  },
 };
 
-/** 'cinemee' for cinemee.animee.space (and cinemee.localhost in development), else 'animee'. */
+/** 'cinemee' / 'mangee' for their subdomains (and *.localhost in development), else 'animee'. */
 export function siteOf(url) {
   const host = new URL(url).hostname;
-  return /^cinemee\./.test(host) ? 'cinemee' : 'animee';
+  if (/^cinemee\./.test(host)) return 'cinemee';
+  if (/^mangee\./.test(host)) return 'mangee';
+  return 'animee';
 }
 
 /** The environment one request sees: cinemee swaps in its own database. */
+// Accounts are shared by every site (animee's database: USERS_DB); lists and progress live in the
+// site's own database (DB).
 export function siteEnv(env, site) {
-  if (site !== 'cinemee') return { ...env, SITE: 'animee' };
-  return { ...env, SITE: 'cinemee', DB: env.CINEMEE_DB };
+  if (site === 'cinemee') return { ...env, SITE: 'cinemee', DB: env.CINEMEE_DB, USERS_DB: env.DB };
+  if (site === 'mangee') return { ...env, SITE: 'mangee', DB: env.MANGEE_DB, USERS_DB: env.DB };
+  return { ...env, SITE: 'animee', USERS_DB: env.DB };
 }
 
-// cinemee's red, the counterpart of animee's lime (CSS tokens live in public/css/style.css).
+// cinemee's red and mangee's neon yellow, the counterparts of animee's lime (CSS tokens live
+// in public/css/style.css).
 export const CINEMEE_RED = { hex: '#FF3D52', rgb: '255,61,82' };
+export const MANGEE_YELLOW = { hex: '#FFE81F', rgb: '255,232,31' };
+
+// MangaDex's usage policy: credit MangaDex and the scanlation groups (each chapter names its
+// group in the reader), no ads.
+const MANGADEX_CREDIT = '<p class="footer-credit">Manga from <a href="https://mangadex.org/" target="_blank" rel="noopener">MangaDex</a>. '
+  + 'Chapters are by their scanlation groups, credited on every chapter. mangee is not affiliated with MangaDex and shows no ads.</p>';
 
 // TMDB's terms ask every site using its API to show this notice.
 const TMDB_CREDIT = '<p class="footer-credit">Movie and TV data from <a href="https://www.themoviedb.org/" target="_blank" rel="noopener">TMDB</a>. '
@@ -45,6 +66,7 @@ const TMDB_CREDIT = '<p class="footer-credit">Movie and TV data from <a href="ht
 
 /** index.html with the site's own name, wordmark and wording (animee's shell is the default). */
 export function brandShell(html, site) {
+  if (site === 'mangee') return brandMangee(html);
   if (site !== 'cinemee') return html;
   const swaps = [
     ['<html lang="en">', '<html lang="en" data-site="cinemee">'],
@@ -66,11 +88,34 @@ export function brandShell(html, site) {
   return out;
 }
 
+function brandMangee(html) {
+  const swaps = [
+    ['<html lang="en">', '<html lang="en" data-site="mangee">'],
+    ['<title>animee space</title>', '<title>mangee</title>'],
+    [/aria-label="animee, home"/g, 'aria-label="mangee, home"'],
+    [/aria-hidden="true">anim<svg class="wm-eyes"/g, 'aria-hidden="true">mang<svg class="wm-eyes"'],
+    [/Search anime/g, 'Search manga'],
+    ['>My Anime <span', '>My Manga <span'],
+    ['<a href="/schedule" data-nav="schedule">Schedule</a>', '<a href="/top/airing" data-nav="latest">Latest</a>'],
+    ['watch anime. stay happy.', 'read manga. stay happy.'],
+    // MangaDex can't list by first letter, and manga has no airing schedule.
+    ['<a href="/az">A-Z list</a>', ''],
+    ['<a href="/schedule">Schedule</a>', ''],
+    ['<a href="/top/airing">Top airing</a>', '<a href="/top/airing">Latest updates</a>'],
+    ['<a class="sibling-link" href="https://cinemee.animee.space/">cinemee: movies &amp; TV ↗</a>', '<a class="sibling-link" href="https://animee.space/">animee: anime ↗</a>'],
+    ['<p class="footer-tag">read manga. stay happy.</p>', '<p class="footer-tag">read manga. stay happy.</p>\n        ' + MANGADEX_CREDIT],
+  ];
+  let out = html;
+  for (const [from, to] of swaps) out = out.replace(from, to);
+  return out;
+}
+
 /** The offline page inside sw.js, in the site's colour and name. */
 export function brandServiceWorker(js, site) {
-  if (site !== 'cinemee') return js;
+  const colour = site === 'cinemee' ? CINEMEE_RED : site === 'mangee' ? MANGEE_YELLOW : null;
+  if (!colour) return js;
   return js
-    .replace(/#C6FF3D/gi, CINEMEE_RED.hex)
-    .replace(/rgba\(198,255,61,/g, `rgba(${CINEMEE_RED.rgb},`)
-    .replace('Offline · animee space', 'Offline · cinemee');
+    .replace(/#C6FF3D/gi, colour.hex)
+    .replace(/rgba\(198,255,61,/g, `rgba(${colour.rgb},`)
+    .replace('Offline · animee space', `Offline · ${site}`);
 }

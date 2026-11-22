@@ -4,12 +4,17 @@ Everything needed to pick this project up cold. For what changed when, see `docs
 
 ## What this is
 
-**One Cloudflare Worker, one repo, two sites:**
+**One Cloudflare Worker, one repo, three sites, one account:**
 
 | Site | Address | Catalogue | Brand colour | Database |
 |---|---|---|---|---|
 | **animee** (anime) | https://animee.space | Tenrai (Jikan-style, MAL ids) | Lime `#C6FF3D` | D1 `animee-space` (binding `DB`) |
 | **cinemee** (movies + TV) | https://cinemee.animee.space | TMDB | Red `#FF3D52` | D1 `cinemee` (binding `CINEMEE_DB`) |
+| **mangee** (manga) | https://mangee.animee.space | MangaDex | Neon yellow `#FFE81F` | D1 `mangee` (binding `MANGEE_DB`) |
+
+**Accounts are shared:** they live in animee's database (`USERS_DB` in `siteEnv`), and the login cookie (`am_session`) is set for `animee.space`, so one sign-in works on all three. Each site keeps its own lists, progress, reports, requests and pop-ups in its own database under that account id. (Locally each `*.localhost` address needs its own sign-in.)
+
+**mangee and MangaDex's rules:** credit MangaDex and the scanlation groups (footer + every chapter), honour groups' removal requests, no ads, all API calls and images through our Worker (User-Agent set, no Via header), MangaDex@Home image loads reported to api.mangadex.network. ~5 requests/s per IP, so everything is cached. Licensed series often have no English chapters.
 
 The **address decides the site** (`functions/_lib/site.js`: `siteOf()` / `siteEnv()`). cinemee swaps in its own
 database, so accounts, lists, reports, requests and pop-up subscriptions never mix. Both sites run the same

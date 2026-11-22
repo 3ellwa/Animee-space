@@ -11,6 +11,8 @@ import { handleContinue } from '../_lib/crosssite.js';
 import { publicList } from '../_lib/share.js';
 import { handlePlay, popularHere } from '../_lib/popular.js';
 import { handleSubs } from '../_lib/subs.js';
+import * as mangadex from '../_lib/providers/mangadex.js';
+import { handleImage } from '../_lib/mdimg.js';
 import { handlePush } from '../_lib/push.js';
 import { importAniList } from '../_lib/importers.js';
 import * as megaplay from '../_lib/providers/megaplay.js';
@@ -72,6 +74,10 @@ export async function onRequest(ctx) {
   if (parts[0] === 'requests' || parts[0] === 'admin') return handleRequests(ctx, parts);
   if (parts[0] === 'push') return handlePush(ctx, parts);
   if (parts[0] === 'notice' && parts.length === 1) return handleNotice(ctx);
+  // mangee: covers and chapter pages from MangaDex, proxied (they block hotlinking).
+  if (parts[0] === 'mdimg' && parts.length === 1) {
+    try { return await handleImage(request, ctx); } catch (err) { console.error(err); return new Response('Image unavailable', { status: 502 }); }
+  }
   if (parts[0] === 'subs' && parts.length <= 2) {
     try { return await handleSubs(ctx, parts); } catch (err) { console.error(err); return json({ error: 'Upload failed, try again.' }, 500); }
   }
@@ -94,10 +100,15 @@ export async function onRequest(ctx) {
     }
   }
   if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405);
-  // animee's catalogue is anime (Tenrai); cinemee's is movies and TV (TMDB), in the same shape.
+  // animee's catalogue is anime (Tenrai); cinemee's is movies and TV (TMDB); mangee's is manga
+  // (MangaDex). All three in the same shape.
   const cinemee = ctx.env?.SITE === 'cinemee';
-  const cat = cinemee ? tmdb : tenrai;
+  const mangee = ctx.env?.SITE === 'mangee';
+  const cat = cinemee ? tmdb : mangee ? mangadex : tenrai;
   if (cinemee) tmdb.useToken(ctx.env);
+  if (mangee) mangadex.useEnv(ctx.env);
+  // Whether an episode (or chapter) is out: MegaPlay for anime, the catalogue for the others.
+  const availability = cinemee ? tmdb : mangee ? mangadex : megaplay;
   try {
     const [a, b, c] = parts;
     if (a === 'stream-proxy' && !b) {
@@ -105,7 +116,7 @@ export async function onRequest(ctx) {
       catch (error) { return json({ error: error?.message || 'Stream proxy failed.' }, error.status || 502); }
     }
     if (a === 'provider' && !b) return json({
-      catalogue: cinemee ? { id: 'tmdb', name: 'TMDB' } : { id: 'tenrai', name: 'Tenrai' },
+      catalogue: cinemee ? { id: 'tmdb', name: 'TMDB' } : mangee ? { id: 'mangadex', name: 'MangaDex' } : { id: 'tenrai', name: 'Tenrai' },
       playback: playback.getProviderList(ctx.env || {}),
     });
     if (a === 'home' && !b) return await cached(ctx, 600, async () => {
@@ -132,7 +143,7 @@ export async function onRequest(ctx) {
         .filter(([id, ep]) => /^\d{1,12}$/.test(id) && /^\d{1,4}$/.test(ep)).slice(0, 8);
       const out = {};
       await Promise.all(items.map(async ([id, ep]) => {
-        try { const d = await (cinemee ? tmdb : megaplay).getEpisodeAvailability(id, ep); out[`${id}:${ep}`] = Boolean(d.sub || d.dub); }
+        try { const d = await availability.getEpisodeAvailability(id, ep); out[`${id}:${ep}`] = Boolean(d.sub || d.dub); }
         catch { out[`${id}:${ep}`] = false; }
       }));
       return { out };
@@ -155,16 +166,24 @@ export async function onRequest(ctx) {
     // How many episodes MegaPlay can play in sub and dub (checked against the listed count).
     if (a === 'anime' && b && c === 'availability') return await cached(ctx, 3600, async () => {
       if (cinemee) return tmdb.getAvailability(validId(b));
+      if (mangee) return mangadex.getAvailability(validId(b));
       const { total } = await cat.getEpisodes(validId(b));
       return megaplay.getAvailability(b, total);
     });
     // Whether one episode plays, for "new episode" badges.
     if (a === 'anime' && b && c === 'available') return await cached(ctx, 1800, async () =>
-      (cinemee ? tmdb : megaplay).getEpisodeAvailability(validId(b), url.searchParams.get('ep')));
+      availability.getEpisodeAvailability(validId(b), url.searchParams.get('ep')));
     if (a === 'anime' && b && c === 'seasons') return await cached(ctx, 86400, async () => cat.getSeasons(validId(b)));
     if (a === 'anime' && b && c === 'extras') return await cached(ctx, 3600, async () => cat.getExtras(validId(b)));
     if (a === 'anime' && b && !c) return await cached(ctx, 3600, async () => cat.getAnimeWithCount(validId(b)));
-    if (a === 'anime' && b && c === 'episodes') return await cached(ctx, 1800, async () => cat.getEpisodes(validId(b)));
+    // mangee: ?lang=en | ar | en,ar picks the chapter languages.
+    if (a === 'anime' && b && c === 'episodes') return await cached(ctx, mangee ? 900 : 1800, async () => cat.getEpisodes(validId(b), url.searchParams.get('lang')));
+    // mangee: one chapter's pages (on our image proxy). The page server address MangaDex gives
+    // lasts about 15 minutes, so this is kept for 4.
+    if (mangee && a === 'episode' && b && c === 'pages') return await cached(ctx, 240, async () => {
+      const reference = episodeRef(b);
+      return mangadex.getPages(reference.animeId, reference.episode, url.searchParams.get('lang'), url.searchParams.get('quality'));
+    });
     if (a === 'episode' && b && c === 'servers') return await cached(ctx, 600, async () => {
       const reference = episodeRef(b);
       // Enforce the catalogue's strict SFW gate even when the API is called directly.

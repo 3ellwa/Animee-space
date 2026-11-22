@@ -32,7 +32,7 @@ export async function publicList(env, rawName, catalogue) {
   const name = String(rawName || '').toLowerCase();
   const fail = () => Object.assign(new Error('This list isn’t shared (or doesn’t exist).'), { status: 404 });
   if (!/^[a-z0-9_]{3,20}$/.test(name)) throw fail();
-  const user = await env.DB.prepare('SELECT id, name, prefs FROM users WHERE name = ?').bind(name).first();
+  const user = await (env.USERS_DB || env.DB).prepare('SELECT id, name, prefs FROM users WHERE name = ?').bind(name).first();
   const mode = user ? shareMode(user.prefs) : 'off';
   if (mode === 'off') throw fail();
   const { results } = await env.DB.prepare('SELECT anime_id, s, u FROM library WHERE user_id = ? AND s != 0 ORDER BY u DESC LIMIT 400')

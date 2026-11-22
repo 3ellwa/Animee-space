@@ -23,7 +23,7 @@ function png(w, h, pixel) {
 }
 
 const INK = [8, 9, 10];
-// The brand colour: animee's lime, or cinemee's red (see the bottom of this file).
+// The brand colour: animee's lime, cinemee's red or mangee's neon yellow (see the bottom of this file).
 let LIME = [198, 255, 61];
 // Logo in a 64x64 box, matching public/favicon.svg: a lime rounded square (radius 16) with the
 // ^^. face in ink: two chevrons drawn as round-capped strokes, and a dot.
@@ -89,4 +89,5 @@ function writeSet(colour, dir) {
 }
 writeSet([198, 255, 61], 'public');                // animee: lime
 writeSet([255, 61, 82], 'public/sites/cinemee');   // cinemee: red (served for cinemee.animee.space)
+writeSet([255, 232, 31], 'public/sites/mangee');   // mangee: neon yellow (mangee.animee.space)
 console.log('icons written');

@@ -10,6 +10,7 @@
 import { currentUser } from './auth.js';
 import * as tenrai from './providers/tenrai.js';
 import * as tmdb from './providers/tmdb.js';
+import * as mangadex from './providers/mangadex.js';
 
 /** The other site's origin for a request URL: animee.space <-> cinemee.animee.space. */
 export function siblingOrigin(requestUrl) {
@@ -17,11 +18,17 @@ export function siblingOrigin(requestUrl) {
   const host = url.host.startsWith('cinemee.') ? url.host.slice('cinemee.'.length) : `cinemee.${url.host}`;
   return `${url.protocol}//${host}`;
 }
+/** Every sister site's origin except this one (animee, cinemee and mangee, same scheme and port). */
+export function sisterOrigins(requestUrl) {
+  const url = new URL(requestUrl);
+  const base = url.host.replace(/^(cinemee|mangee)\./, '');
+  return [base, `cinemee.${base}`, `mangee.${base}`].filter((h) => h !== url.host).map((h) => `${url.protocol}//${h}`);
+}
 
 export async function handleContinue(ctx) {
   const { request, env } = ctx;
   const origin = request.headers.get('Origin') || '';
-  const allowed = origin && origin === siblingOrigin(request.url);
+  const allowed = Boolean(origin) && sisterOrigins(request.url).includes(origin);
   const headers = {
     'Content-Type': 'application/json; charset=utf-8',
     'Cache-Control': 'private, no-store',
@@ -31,7 +38,7 @@ export async function handleContinue(ctx) {
   const reply = (data, status = 200) => new Response(JSON.stringify(data), { status, headers });
   if (!allowed) return reply({ error: 'Only for the sibling site' }, 403);
   if (request.method !== 'GET') return reply({ error: 'Method not allowed' }, 405);
-  const site = env.SITE === 'cinemee' ? 'cinemee' : 'animee';
+  const site = env.SITE === 'cinemee' || env.SITE === 'mangee' ? env.SITE : 'animee';
   if (!env.DB) return reply({ site, items: [] });
   const user = await currentUser(request, env).catch(() => null);
   if (!user) return reply({ site, items: [], signedIn: false });
@@ -40,7 +47,8 @@ export async function handleContinue(ctx) {
     'SELECT anime_id, ep, t, d, u FROM library WHERE user_id = ? AND ep > 0 ORDER BY u DESC LIMIT 8',
   ).bind(user.id).all();
   if (site === 'cinemee') tmdb.useToken(env);
-  const cat = site === 'cinemee' ? tmdb : tenrai;
+  if (site === 'mangee') mangadex.useEnv(env);
+  const cat = site === 'cinemee' ? tmdb : site === 'mangee' ? mangadex : tenrai;
   const items = [];
   for (const row of results || []) {
     if (items.length >= 6) break;
@@ -49,7 +57,7 @@ export async function handleContinue(ctx) {
       // A finished movie or a finished last episode isn't "continue" any more.
       const done = row.d > 0 && row.t / row.d > 0.9 && (!a.availableEpisodes || row.ep >= a.availableEpisodes);
       if (done) continue;
-      items.push({ id: a.id, title: a.title, cover: a.cover, banner: a.banner, format: a.format, ep: row.ep, time: row.t, duration: row.d, label: a.format === 'MOVIE' ? 'Movie' : `Episode ${row.ep}` });
+      items.push({ id: a.id, title: a.title, cover: a.cover, banner: a.banner, format: a.format, ep: row.ep, time: row.t, duration: row.d, label: a.format === 'MOVIE' ? 'Movie' : site === 'mangee' ? `Page ${row.t + 1}` : `Episode ${row.ep}` });
     } catch { /* skip titles that can't be loaded right now */ }
   }
   return reply({ site, items, signedIn: true });

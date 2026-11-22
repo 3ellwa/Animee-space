@@ -5,7 +5,7 @@ import { Player } from '../player.js';
 import * as inbox from '../inbox.js';
 import * as push from '../push.js';
 import * as aniList from '../anilist.js';
-import { BRAND, IS_CINEMEE, SIBLING } from '../site.js';
+import { BRAND, IS_CINEMEE, IS_MANGEE, SIBLING } from '../site.js';
 import { app, card, esc, loader, readFile, section, takeInstallPrompt } from '../app.js';
 import { addHub } from './hub.js';
 
@@ -31,7 +31,13 @@ export function viewSettings(alive) {
         <p class="card-meta">Shows in these genres stay out of the home rows, picks and browsing. Searching by name still finds them.</p>
         <div class="chips" id="hide-genre-chips">${loader()}</div>
       </section>
-      <section class="settings-group"><h2>Player</h2>
+      ${IS_MANGEE ? `<section class="settings-group"><h2>Reading</h2>
+        <div class="setting"><span>Chapters in</span><div class="chips">${radio('mangaLang', 'en', 'English', s.mangaLang || 'en')}${radio('mangaLang', 'ar', 'العربية Arabic', s.mangaLang)}${radio('mangaLang', 'ar,en', 'Both', s.mangaLang)}</div></div>
+        <div class="setting"><span>Reader</span><div class="chips">${radio('readerMode', 'scroll', 'Scroll down', s.readerMode || 'scroll')}${radio('readerMode', 'pages', 'One page at a time', s.readerMode)}</div></div>
+        ${toggle('mangaFull', 'Full-quality images (bigger; data saver is the default)', s.mangaQuality === 'data')}
+        <p class="card-meta">Fewer series have Arabic chapters on MangaDex. "Both" shows the Arabic version of a chapter when there is one, English otherwise.</p>
+      </section>` : ''}
+      <section class="settings-group video-only"><h2>Player</h2>
         <div class="setting anime-only"><span>Audio I prefer</span><div class="chips">${radio('category', 'sub', 'Sub', s.category)}${radio('category', 'dub', 'Dub', s.category)}</div></div>
         ${toggle('autoplay', 'Play the next episode automatically', s.autoplay)}
         ${toggle('skipFiller', 'Skip filler and recap episodes when playing the next one', !!s.skipFiller)}
@@ -114,6 +120,7 @@ export function viewSettings(alive) {
   form.onchange = (e) => {
     const el = e.target;
     if (el.matches('[data-hide-genre]')) return; // handled above
+    if (el.name === 'mangaFull') { store.setSetting('mangaQuality', el.checked ? 'data' : 'data-saver'); return; }
     store.setSetting(el.name, el.type === 'checkbox' ? el.checked : el.value);
     if (el.name === 'alertsWhen') push.syncFollows();
     if (el.name === 'alertsFor') { push.syncFollows(); inbox.refreshInbox({ force: true }).catch(() => {}); }

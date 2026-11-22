@@ -22,6 +22,7 @@
 
 import * as tenrai from './providers/tenrai.js';
 import * as tmdb from './providers/tmdb.js';
+import * as mangadex from './providers/mangadex.js';
 import * as megaplay from './providers/megaplay.js';
 
 const MAX_FOLLOWS = 100;
@@ -234,10 +235,13 @@ async function airedCount(id, page) {
 
 export async function runPushCheck(env) {
   if (!env.DB || !keysReady(env)) return { skipped: true };
-  // cinemee follows movies and TV (TMDB); animee follows anime (Tenrai).
+  // cinemee follows movies and TV (TMDB); mangee follows manga chapters (MangaDex, English);
+  // animee follows anime (Tenrai).
   const cinemee = env.SITE === 'cinemee';
+  const mangee = env.SITE === 'mangee';
   if (cinemee) tmdb.useToken(env);
-  const catalogue = cinemee ? tmdb : tenrai;
+  if (mangee) mangadex.useEnv(env);
+  const catalogue = cinemee ? tmdb : mangee ? mangadex : tenrai;
   await ensureTables(env);
   const t = now();
   // 1. Followed shows that haven't been looked at for a while, oldest first.
@@ -254,7 +258,9 @@ export async function runPushCheck(env) {
     try {
       result = cinemee
         ? { aired: (await tmdb.getAnime(String(show.anime_id))).availableEpisodes, page: 1 }
-        : await airedCount(show.anime_id, Math.max(1, show.page));
+        : mangee
+          ? { aired: (await mangadex.getEpisodes(String(show.anime_id))).total, page: 1 }
+          : await airedCount(show.anime_id, Math.max(1, show.page));
     } catch { continue; }
     updates.push(env.DB.prepare('UPDATE push_shows SET aired = ?, page = ?, checked = ? WHERE anime_id = ?')
       .bind(result.aired, result.page, t, show.anime_id));

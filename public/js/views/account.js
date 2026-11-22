@@ -25,7 +25,7 @@ export function viewAccountPage(query) {
     app.innerHTML = `
       <div class="auth-box">
         <h1 class="page-title" style="margin-top:0">Hey, ${esc(user.name)} 👋</h1>
-        <p class="card-meta">Your watchlist, watch history and player settings sync to this account.</p>
+        <p class="card-meta">Your watchlist, watch history and player settings sync to this account. The same account signs you in on animee, cinemee and mangee; each site keeps its own list.</p>
         <div class="stats">
           <div><b>${list.length}</b><span>in watchlist</span></div>
           <div><b>${history}</b><span>in progress</span></div>
@@ -38,7 +38,7 @@ export function viewAccountPage(query) {
         </div>
         <details class="danger-zone">
           <summary class="card-meta">Delete my account</summary>
-          <p class="card-meta">This deletes your account and the list, progress and settings saved with it on our server. It can't be undone. What's saved in this browser stays until you clear it.</p>
+          <p class="card-meta">This deletes your account on all our sites (animee, cinemee and mangee) and the lists, progress and settings saved with it on our server. It can't be undone. What's saved in this browser stays until you clear it.</p>
           <form id="delete-account" class="actions">
             <input class="input" type="password" name="password" placeholder="Your password" autocomplete="current-password" required>
             <button class="btn danger" type="submit">Delete my account</button>
@@ -155,7 +155,7 @@ export function viewAccountPage(query) {
         <label>Password<input class="input" name="password" type="password" autocomplete="${mode === 'login' ? 'current-password' : 'new-password'}" required minlength="8" maxlength="128"></label>
         <div class="auth-err" id="auth-err" hidden></div>
         <button class="btn primary" type="submit">${mode === 'login' ? 'Sign in' : 'Create account'}</button>
-        <p class="card-meta">${mode === 'login' ? 'No account yet? <a href="/account?mode=register" style="color:var(--accent)">Create one</a>' : 'No email needed. Anything you already watched in this browser gets added to your account.'}</p>
+        <p class="card-meta">${mode === 'login' ? 'No account yet? <a href="/account?mode=register" style="color:var(--accent)">Create one</a>' : 'No email needed, and one account works on animee, cinemee and mangee. Anything you already watched in this browser gets added to your account.'}</p>
       </form>
     </div>`;
 

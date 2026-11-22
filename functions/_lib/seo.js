@@ -5,6 +5,7 @@
 import * as tenrai from './providers/tenrai.js';
 import { SITES } from './site.js';
 import * as cinemeeSeo from './seo-cinemee.js';
+import * as mangeeSeo from './seo-mangee.js';
 
 export const ORIGIN = 'https://animee.space';
 const SITE = 'animee';
@@ -57,6 +58,7 @@ const WEBSITE_LD = {
 /** Works out what one path should look like in search results. Returns null for unknown paths. */
 export async function describe(url, site = 'animee', env = {}) {
   if (site === 'cinemee') return cinemeeSeo.describe(url, env);
+  if (site === 'mangee') return mangeeSeo.describe(url, env);
   const parts = url.pathname.split('/').filter(Boolean).map((p) => { try { return decodeURIComponent(p); } catch { return p; } });
   const [first, second, third] = parts;
 
@@ -153,15 +155,16 @@ function animeNoscript(a, path) {
 /** Puts the page's head tags into index.html. */
 export function render(html, page, site = 'animee') {
   const cinemee = site === 'cinemee';
-  const title = esc(page.title || (cinemee ? 'cinemee' : SITE));
-  const description = esc(page.description || (cinemee ? CINEMEE_DESC : DEFAULT_DESC));
-  const image = esc(page.image || (cinemee ? CINEMEE_ORIGIN + '/og.png' : OG_IMAGE));
+  const mangee = site === 'mangee';
+  const title = esc(page.title || (cinemee ? 'cinemee' : mangee ? 'mangee' : SITE));
+  const description = esc(page.description || (cinemee ? CINEMEE_DESC : mangee ? mangeeSeo.DEFAULT_DESC : DEFAULT_DESC));
+  const image = esc(page.image || (cinemee ? CINEMEE_ORIGIN + '/og.png' : mangee ? SITES.mangee.origin + '/og.png' : OG_IMAGE));
   const wideImage = !page.image || page.imageIsWide;
   const tags = [
     `<meta name="description" content="${description}">`,
     `<meta name="robots" content="${page.status === 404 ? 'noindex, nofollow' : esc(page.robots || 'index, follow, max-image-preview:large')}">`,
     page.canonical ? `<link rel="canonical" href="${esc(page.canonical)}">` : '',
-    `<meta property="og:site_name" content="${cinemee ? 'cinemee' : 'animee'}">`,
+    `<meta property="og:site_name" content="${cinemee ? 'cinemee' : mangee ? 'mangee' : 'animee'}">`,
     `<meta property="og:type" content="${esc(page.type || 'website')}">`,
     `<meta property="og:title" content="${title}">`,
     `<meta property="og:description" content="${description}">`,
@@ -185,6 +188,7 @@ export function render(html, page, site = 'animee') {
 
 export function robots(site = 'animee') {
   if (site === 'cinemee') return cinemeeSeo.robots();
+  if (site === 'mangee') return mangeeSeo.robots();
   return [
     'User-agent: *',
     'Allow: /',
@@ -214,6 +218,7 @@ const SITEMAP_SOURCES = [
 ];
 export async function sitemap(site = 'animee', env = {}) {
   if (site === 'cinemee') return cinemeeSeo.sitemap(env);
+  if (site === 'mangee') return mangeeSeo.sitemap(env);
   const today = new Date().toISOString().slice(0, 10);
   const urls = Object.entries(STATIC).map(([path, [, , freq, priority]]) => ({ loc: ORIGIN + '/' + path, freq, priority }));
   for (const name of Object.keys(LISTS)) urls.push({ loc: `${ORIGIN}/top/${name}`, freq: 'daily', priority: '0.7' });
