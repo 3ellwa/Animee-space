@@ -70,7 +70,7 @@ export function showNews() {
   const bar = document.createElement('div');
   bar.id = 'news-bar';
   bar.className = 'news-bar';
-  bar.innerHTML = `<span><b>New</b> on ${BRAND.name}, updated ${esc(NEWS[0][0])}</span>
+  bar.innerHTML = `<span><b>New</b><span class="news-long"> on ${BRAND.name}, updated</span> ${esc(NEWS[0][0])}</span>
     <button class="btn sm" type="button" data-news-open>See what's new</button>
     <button class="news-x" type="button" aria-label="Got it" data-news-ok>✕</button>`;
   document.querySelector('.nav')?.after(bar);
@@ -105,8 +105,9 @@ export const HUB_TABS = [
 ];
 export const HOW_KEY = 'animee-space:how-hidden';
 export function hubHead(active) {
-  let hidden = false;
-  try { hidden = localStorage.getItem(HOW_KEY) === '1'; } catch { /* ignore */ }
+  // The tips start closed once you have something on your list; your own choice wins either way.
+  let hidden = Object.keys(store.getList()).length > 0;
+  try { const saved = localStorage.getItem(HOW_KEY); if (saved !== null) hidden = saved === '1'; } catch { /* ignore */ }
   const alerts = inbox.inboxItems().length;
   return `<div class="hub-head">
     <div class="hub-title"><div><h1 class="page-title" style="margin:0">${BRAND.hub}</h1>

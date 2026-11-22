@@ -1,3 +1,10 @@
+## Polish: phones, the watch page, small rough edges
+
+- **Phones are a step smaller and calmer:** 14 px text, tighter spacing, compact buttons/chips/tabs (touch targets ≥ 34 px), smaller headlines and spotlight, 16 px inputs (no iOS zoom). One block at the end of style.css.
+- **Watch page:** episodes in a sticky sidebar beside the player on wide screens; on narrower screens (and Wide player) straight under the servers instead of after the synopsis. Phones: Prev/Next first, no Wide player, titled episode lists one per row with "…". The keyboard hint is a small "⌨ Shortcuts" label.
+- Home "Because you watched" follows the English-titles setting; the rating menu matches the buttons beside it; "Source: Manga" capitalised; "1 episode / 1 season / 1 show" instead of "1 episodes".
+- My anime: tips start closed once you have a list; hub and list-status tabs are one swipeable row on phones; the What's new bar is one slim line on phones.
+
 ## Watch party, rebuilt
 
 - **Why:** it said "following the host" even when nothing was synced. Guests stayed on their own default server (JoJo/Hoshi can't be moved, so they never followed); a host on a server that doesn't report its time sent "0:00, paused", pulling guests back to the start; phones waiting for a tap looked "in sync".

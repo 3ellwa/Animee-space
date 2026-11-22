@@ -6,7 +6,7 @@ import * as inbox from '../inbox.js';
 import * as push from '../push.js';
 import * as aniList from '../anilist.js';
 import { BRAND, IS_CINEMEE, SIBLING } from '../site.js';
-import { FORMAT, STATUS, T, animeHref, app, bindFollow, bindListSelect, card, clock, countPlay, epName, esc, followButton, go, grid, isMovie, listSelect, loadExtras, loadSeasons, mediaPrefsFor, onCleanup, saveMediaPrefs, score, section, toastNote, viewNotFound } from '../app.js';
+import { FORMAT, STATUS, T, animeHref, app, bindFollow, bindListSelect, card, clock, countPlay, epName, esc, followButton, go, grid, isMovie, listSelect, loadExtras, loadSeasons, mediaPrefsFor, onCleanup, plural, saveMediaPrefs, score, section, toastNote, viewNotFound } from '../app.js';
 
 // ---------- watch ----------
 export async function viewWatch(id, query, alive) {
@@ -38,7 +38,7 @@ export async function viewWatch(id, query, alive) {
   const showP = api(`/anime/${id}`);
   const epsP = api(`/anime/${id}/episodes`);
   showP.then(() => step('Loading the episode list…'), () => {});
-  epsP.then((d) => step(`Found ${d.episodes?.length || 0} episodes. Syncing your progress…`), () => {});
+  epsP.then((d) => step(`Found ${plural(d.episodes?.length || 0, 'episode')}. Syncing your progress…`), () => {});
   const [a, epData] = await Promise.all([showP, epsP, store.sync.freshen()]);
   if (!alive()) return;
   document.title = `Watch ${a.title} · ${BRAND.title}`;
@@ -103,7 +103,7 @@ export async function viewWatch(id, query, alive) {
             <label><input type="checkbox" id="opt-autoplay" ${settings.autoplay ? 'checked' : ''}> Auto next</label>
             ${fillerCount || recapCount ? `<label title="Auto next skips filler and recap episodes"><input type="checkbox" id="opt-skipfiller" ${settings.skipFiller ? 'checked' : ''}> Skip filler</label>` : ''}
             <label class="anime-only" title="Skips intros and outros where the player knows them (3ellwa server)"><input type="checkbox" id="opt-autoskip" ${settings.autoskip ? 'checked' : ''}> Auto skip intro</label>
-            <span class="card-meta player-hint">Pause, seek and quality controls are inside the player.<span class="keys-hint"> Keys: <kbd>N</kbd> next, <kbd>P</kbd> previous, <kbd>←</kbd><kbd>→</kbd> 10 s, <kbd>W</kbd> watched, <kbd>F</kbd> fullscreen.</span></span>
+            <span class="card-meta player-hint keys-hint" tabindex="0" title="Pause, seek and quality are inside the player. Keys: N next, P previous, ← → 10 seconds, W watched, F fullscreen.">⌨ Shortcuts</span>
             <span class="spacer"></span>
             <button class="btn sm wide-btn" id="wide-toggle" type="button" aria-pressed="false">⤢ Wide player</button>
             <button class="btn sm" id="mark-seen" type="button">✓ Mark watched</button>

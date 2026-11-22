@@ -47,7 +47,7 @@ export const epName = (ep) => (ep?.label ? ep.label : `Episode ${ep?.number ?? e
 export function lengthLabel(a) {
   if (!IS_CINEMEE) return `${epsLabel(a)} eps`;
   if (isMovie(a)) return a.duration ? `${Math.floor(a.duration / 60) ? `${Math.floor(a.duration / 60)}h ` : ''}${a.duration % 60}m` : '';
-  return [a.seasonCount ? `${a.seasonCount} season${a.seasonCount === 1 ? '' : 's'}` : '', a.availableEpisodes ? `${a.availableEpisodes} episodes` : ''].filter(Boolean).join(' · ');
+  return [a.seasonCount ? `${a.seasonCount} season${a.seasonCount === 1 ? '' : 's'}` : '', a.availableEpisodes ? plural(a.availableEpisodes, 'episode') : ''].filter(Boolean).join(' · ');
 }
 export const score = (s) => (s ? (s / 10).toFixed(1) : null);
 export const fmtDate = (d) => (d?.year ? new Date(d.year, (d.month || 1) - 1, d.day || 1).toLocaleDateString(undefined, { year: 'numeric', month: 'short', ...(d.day ? { day: 'numeric' } : {}) }) : '?');
@@ -92,6 +92,9 @@ export function epsLabel(a) {
   
   return have || a.episodes || '?';
 }
+
+/** "1 episode", "2 episodes". */
+export const plural = (n, word, many = `${word}s`) => `${Number(n).toLocaleString()} ${Number(n) === 1 ? word : many}`;
 
 // Every card remembers its show, so the poster's save button can add it without another lookup.
 export const cardShows = new Map();
@@ -376,7 +379,23 @@ export async function viewHome(alive) {
     if (!mixed.length) return;
     const title = recentShows.length > 1 ? 'Picked for you' : `Because you watched ${esc(recentShows[0].title)}`;
     document.getElementById('picked').innerHTML = shelf('shelf-picked', title, recentShows.length > 1 ? `from ${recentShows.map((r) => esc(r.title)).join(', ')}` : 'picked from what you watched');
-    bindShelf('shelf-picked', async () => shelfCards(unstarted(mixed).slice(0, 16)), alive);
+    bindShelf('shelf-picked', async () => {
+      const list = unstarted(mixed).slice(0, 16);
+      // Recommendations carry one title only; look the full ones up (six at a time, cached) so
+      // the cards follow the English/Japanese titles setting like the rest of the page.
+      if (!IS_CINEMEE) {
+        for (let i = 0; i < list.length; i += 6) {
+          api(`/batch?ids=${list.slice(i, i + 6).map((r) => r.id).join(',')}`).then(({ results }) => {
+            if (!alive()) return;
+            for (const full of results || []) {
+              cardShows.set(String(full.id), full);
+              document.querySelectorAll(`#shelf-picked [data-card="${full.id}"] .card-title`).forEach((el) => { el.textContent = T(full); });
+            }
+          }).catch(() => {});
+        }
+      }
+      return shelfCards(list);
+    }, alive);
   }).catch(() => {});
 
   Promise.resolve(d.genres ? { genres: d.genres } : api('/genres')).then(({ genres }) => {
@@ -755,11 +774,11 @@ export function loadSeasons(a, alive, slotId, linkTo = 'anime', onLoaded) {
       if (linkTo !== 'anime') return;
       slot.innerHTML = `<section class="section seasons">
         <div class="section-head"><h2>Seasons</h2></div>
-        <p class="card-meta">${seasons.length} seasons</p>
+        <p class="card-meta">${plural(seasons.length, 'season')}</p>
         <div class="season-row">${seasons.map((s) => {
           const inner = `<img src="${esc(s.cover)}" alt="${esc(s.title)} poster" loading="lazy">
             <span class="season-info">
-              <small>${[s.year, s.episodes ? `${s.episodes} episodes` : ''].filter(Boolean).join(' · ')}</small>
+              <small>${[s.year, s.episodes ? plural(s.episodes, 'episode') : ''].filter(Boolean).join(' · ')}</small>
               <b>${esc(s.title)}</b>
               ${s.startEp ? '' : `<span class="here-badge">${s.airDate ? `Starts ${new Date(s.airDate + 'T12:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}` : 'Coming later'}</span>`}
             </span>`;
@@ -1175,7 +1194,7 @@ export async function viewAnime(id, alive, query = new URLSearchParams()) {
             ${IS_CINEMEE && a.rating ? `<div><b>Rated</b><span>${esc(a.rating)}</span></div>` : ''}
             ${a.season ? `<div><b>Season</b><span>${SEASON[a.season]} ${a.year || ''}</span></div>` : ''}
             ${a.studios.length ? `<div><b>${IS_CINEMEE && !isMovie(a) ? 'Network' : 'Studio'}</b><span>${(a.studioLinks?.length ? a.studioLinks.map((st) => `<a href="/search?studio=${st.id}&studioName=${encodeURIComponent(st.name)}">${esc(st.name)}</a>`) : a.studios.map(esc)).join(', ')}</span></div>` : ''}
-            ${a.source ? `<div><b>Source</b><span>${esc(a.source.replace(/_/g, ' ').toLowerCase())}</span></div>` : ''}
+            ${a.source ? `<div><b>Source</b><span>${esc(a.source.replace(/_/g, ' ').toLowerCase().replace(/^./, (c) => c.toUpperCase()))}</span></div>` : ''}
             ${a.popularity ? `<div><b>${IS_CINEMEE ? 'Votes' : 'Members'}</b><span>${a.popularity.toLocaleString()}</span></div>` : ''}
             ${a.synonyms.length ? `<div><b>Also</b><span>${esc(a.synonyms.slice(0, 3).join(', '))}</span></div>` : ''}
             <div><b>Elsewhere</b><span class="out-links">${IS_CINEMEE && a.tmdbId

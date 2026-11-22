@@ -6,7 +6,7 @@ import * as inbox from '../inbox.js';
 import * as push from '../push.js';
 import * as aniList from '../anilist.js';
 import { BRAND, IS_CINEMEE, SIBLING } from '../site.js';
-import { FORMAT, app, card, esc, grid, onCleanup, parseHash, route, section, selectField, toastNote, undoToast } from '../app.js';
+import { FORMAT, app, card, esc, grid, onCleanup, parseHash, plural, route, section, selectField, toastNote, undoToast } from '../app.js';
 import { addHub } from './hub.js';
 
 // ---------- a shared list (/u/<name>) ----------
@@ -82,7 +82,7 @@ export function viewStats() {
   const year = new Date().getFullYear();
   const thisYear = history.filter((h) => new Date(h.at).getFullYear() === year).length;
 
-  const summary = `My ${IS_CINEMEE ? 'movie and TV' : 'anime'} stats on ${BRAND.name}: ${episodes} episodes watched (${fmtHours(minutes)}), ${count('completed')} shows completed${genres[0] ? `, favourite genre ${genres[0][0]}` : ''}.`;
+  const summary = `My ${IS_CINEMEE ? 'movie and TV' : 'anime'} stats on ${BRAND.name}: ${plural(episodes, 'episode')} watched (${fmtHours(minutes)}), ${plural(count('completed'), 'show')} completed${genres[0] ? `, favourite genre ${genres[0][0]}` : ''}.`;
 
   app.innerHTML = `
     <h2 class="hub-sub">my stats</h2>
@@ -103,8 +103,8 @@ export function viewStats() {
     ${top.length ? `<section class="section"><div class="section-head"><h2>most watched</h2></div>
       <div class="grid">${top.map((r) => `<a class="card" href="/anime/${esc(r.id)}"><div class="poster"><img loading="lazy" src="${esc(r.cover || '')}" alt=""><span class="badge eps">${r.watched} eps</span></div><div class="card-title">${esc(r.title)}</div></a>`).join('')}</div></section>` : ''}
     ${history.length ? `<section class="section"><div class="section-head"><h2>when you watch</h2></div>
-      <div class="week">${weekdays.map((n, i) => `<div class="week-col" title="${n} episodes opened"><i style="height:${Math.round((n / maxDay) * 100)}%"></i><span>${dayNames[i]}</span></div>`).join('')}</div>
-      <p class="card-meta">Longest streak: <b>${best} day${best === 1 ? '' : 's'}</b> in a row · ${thisYear} episodes opened in ${year}. Based on history in this browser.</p></section>` : ''}
+      <div class="week">${weekdays.map((n, i) => `<div class="week-col" title="${plural(n, 'episode')} opened"><i style="height:${Math.round((n / maxDay) * 100)}%"></i><span>${dayNames[i]}</span></div>`).join('')}</div>
+      <p class="card-meta">Longest streak: <b>${best} day${best === 1 ? '' : 's'}</b> in a row · ${plural(thisYear, 'episode')} opened in ${year}. Based on history in this browser.</p></section>` : ''}
     <div class="actions" style="margin-top:22px"><button class="btn" id="stats-copy" type="button">Copy a summary to share</button></div>`}`;
 
   addHub('stats');
