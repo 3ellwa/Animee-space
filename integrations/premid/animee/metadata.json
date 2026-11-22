@@ -1,0 +1,42 @@
+{
+  "$schema": "https://schemas.premid.app/metadata/1.16",
+  "apiVersion": 1,
+  "author": {
+    "name": "__YOUR_DISCORD_USERNAME__",
+    "id": "__YOUR_DISCORD_USER_ID__"
+  },
+  "service": "animee",
+  "altnames": ["cinemee", "mangee", "animee space"],
+  "description": {
+    "en": "animee, cinemee and mangee: watch anime, movies and TV, and read manga. Shows what you're watching or reading, the episode or chapter, and how much is left."
+  },
+  "url": ["animee.space", "cinemee.animee.space", "mangee.animee.space"],
+  "regExp": "^https?[:][/][/]((cinemee|mangee)[.])?animee[.]space[/]",
+  "version": "1.0.0",
+  "logo": "https://animee.space/icons/icon-512.png",
+  "thumbnail": "https://animee.space/og.png",
+  "color": "#C6FF3D",
+  "category": "anime",
+  "tags": ["anime", "movies", "tv", "manga", "streaming"],
+  "settings": [
+    {
+      "id": "showTitle",
+      "title": "Show what I'm watching",
+      "icon": "fas fa-tv",
+      "value": true,
+      "description": "Off: Discord only says you're on the site"
+    },
+    {
+      "id": "showCover",
+      "title": "Show the cover",
+      "icon": "fas fa-image",
+      "value": true
+    },
+    {
+      "id": "showButtons",
+      "title": "Show a link button",
+      "icon": "fas fa-link",
+      "value": true
+    }
+  ]
+}

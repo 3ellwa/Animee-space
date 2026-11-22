@@ -1,3 +1,8 @@
+## Discord presence
+
+- The watch page and the reader publish what's playing as JSON in `<script id="now-playing" type="application/json">` (`public/js/nowplaying.js`): site, title, episode or chapter, season, position, length, paused, cover, link. Updated every 5 s while watching, on every page turn while reading, removed when you leave.
+- `integrations/premid/animee/` is a PreMiD activity that turns it into "Watching animee · Frieren · Episode 5 · 12:31 left" (also cinemee and mangee). Needs a Discord application id; steps in `integrations/premid/README.md`.
+
 ## One account for every site, and mangee (manga)
 
 - **One account:** accounts live in animee's database (`USERS_DB` in `siteEnv`); each site keeps its own lists and progress in its own database under the same id. The login cookie is now `am_session` with `Domain=animee.space` on the live sites, so signing in once works on all three (old `as_session` cookies no longer count: sign in once more). Deleting an account clears it on every site. The existing cinemee account had the same name and id as the animee one, so nothing needed moving.

@@ -11,6 +11,7 @@
 import { api } from '../api.js';
 import * as store from '../store.js';
 import { BRAND } from '../site.js';
+import { setNowPlaying, clearNowPlaying } from '../nowplaying.js';
 import { app, esc, T, animeHref, onCleanup, toastNote, countPlay, viewNotFound, loader } from '../app.js';
 
 export async function viewRead(id, query, alive) {
@@ -73,6 +74,8 @@ export async function viewRead(id, query, alive) {
   // Your place: the chapter and the page (shown as "page N" in Continue reading).
   let saveTimer = 0;
   function saveSpot() {
+    // "Now playing" for Discord presence (see nowplaying.js): the chapter and page.
+    setNowPlaying({ kind: 'reading', title: T(a), episode: current.label, episodeTitle: current.title && !/^Chapter /.test(current.title) ? current.title : '', number: current.number, time: pages.length ? page + 1 : null, duration: pages.length || null, cover: a.cover, url: animeHref(a) });
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
       store.saveProgress({ animeId: a.id, ep: current.number, time: page, duration: pages.length, title: a.title, cover: a.cover });
@@ -190,7 +193,7 @@ export async function viewRead(id, query, alive) {
     else if (e.key === 'p' || e.key === 'P') $('rd-prev').click();
   };
   document.addEventListener('keydown', onKey);
-  onCleanup(() => { document.removeEventListener('keydown', onKey); observer?.disconnect(); clearTimeout(saveTimer); store.sync.flush(); });
+  onCleanup(() => { clearNowPlaying(); document.removeEventListener('keydown', onKey); observer?.disconnect(); clearTimeout(saveTimer); store.sync.flush(); });
 
   // Start where you stopped (same chapter: same page).
   openChapter(current, { startPage: prog && prog.ep === current.number ? prog.time || 0 : 0 });

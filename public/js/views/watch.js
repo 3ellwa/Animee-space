@@ -6,6 +6,7 @@ import * as inbox from '../inbox.js';
 import * as push from '../push.js';
 import * as aniList from '../anilist.js';
 import { BRAND, IS_CINEMEE, SIBLING } from '../site.js';
+import { setNowPlaying, clearNowPlaying } from '../nowplaying.js';
 import { FORMAT, STATUS, T, animeHref, app, bindFollow, bindListSelect, card, clock, countPlay, epName, esc, followButton, go, grid, isMovie, listSelect, loadExtras, loadSeasons, mediaPrefsFor, onCleanup, plural, saveMediaPrefs, score, section, toastNote, viewNotFound } from '../app.js';
 
 // ---------- watch ----------
@@ -242,6 +243,7 @@ export async function viewWatch(id, query, alive) {
       }
     },
     onProgress: ({ time, duration, ep }) => {
+      if (duration) lastDuration = duration;
       store.saveProgress({ animeId: a.id, ep, time, duration, title: a.title, cover: a.cover });
       if (time > 120) autoStatus('started');
       if (duration && time / duration > 0.85 && !watched.has(ep)) {
@@ -252,6 +254,28 @@ export async function viewWatch(id, query, alive) {
     },
   });
   onCleanup(() => { player.destroy(); store.sync.flush(); });
+
+  // "Now playing" for Discord presence (see nowplaying.js), refreshed every few seconds.
+  let lastDuration = 0;
+  function publishNow() {
+    setNowPlaying({
+      kind: 'watching',
+      title: T(a),
+      episode: isMovie(a) ? '' : epName(current),
+      episodeTitle: current.title && !/^Episode \d+$/.test(current.title) ? current.title : '',
+      season: current.season ?? null,
+      // Within its season on cinemee TV (S2 · E1 is number 11 in the full list).
+      number: current.season && current.episode ? current.episode : current.number,
+      time: player.hasTime() ? player.getCurrentTime() : null,
+      duration: lastDuration || null,
+      paused: player.isPausedHere(),
+      cover: a.cover,
+      url: animeHref(a),
+    });
+  }
+  publishNow();
+  const nowTimer = setInterval(publishNow, 5000);
+  onCleanup(() => { clearInterval(nowTimer); clearNowPlaying(); });
 
   // Picked up a newer position from another device while this page was open (e.g. the phone
   // was left on this page): offer to jump there rather than yanking the video around.
@@ -589,6 +613,8 @@ export async function viewWatch(id, query, alive) {
     $('prev-ep').disabled = idx() === 0;
     $('next-ep').disabled = idx() === episodes.length - 1;
     store.addHistory({ animeId: a.id, ep: ep.number, title: a.title, cover: a.cover });
+    lastDuration = 0;
+    publishNow();
     showSeen();
     renderEpisodes();
     player.reset();

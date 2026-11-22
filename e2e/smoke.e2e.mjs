@@ -54,7 +54,15 @@ async function check(url, selector, { text, wait } = {}) {
 test('animee home: shelves and genres', () => check(BASE + '/', '#home-genres .chip'));
 test('animee search page finds Frieren, even misspelled', () => check(BASE + '/search?q=frirean', '.grid .card', { text: /Frieren/i }));
 test('animee title page: rating, list buttons, seasons', () => check(BASE + '/anime/52991/frieren-beyond-journey-s-end', '#my-rating'));
-test('animee watch page: servers, episodes, party button', () => check(BASE + '/watch/52991?ep=1', '#server-list .srv', { wait: '#ep-list' }));
+test('animee watch page: servers, episodes, and "now playing" for Discord', async () => {
+  await check(BASE + '/watch/52991?ep=1', '#server-list .srv', { wait: '#ep-list' });
+  const { page, close } = await open(BASE + '/watch/52991?ep=3', { wait: '#ep-list' });
+  try {
+    const now = JSON.parse(await page.locator('#now-playing').textContent());
+    assert.deepEqual([now.site, now.kind, now.number], ['animee', 'watching', 3]);
+    assert.match(now.title, /Frieren/i);
+  } finally { await close(); }
+});
 test('animee schedule', () => check(BASE + '/schedule', '#sched .sched-row, #sched .empty'));
 test('animee A-Z list', () => check(BASE + '/az', '.grid .card, .empty'));
 test('animee help me pick', () => check(BASE + '/pick', '.page-title, h1'));
@@ -132,6 +140,9 @@ test('the mangee reader shows real pages and credits the group', async () => {
     await page.waitForSelector('#rd-pages img', { timeout: 30000 });
     await page.waitForFunction(() => { const i = document.querySelector('#rd-pages img'); return i && i.complete && i.naturalWidth > 100; }, null, { timeout: 30000 });
     assert.match(await page.locator('#rd-credit').innerText(), /MangaDex/);
+    const now = JSON.parse(await page.locator('#now-playing').textContent());
+    assert.equal(now.kind, 'reading', 'the reader says what you read, for Discord presence');
+    assert.equal(now.site, 'mangee');
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });
