@@ -4,7 +4,7 @@
 // <script id="now-playing" type="application/json"> (public/js/nowplaying.js), so this file
 // only reads that block. Elsewhere on the sites it shows "Browsing".
 
-const presence = new Presence({ clientId: '__DISCORD_APPLICATION_ID__' })
+const presence = new Presence({ clientId: '1574094254597341214' })
 const browsingTimestamp = Math.floor(Date.now() / 1000)
 
 const LOGOS: Record<string, string> = {

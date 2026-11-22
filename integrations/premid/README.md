@@ -18,8 +18,8 @@ hide the link button.
 ## Try it on your own machine
 
 1. Create a Discord application at https://discord.com/developers/applications, named
-   `animee` (the name only shows if the site name can't be set). Copy its **Application ID**
-   into `presence.ts` in place of `__DISCORD_APPLICATION_ID__`.
+   `animee` (done: id 1574094254597341214 is already in `presence.ts`). Its **Application ID**
+   goes in `presence.ts` as the clientId.
 2. Put your Discord username and user ID in `metadata.json` (`author`).
 3. Install the PreMiD extension, and turn on **Activity Developer Mode** in its settings.
 4. Clone https://github.com/PreMiD/Activities, copy `animee/` to `websites/A/animee/`, then
