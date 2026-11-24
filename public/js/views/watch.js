@@ -13,6 +13,9 @@ import { FORMAT, STATUS, T, animeHref, app, bindFollow, bindListSelect, card, cl
 // ---------- watch ----------
 export async function viewWatch(id, query, alive) {
   if (!id) return viewNotFound();
+  // html.watching: TV mode drops its page zoom here (style.css, "TV video safety").
+  document.documentElement.classList.add('watching');
+  onCleanup(() => document.documentElement.classList.remove('watching'));
   // Show the page's shape straight away (player, episode panel) with what is being loaded,
   // using the poster this browser already knows, instead of a bare spinner.
   const known = store.getList()[id] || store.getProgress(id) || {};
@@ -394,8 +397,16 @@ export async function viewWatch(id, query, alive) {
   // The TV remote's play/pause, fast-forward/rewind and channel up/down (tv.js).
   onCleanup(setMedia({
     playerBox: $('player').querySelector('.player'),
-    playPause: () => { if (!player.togglePlay()) toastNote('This server can\'t be paused from the remote. 3ellwa and JoJo can.'); },
-    setPaused: (paused) => { if (!player.setPaused(paused)) toastNote('This server can\'t be paused from the remote. 3ellwa and JoJo can.'); },
+    // On a TV the picture is most reliable full screen (the video gets the TV's video layer to
+    // itself), so starting to play from the remote also goes full screen. Back leaves it.
+    playPause: () => {
+      if (!document.fullscreenElement && !document.webkitFullscreenElement) player.enterFullscreen({ quiet: true });
+      if (!player.togglePlay()) toastNote('This server can\'t be paused from the remote. 3ellwa and JoJo can.');
+    },
+    setPaused: (paused) => {
+      if (!paused && !document.fullscreenElement && !document.webkitFullscreenElement) player.enterFullscreen({ quiet: true });
+      if (!player.setPaused(paused)) toastNote('This server can\'t be paused from the remote. 3ellwa and JoJo can.');
+    },
     seekBy: (s) => player.seekBy(s),
     next: () => $('next-ep').click(),
     prev: () => $('prev-ep').click(),

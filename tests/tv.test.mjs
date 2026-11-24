@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { detectTv, keyKind, pickNext } from '../public/js/tv.js';
+import { browserLabel, detectTv, keyKind, pickNext } from '../public/js/tv.js';
+
+test('Settings names the TV browser engine', () => {
+  assert.equal(browserLabel('Mozilla/5.0 (Web0S; Linux/SmartTV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.88 Safari/537.36 WebAppManager'), 'LG webOS · Chrome 87');
+  assert.equal(browserLabel('Mozilla/5.0 (SMART-TV; LINUX; Tizen 6.5) AppleWebKit/537.36 (KHTML, like Gecko) 85.0.4183.93/6.5 TV Safari/537.36'), 'Samsung Tizen 6.5 · Chrome 85');
+});
 
 test('remote buttons: LG has separate Play, Pause and Stop; others one play/pause button; Back on every brand', () => {
   const k = (keyCode, key = '') => keyKind({ keyCode, key });

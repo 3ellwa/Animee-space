@@ -20,6 +20,19 @@ export function detectTv(ua = '', query = '', saved = null) {
   return TV_UA.test(ua);
 }
 
+/** "LG webOS · Chrome 87" — shown in Settings, so a TV's browser engine can be read off the screen. */
+export function browserLabel(ua = '') {
+  const os = /web0s|webos/i.test(ua) ? 'LG webOS' : /tizen/i.test(ua) ? `Samsung Tizen${(/Tizen ([\d.]+)/i.exec(ua) || [])[1] ? ` ${/Tizen ([\d.]+)/i.exec(ua)[1]}` : ''}`
+    : /aft[a-z]|silk/i.test(ua) ? 'Fire TV' : /android tv|googletv|bravia|crkey/i.test(ua) ? 'Android TV' : /vidaa/i.test(ua) ? 'Hisense VIDAA'
+      : /android/i.test(ua) ? 'Android' : /iphone|ipad/i.test(ua) ? 'iOS' : /windows/i.test(ua) ? 'Windows' : /mac os/i.test(ua) ? 'Mac' : /linux/i.test(ua) ? 'Linux' : 'Unknown';
+  // Samsung writes its Chromium version as "85.0.4183.93/6.5 TV Safari".
+  const chrome = (/Chrom(?:e|ium)\/(\d+)/.exec(ua) || /\b(\d{2,3})\.\d+\.\d+\.\d+\/[\d.]+ TV Safari/.exec(ua) || [])[1];
+  const safari = !chrome && (/Version\/(\d+).*Safari/.exec(ua) || [])[1];
+  const firefox = (/Firefox\/(\d+)/.exec(ua) || [])[1];
+  const engine = chrome ? `Chrome ${chrome}` : firefox ? `Firefox ${firefox}` : safari ? `Safari ${safari}` : 'unknown engine';
+  return `${os} · ${engine}`;
+}
+
 function readSaved() { try { return localStorage.getItem(KEY); } catch { return null; } }
 function save(on) { try { localStorage.setItem(KEY, on ? '1' : '0'); } catch { /* private mode */ } }
 
@@ -191,6 +204,18 @@ export function initTv() {
   document.documentElement.classList.toggle('tv', on);
   // Capture phase: runs before the page's own shortcuts, so arrows move focus first.
   addEventListener('keydown', onKey, true);
+  // Embedded players (all of cinemee's) can pull focus into their frame, where the remote's keys
+  // never reach us: take it back to the player box straight away.
+  addEventListener('blur', () => {
+    if (!on) return;
+    setTimeout(() => {
+      const a = document.activeElement;
+      if (a?.tagName === 'IFRAME') {
+        const box = a.closest('.player');
+        try { (box || document.body).focus({ preventScroll: true }); } catch { /* ignore */ }
+      }
+    }, 0);
+  });
   // After every page change, put focus somewhere useful so the remote works straight away.
   addEventListener('animee:navigate', () => {
     if (!on) return;

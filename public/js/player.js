@@ -353,14 +353,16 @@ export class Player {
     }
   }
 
-  async enterFullscreen() {
+  // quiet: the TV remote asks on every OK; a refusal there just leaves the player as it is.
+  async enterFullscreen({ quiet = false } = {}) {
     const target = this.root.querySelector('.player');
     try {
       if (target?.requestFullscreen) await target.requestFullscreen();
+      else if (target?.webkitRequestFullscreen) await target.webkitRequestFullscreen();
       else if (this.iframe.requestFullscreen) await this.iframe.requestFullscreen();
-      else this.msg('Use the fullscreen control inside the embedded player.');
+      else if (!quiet) this.msg('Use the fullscreen control inside the embedded player.');
     } catch {
-      this.msg('Fullscreen was blocked. Use the embedded player controls if available.');
+      if (!quiet) this.msg('Fullscreen was blocked. Use the embedded player controls if available.');
     }
   }
 

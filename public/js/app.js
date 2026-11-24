@@ -592,6 +592,22 @@ export function bindSpotlight(alive) {
   restart();
   root.onmouseenter = () => clearInterval(timer);
   root.onmouseleave = restart;
+  // Keyboard / TV remote: no rotating away under a focused button.
+  root.addEventListener('focusin', () => clearInterval(timer));
+  root.addEventListener('focusout', (e) => { if (!root.contains(e.relatedTarget)) restart(); });
+  // ← on the first button / → on the last one change the slide (the remote has no other way to).
+  root.addEventListener('keydown', (e) => {
+    if (e.defaultPrevented || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) return;
+    const buttons = [...slides[i].querySelectorAll('.actions a')];
+    const at = buttons.indexOf(e.target);
+    if (at < 0) return;
+    const step = e.key === 'ArrowRight' ? 1 : -1;
+    if ((step > 0 && at !== buttons.length - 1) || (step < 0 && at !== 0)) return;
+    e.preventDefault();
+    show(i + step);
+    const next = [...slides[i].querySelectorAll('.actions a')];
+    (step > 0 ? next[0] : next[next.length - 1])?.focus({ preventScroll: true });
+  });
   onCleanup(() => clearInterval(timer));
 }
 

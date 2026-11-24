@@ -8,7 +8,7 @@ import * as aniList from '../anilist.js';
 import { BRAND, IS_CINEMEE, IS_MANGEE, SIBLING } from '../site.js';
 import { app, card, esc, loader, readFile, section, takeInstallPrompt } from '../app.js';
 import { addHub } from './hub.js';
-import { isTv, setTv } from '../tv.js';
+import { browserLabel, isTv, setTv } from '../tv.js';
 
 // ---------- settings ----------
 export const ANILIST_IMPORT_LIMIT = 4000;
@@ -24,6 +24,7 @@ export function viewSettings(alive) {
       <section class="settings-group"><h2>Display</h2>
         <div class="setting anime-only"><span>Anime names in</span><div class="chips">${radio('titles', 'english', 'English', s.titles)}${radio('titles', 'japanese', 'Japanese', s.titles)}</div></div>
         ${toggle('tvMode', 'TV mode: bigger, and the arrow keys move between buttons (for a TV remote; on by itself on smart TVs)', isTv())}
+        <p class="card-meta">This browser: ${esc(browserLabel(navigator.userAgent))}</p>
       </section>
       <section class="settings-group"><h2>Home page</h2>
         ${toggle('showContinue', 'Show Continue watching on the home page', s.showContinue)}

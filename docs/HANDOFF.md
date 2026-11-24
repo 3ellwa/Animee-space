@@ -125,6 +125,11 @@ The watch page registers `setMedia({ playPause, setPaused, seekBy, next, prev, p
 player box is focusable and the embed iframe has `tabIndex = -1`, so keys always reach us.
 `Player.togglePlay()` / `setPaused()` work for our own `<video>`, Rem, aniembed.se and vidnext (`{action:'play'|'pause'}`).
 Test on a PC: `http://localhost:8787/?tv=1` with the window at 1920×1080, keyboard only.
+**Video on TVs** (user's LG, Nov 24: sound but no picture): TV browsers draw video on a hardware layer that
+breaks under page `zoom`, rounded clipping (`border-radius` + `overflow: hidden`), big shadows, blur filters and
+fixed effect layers. In TV mode the watch page (`html.watching`) has none of those, OK/Play also goes full
+screen (`enterFullscreen({ quiet: true })`), and focus is pulled back whenever an embedded player grabs it.
+Settings → Display shows "This browser: LG webOS · Chrome NN" (`browserLabel`) for debugging a TV.
 **Limit:** the site's JavaScript uses `?.`/`??` (Chromium 80+), so TV browsers older than about 2022
 (LG webOS 6 / Samsung Tizen 6.0 and earlier) won't run it at all. Android TV / Fire TV browsers are current.
 
