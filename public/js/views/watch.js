@@ -7,7 +7,7 @@ import * as push from '../push.js';
 import * as aniList from '../anilist.js';
 import { BRAND, IS_CINEMEE, SIBLING } from '../site.js';
 import { setNowPlaying, clearNowPlaying } from '../nowplaying.js';
-import { isTv, setMedia } from '../tv.js';
+import { isTv, pressedRecently, setMedia } from '../tv.js';
 import { FORMAT, STATUS, T, animeHref, app, bindFollow, bindListSelect, card, clock, countPlay, epName, esc, followButton, go, grid, isMovie, listSelect, loadExtras, loadSeasons, mediaPrefsFor, onCleanup, plural, saveMediaPrefs, score, section, toastNote, viewNotFound } from '../app.js';
 
 // ---------- watch ----------
@@ -203,6 +203,17 @@ export async function viewWatch(id, query, alive) {
     });
   }
 
+  // TVs (the user's LG) show the picture reliably only full screen. Browsers allow full screen only
+  // right after a button press, which has usually expired by the time the episode has loaded, so:
+  // try anyway, and otherwise put the remote on the player, where OK goes full screen (and keeps it
+  // playing). Back leaves full screen first (tv.js).
+  const goFullOnTv = () => {
+    if (!isTv()) return;
+    const box = $('player').querySelector('.player');
+    try { box?.focus({ preventScroll: true }); } catch { box?.focus(); }
+    if (pressedRecently()) player.enterFullscreen({ quiet: true });
+  };
+  const fullScreenNow = () => Boolean(document.fullscreenElement || document.webkitFullscreenElement);
   const player = new Player($('player'), {
     autoskip: () => store.getSettings().autoskip,
     hasNext: () => !!nextAuto(),
@@ -400,12 +411,14 @@ export async function viewWatch(id, query, alive) {
     playerBox: $('player').querySelector('.player'),
     // On a TV the picture is most reliable full screen (the video gets the TV's video layer to
     // itself), so starting to play from the remote also goes full screen. Back leaves it.
+    // Not full screen yet: OK goes full screen and makes sure it plays (a toggle would pause a
+    // video that had already started). Full screen: OK plays / pauses.
     playPause: () => {
-      if (!document.fullscreenElement && !document.webkitFullscreenElement) player.enterFullscreen({ quiet: true });
+      if (!fullScreenNow()) { player.enterFullscreen({ quiet: true }); player.setPaused(false); return; }
       if (!player.togglePlay()) toastNote(NO_REMOTE_PAUSE);
     },
     setPaused: (paused) => {
-      if (!paused && !document.fullscreenElement && !document.webkitFullscreenElement) player.enterFullscreen({ quiet: true });
+      if (!paused && !fullScreenNow()) player.enterFullscreen({ quiet: true });
       if (!player.setPaused(paused)) toastNote(NO_REMOTE_PAUSE);
     },
     seekBy: (s) => player.seekBy(s),
@@ -413,6 +426,7 @@ export async function viewWatch(id, query, alive) {
     prev: () => $('prev-ep').click(),
   }));
   $('next-ep').onclick = () => idx() < episodes.length - 1 && goTo(episodes[idx() + 1]);
+  goFullOnTv();
   // ---------- your own subtitles (cinemee, Atlas) ----------
   const SUBS_KEY = 'animee-space:custom-subs';
   const subsKey = () => `${a.id}:${current.number}`;

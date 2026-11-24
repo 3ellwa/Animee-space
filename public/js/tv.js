@@ -39,6 +39,14 @@ function save(on) { try { localStorage.setItem(KEY, on ? '1' : '0'); } catch { /
 let on = false;
 export const isTv = () => on;
 
+// Full screen is only allowed shortly after a real button press (about 5 s in Chrome).
+let lastPress = 0;
+export function pressedRecently(now = Date.now()) {
+  const ua = typeof navigator !== 'undefined' ? navigator.userActivation : null;
+  if (ua) return ua.isActive;
+  return now - lastPress < 4500;
+}
+
 export function setTv(value) {
   on = Boolean(value);
   save(on);
@@ -166,6 +174,7 @@ function back() {
 }
 
 function onKey(e) {
+  if (e.isTrusted) lastPress = Date.now();
   if (!on || e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
   const kind = keyKind(e);
   if (!kind) return;

@@ -1181,3 +1181,10 @@ html.tv .slide.on .slide-bg, html.tv .slide.on .slide-poster, html.tv .slide.on 
   .trailer { height: 56vw; max-height: 480px; }
   .hover-card iframe, .hover-card > img { height: 180px; }
 }
+/* TV: the player selected but not full screen yet. On some TVs (the user's LG) the picture only
+   shows full screen, so say how. */
+html.tv .player:focus:not(:fullscreen)::after {
+  content: "Press OK to watch full screen"; position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%);
+  z-index: 7; padding: 10px 20px; border-radius: 999px; background: var(--lime); color: var(--ink);
+  font-weight: 700; font-size: 18px; white-space: nowrap; pointer-events: none;
+}
