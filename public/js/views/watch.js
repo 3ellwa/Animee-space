@@ -395,17 +395,18 @@ export async function viewWatch(id, query, alive) {
   document.addEventListener('keydown', onKey);
   onCleanup(() => document.removeEventListener('keydown', onKey));
   // The TV remote's play/pause, fast-forward/rewind and channel up/down (tv.js).
+  const NO_REMOTE_PAUSE = `This server can’t be paused from the remote. ${IS_CINEMEE ? '3ellwa can' : '3ellwa, JoJo and Rem can'}.`;
   onCleanup(setMedia({
     playerBox: $('player').querySelector('.player'),
     // On a TV the picture is most reliable full screen (the video gets the TV's video layer to
     // itself), so starting to play from the remote also goes full screen. Back leaves it.
     playPause: () => {
       if (!document.fullscreenElement && !document.webkitFullscreenElement) player.enterFullscreen({ quiet: true });
-      if (!player.togglePlay()) toastNote('This server can\'t be paused from the remote. 3ellwa and JoJo can.');
+      if (!player.togglePlay()) toastNote(NO_REMOTE_PAUSE);
     },
     setPaused: (paused) => {
       if (!paused && !document.fullscreenElement && !document.webkitFullscreenElement) player.enterFullscreen({ quiet: true });
-      if (!player.setPaused(paused)) toastNote('This server can\'t be paused from the remote. 3ellwa and JoJo can.');
+      if (!player.setPaused(paused)) toastNote(NO_REMOTE_PAUSE);
     },
     seekBy: (s) => player.seekBy(s),
     next: () => $('next-ep').click(),
@@ -763,7 +764,7 @@ export async function viewWatch(id, query, alive) {
     if (p.role === 'host') {
       const n = (p.people || []).length - 1;
       if (!player.hasTime() && p.hostSince && Date.now() - p.hostSince > 20000) {
-        return setStatus(`Your server (${serverLabel(server?.id)}) doesn’t share its position, so friends can only follow your episode. For full sync pick 3ellwa, JoJo, Kaze or Rem.`, 'warn');
+        return setStatus(`Your server (${serverLabel(server?.id)}) doesn’t share its position, so friends can only follow your episode. For full sync pick ${IS_CINEMEE ? '3ellwa' : '3ellwa, JoJo or Rem'}.`, 'warn');
       }
       return setStatus(n ? `You’re the host. ${n} ${n === 1 ? 'friend follows' : 'friends follow'} your episode, server, position and pause.` : 'You’re the host. Invite friends: they’ll follow your episode, server and position.', 'good');
     }
@@ -773,6 +774,7 @@ export async function viewWatch(id, query, alive) {
     if (p.sync === 'press-play') return setStatus(`Press ▶ in the player to join ${host.name}.`, 'warn');
     if (p.sync === 'manual') return setStatus(`${host.name} is at ${clock(p.hostAt || 0)}. This server can’t be moved for you: skip there in the player.`, 'warn');
     if (p.sync === 'catching-up') return setStatus(`Catching up with ${host.name}…`, 'wait');
+    if (p.sync === 'host-paused') return setStatus(`${host.name} paused at ${clock(p.hostAt || 0)}. This server can’t be paused for you: pause your player.`, 'warn');
     return setStatus(`In sync with ${host.name}${p.hostPlaying === false ? ' (paused)' : ''}.`, 'good');
   }
   function renderPartyBar() {
@@ -883,7 +885,11 @@ export async function viewWatch(id, query, alive) {
       return;
     }
     if (!known) { p.sync = 'unknown'; renderStatus(); return; }
-    player.partyPause(!state.playing);
+    const pausable = player.partyPause(!state.playing);
+    // The host paused but this server can't be paused from here: don't seek back to the pause
+    // point every 3 seconds (that replayed the same second over and over). Say so and wait; when
+    // the host plays again the position catches up below.
+    if (!state.playing && !pausable) { p.sync = 'host-paused'; renderStatus(); return; }
     const mine = player.getCurrentTime() || 0;
     const started = player.hasTime();
     if (started && Math.abs(expected - mine) <= 4) { p.sync = 'ok'; renderStatus(); return; }

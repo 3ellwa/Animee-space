@@ -85,3 +85,23 @@ test('vidnext-style messages (source: vidnest-player) update progress and end th
   });
   assert.equal(player.ended, true);
 });
+
+test('watch party: a host pause pauses guests whose server can be paused, and reports when it can not', () => {
+  // cinemee's 3ellwa (vidnext): told to pause once it reports playing, then not told again.
+  const player = fakePlayer();
+  const sent = [];
+  player.embedOrigin = 'https://vidnext.pro';
+  player.iframe = { hidden: false, contentWindow: { postMessage: (m) => sent.push(m) } };
+  player.handleEmbedMessage({ origin: 'https://vidnext.pro', source: player.iframe.contentWindow, data: { source: 'vidnest-player', event: 'timeupdate', currentTime: 30, duration: 2700 } });
+  assert.equal(player.isPausedHere(), false);
+  assert.equal(player.partyPause(true), true);
+  assert.deepEqual(sent, [{ action: 'pause' }]);
+  player.handleEmbedMessage({ origin: 'https://vidnext.pro', source: player.iframe.contentWindow, data: { source: 'vidnest-player', event: 'pause', currentTime: 30, duration: 2700 } });
+  assert.equal(player.partyPause(true), true);
+  assert.equal(sent.length, 1, 'already paused: nothing more is sent');
+
+  // TryEmbed takes no commands: the caller must not keep seeking the guest back.
+  const other = fakePlayer();
+  other.iframe = { hidden: false, contentWindow: { postMessage: () => assert.fail('nothing to send') } };
+  assert.equal(other.partyPause(true), false);
+});

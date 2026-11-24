@@ -446,21 +446,25 @@ export class Player {
     }
     return false;
   }
-  /** Pause or play: only our own video can be told (embedded players don't take it). */
+  /** True when this player can be paused and played from outside (party, TV remote). */
+  canPause() {
+    if (this.iframe.hidden) return Boolean(this.video.src || this.video.currentSrc);
+    return this.isRem() || this.isRam() || this.isVidnext();
+  }
+  /**
+   * Watch party: match the host's pause. Returns false when this server can't be paused from
+   * outside, so the caller leaves the guest alone instead of seeking them back over and over.
+   */
   partyPause(paused) {
-    // Rem and Ram take play/pause commands too.
-    if (!this.iframe.hidden && (this.isRem() || this.isRam())) {
-      if (paused && this.embedPaused === false) this.commandEmbed('pause');
-      else if (!paused && this.embedPaused) this.commandEmbed('play');
-      return;
-    }
-    if (!this.iframe.hidden || !this.video.src) return;
-    if (paused && !this.video.paused) this.video.pause();
-    else if (!paused && this.video.paused) this.video.play().catch(() => {});
+    if (!this.canPause()) return false;
+    const here = this.isPausedHere();
+    if (here === paused) return true; // already there: no command, no flicker
+    return this.setPaused(paused);
   }
   isPausedHere() {
     if (this.iframe.hidden) return this.video.paused;
-    return (this.isRem() || this.isRam()) && typeof this.embedPaused === 'boolean' ? this.embedPaused : null;
+    // Rem, aniembed and the PLAYER_EVENT / vidnest-player servers report play and pause.
+    return typeof this.embedPaused === 'boolean' ? this.embedPaused : null;
   }
   /** Whether this player tells us where it is (our own video, or an embed that has reported a time). */
   hasTime() { return this.iframe.hidden ? Boolean(this.video.currentSrc || this.video.src) : this.embedTime > 0; }

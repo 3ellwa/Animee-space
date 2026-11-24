@@ -1,3 +1,8 @@
+## Watch party: pausing fixed
+
+- **Bug:** when the host paused, guests on a server that can't be paused from outside kept playing and were seeked back to the pause point every 3 s, so they saw the same second over and over. Now: guests are paused wherever the server allows it (our own player, aniembed.se, animeembed.com and now vidnext, i.e. both sites' 3ellwa), and anyone else is left alone with "X paused: pause your player" until the host plays again.
+- `Player.canPause()` / `partyPause()` returns whether it worked; `isPausedHere()` uses the play/pause every reporting server sends, not just Rem/Ram's.
+
 ## Smart TVs and the remote
 
 - **TV mode** (`public/js/tv.js`, `html.tv` in style.css): on by itself in TV browsers (Samsung Tizen, LG webOS, Android TV / Google TV, Fire TV, Hisense VIDAA, Sony, Philips...); Settings → Display → TV mode on any device; `?tv=1` / `?tv=0` to force it.
