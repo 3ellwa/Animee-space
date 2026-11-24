@@ -487,7 +487,13 @@ export async function getRandom() {
 //   vidnext: https://vidnext.pro/movie/{id}       and /tv/{id}/{season}/{episode}
 //   embedmaster: https://embedmaster.link/movie/{id} and /tv/{id}/{season}/{episode}
 //   vidcore: https://vidcore.org/embed/movie/{id} and /embed/tv/{id}/{season}/{episode}
+//   vidfast: https://vidfast.vc/movie/{id}       and /tv/{id}/{season}/{episode} (vidfast.pro redirects here)
+//   vidlink: https://vidlink.pro/movie/{id}      and /tv/{id}/{season}/{episode}
 const PLAYERS = {
+  // VidFast: its final host, so the origin check on its messages matches. theme = cinemee's red.
+  vidfast: { base: 'https://vidfast.vc', movie: (t) => `/movie/${t.tmdb}?theme=FF3D52`, tv: (t) => `/tv/${t.tmdb}/${t.season}/${t.episode}?theme=FF3D52` },
+  // VidLink: colors are hex without '#'.
+  vidlink: { base: 'https://vidlink.pro', movie: (t) => `/movie/${t.tmdb}?primaryColor=FF3D52`, tv: (t) => `/tv/${t.tmdb}/${t.season}/${t.episode}?primaryColor=FF3D52` },
   vidsrc: { base: 'https://vidsrc.to', movie: (t) => `/embed/movie/${t.tmdb}`, tv: (t) => `/embed/tv/${t.tmdb}/${t.season}/${t.episode}` },
   vidnest: { base: 'https://vidnest.fun', movie: (t) => `/movie/${t.tmdb}`, tv: (t) => `/tv/${t.tmdb}/${t.season}/${t.episode}` },
   // vidnext: theme = cinemee's red for its controls.

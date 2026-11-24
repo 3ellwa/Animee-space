@@ -2,6 +2,7 @@ import { api } from './api.js';
 import * as store from './store.js';
 import { Player } from './player.js';
 import './fx.js';
+import { initTv, isTv } from './tv.js';
 import * as inbox from './inbox.js';
 import * as push from './push.js';
 import * as aniList from './anilist.js';
@@ -939,7 +940,8 @@ window.addEventListener('unhandledrejection', (e) => {
 
 // Hover a poster for a moment (mouse only, wide screens): a preview card with the trailer
 // playing muted, the story and Watch / Details buttons. It closes when the mouse leaves both.
-export const canPreview = () => matchMedia('(hover: hover) and (pointer: fine) and (min-width: 900px)').matches;
+// Not on TVs: LG's pointer remote would trigger it, and a trailer per card is heavy there.
+export const canPreview = () => !isTv() && matchMedia('(hover: hover) and (pointer: fine) and (min-width: 900px)').matches;
 export let previewTimer = 0;
 export let previewClose = 0;
 export let previewFor = '';
@@ -1454,6 +1456,8 @@ export function showNotice() {
   }).catch(() => {});
 }
 
+// Before the first page renders: the player builds itself differently on a TV.
+initTv();
 route();
 showNews();
 showNotice();

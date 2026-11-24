@@ -346,7 +346,14 @@ export const startedIds = () => new Set(Object.values(lib).filter((e) => e.ep ||
 // titles: 'english' or 'japanese' (romaji). showContinue / hideStarted control the home page.
 // Only autoplay, autoskip and category sync to an account; the rest stay in this browser.
 // alertsFor: which new episodes count for Notifications and pop-ups: 'both', 'sub' or 'dub'.
-let settings = { autoplay: true, autoskip: false, category: 'sub', provider: 'megaplay', titles: 'english', showContinue: true, hideStarted: false, alertsFor: 'both', ...read('settings', {}) };
+// provider: the server you last picked by hand; '' means the list order (ad-free servers first).
+let settings = { autoplay: true, autoskip: false, category: 'sub', provider: '', titles: 'english', showContinue: true, hideStarted: false, alertsFor: 'both', ...read('settings', {}) };
+// Until Nov 24, 2026 every browser stored 'megaplay' as the default whether or not you picked it,
+// so once, drop it: the ad-free servers that now lead the list get their turn.
+if (!read('serverOrderV2', false)) {
+  if (settings.provider === 'megaplay') { settings = { ...settings, provider: '' }; write('settings', settings); }
+  write('serverOrderV2', true);
+}
 export const getSettings = () => ({ ...settings });
 export function setSetting(key, value) {
   settings = { ...settings, [key]: value };
@@ -354,11 +361,11 @@ export function setSetting(key, value) {
   write('settingsDirty', true);
   sync.schedule();
 }
-// bits: 1 autoplay, 2 autoskip, 4 dub, 8 AnimeParadise as the preferred server (else MegaPlay)
+// bits: 1 autoplay, 2 autoskip, 4 dub, 8 AnimeParadise as the preferred server (else the list order)
 const prefsBits = () => (settings.autoplay ? 1 : 0) | (settings.autoskip ? 2 : 0) | (settings.category === 'dub' ? 4 : 0)
   | (settings.provider === 'animeparadise' ? 8 : 0);
 function applyPrefs(bits) {
-  settings = { ...settings, autoplay: !!(bits & 1), autoskip: !!(bits & 2), category: bits & 4 ? 'dub' : 'sub', provider: bits & 8 ? 'animeparadise' : 'megaplay' };
+  settings = { ...settings, autoplay: !!(bits & 1), autoskip: !!(bits & 2), category: bits & 4 ? 'dub' : 'sub', provider: bits & 8 ? 'animeparadise' : (settings.provider === 'animeparadise' ? '' : settings.provider) };
   write('settings', settings);
 }
 

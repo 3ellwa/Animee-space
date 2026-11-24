@@ -1,6 +1,17 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { Player } from '../public/js/player.js';
+import { Player, sandboxFor } from '../public/js/player.js';
+
+test('only players that still play sandboxed get the no-popups sandbox', () => {
+  for (const src of ['https://vidnext.pro/movie/1', 'https://vidcore.org/embed/movie/1', 'https://aniembed.se/e/1/1']) {
+    const sandbox = sandboxFor(src);
+    assert.match(sandbox, /allow-scripts/);
+    assert.doesNotMatch(sandbox, /allow-popups|allow-top-navigation/);
+  }
+  for (const src of ['https://vidfast.vc/movie/1', 'https://vidlink.pro/movie/1', 'https://megaplay.buzz/x', 'https://evil.vidnext.pro.example/x', 'not a url']) {
+    assert.equal(sandboxFor(src), '', src);
+  }
+});
 
 function fakePlayer() {
   const progress = [];

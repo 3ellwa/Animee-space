@@ -8,6 +8,7 @@ import * as aniList from '../anilist.js';
 import { BRAND, IS_CINEMEE, IS_MANGEE, SIBLING } from '../site.js';
 import { app, card, esc, loader, readFile, section, takeInstallPrompt } from '../app.js';
 import { addHub } from './hub.js';
+import { isTv, setTv } from '../tv.js';
 
 // ---------- settings ----------
 export const ANILIST_IMPORT_LIMIT = 4000;
@@ -22,6 +23,7 @@ export function viewSettings(alive) {
     <form id="settings" class="settings">
       <section class="settings-group"><h2>Display</h2>
         <div class="setting anime-only"><span>Anime names in</span><div class="chips">${radio('titles', 'english', 'English', s.titles)}${radio('titles', 'japanese', 'Japanese', s.titles)}</div></div>
+        ${toggle('tvMode', 'TV mode: bigger, and the arrow keys move between buttons (for a TV remote; on by itself on smart TVs)', isTv())}
       </section>
       <section class="settings-group"><h2>Home page</h2>
         ${toggle('showContinue', 'Show Continue watching on the home page', s.showContinue)}
@@ -41,7 +43,7 @@ export function viewSettings(alive) {
         <div class="setting anime-only"><span>Audio I prefer</span><div class="chips">${radio('category', 'sub', 'Sub', s.category)}${radio('category', 'dub', 'Dub', s.category)}</div></div>
         ${toggle('autoplay', 'Play the next episode automatically', s.autoplay)}
         ${toggle('skipFiller', 'Skip filler and recap episodes when playing the next one', !!s.skipFiller)}
-        <span class="anime-only">${toggle('autoskip', 'Skip intros and outros automatically (on the 3ellwa server)', !!s.autoskip)}</span>
+        <span class="anime-only">${toggle('autoskip', 'Skip intros and outros automatically (on the Kaze server)', !!s.autoskip)}</span>
         ${toggle('wide', 'Use the wide player', !!s.wide)}
       </section>
       <section class="settings-group" id="alerts"><h2>Notifications</h2>
@@ -121,6 +123,8 @@ export function viewSettings(alive) {
     const el = e.target;
     if (el.matches('[data-hide-genre]')) return; // handled above
     if (el.name === 'mangaFull') { store.setSetting('mangaQuality', el.checked ? 'data' : 'data-saver'); return; }
+    // This device only (a TV and a phone on the same account want different things).
+    if (el.name === 'tvMode') { setTv(el.checked); return; }
     store.setSetting(el.name, el.type === 'checkbox' ? el.checked : el.value);
     if (el.name === 'alertsWhen') push.syncFollows();
     if (el.name === 'alertsFor') { push.syncFollows(); inbox.refreshInbox({ force: true }).catch(() => {}); }

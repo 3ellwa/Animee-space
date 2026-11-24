@@ -81,11 +81,11 @@ test('review fixes: shared total counts every visible title; uploads may be raw 
   assert.match(saved[0][1], /^WEBVTT\n\n00:00:01\.000 --> 00:00:02\.000/);
 });
 
-test('Rem (animeembed.com) and Ram (aniembed.se) are animee servers with sub and dub', async () => {
+test('animeembed.com (Rem) and aniembed.se (JoJo) are animee servers with sub and dub; ad-free ones lead', async () => {
   const { getProviderList, getSources } = await import('../functions/_lib/providers/registry.js');
   const list = getProviderList({}).map((p) => [p.id, p.name]);
-  assert.deepEqual(list.slice(0, 2), [['megaplay', '3ellwa'], ['animeembed', 'Rem']]);
-  assert.deepEqual(list.at(-1), ['aniembed', 'Ram']);
+  assert.deepEqual(list.slice(0, 2), [['animeparadise', '3ellwa'], ['aniembed', 'JoJo']]);
+  assert.deepEqual(list.slice(2), [['megaplay', 'Kaze'], ['animeembed', 'Rem'], ['vidnest', 'Ram'], ['tryembed', 'Hoshi']]);
   const rem = await getSources('52991', 3, 'animeembed', 'dub', {});
   assert.equal(rem.embedUrl, 'https://animeembed.com/embed/mal/52991/3?track=dub&autoPlay=1&autoNext=0&autoSkip=1&accent=C6FF3D');
   const ram = await getSources('52991', 3, 'aniembed', 'sub', {}, { aniListId: '154587' });

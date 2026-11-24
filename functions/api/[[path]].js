@@ -198,7 +198,8 @@ export async function onRequest(ctx) {
       await cat.getAnime(reference.animeId);
       const language = url.searchParams.get('category') === 'dub' ? 'dub' : 'sub';
       const server = url.searchParams.get('server') || 'megaplay';
-      const preferred = url.searchParams.get('preferred') || 'megaplay';
+      // No preference: the server list order (ad-free servers first).
+      const preferred = url.searchParams.get('preferred') || '';
       // The show's AniList ID, found by the browser (AniList refuses Cloudflare's servers).
       const al = url.searchParams.get('al');
       const opts = { aniListId: /^\d{1,9}$/.test(al || '') ? al : null };

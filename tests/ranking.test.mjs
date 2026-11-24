@@ -42,7 +42,7 @@ test('the servers list flags struggling servers, and the fallback tries them las
   const DB = fakeDb([{ ep: 1, provider: 'vidnext', cat: 0, n: 3, day }]);
   const env = { SITE: 'cinemee', DB, TMDB_TOKEN: 't' };
   const servers = await getServers('5501', 1, env);
-  assert.deepEqual(servers.map((s) => [s.id, Boolean(s.struggling)]).slice(0, 2), [['vidnext', true], ['vidnest', false]]);
+  assert.deepEqual(servers.map((s) => [s.id, Boolean(s.struggling)]).slice(0, 2), [['vidnext', true], ['vidcore', false]]);
   await getServers('5501', 1, env);
   assert.equal(DB.calls(), 1, 'the answer is remembered for a while');
   const originalFetch = globalThis.fetch;
@@ -53,7 +53,7 @@ test('the servers list flags struggling servers, and the fallback tries them las
   };
   try {
     const src = await getFallbackSource('5501', 1, 'vidnext', 'sub', env);
-    assert.equal(src.provider, 'vidnest', 'Orion keeps failing here, so Nova goes first');
+    assert.equal(src.provider, 'vidcore', '3ellwa keeps failing here, so JoJo goes first');
   } finally { globalThis.fetch = originalFetch; }
 });
 

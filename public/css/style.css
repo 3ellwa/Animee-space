@@ -1134,3 +1134,26 @@ kbd { display: inline-block; min-width: 1.5em; padding: 0 5px; border-radius: 5p
   .rd-pages { margin: 10px -10px 0; }
   .rd-select { max-width: 140px; }
 }
+
+/* ---------- TV mode (html.tv, set by js/tv.js): a smart TV's browser and its remote ---------- */
+/* Big, unmissable focus: the remote has no pointer, so focus is the only "cursor". */
+html.tv :focus { outline: 4px solid var(--lime); outline-offset: 4px; border-radius: 12px; }
+html.tv :focus:not(:focus-visible) { outline: 4px solid var(--lime); }
+html.tv a.card:focus { outline: none; }
+html.tv a.card:focus .poster { transform: scale(1.07); box-shadow: 0 0 0 4px var(--lime), 0 18px 44px -12px rgb(var(--lime-rgb) / .7); }
+html.tv a.card:focus .card-title { color: var(--lime); }
+html.tv a.card:focus .card-save { opacity: 1; }
+html.tv .card-save:focus { opacity: 1; transform: scale(1.15); }
+html.tv .cont:focus, html.tv .season:focus, html.tv .sched-row:focus-within { box-shadow: 0 0 0 4px var(--lime); transform: translateY(-2px); }
+html.tv .player:focus { outline: 4px solid var(--lime); outline-offset: 6px; }
+html.tv .btn:focus, html.tv .chip:focus, html.tv .tab:focus { box-shadow: 0 0 0 4px rgb(var(--lime-rgb) / .35); }
+/* The keyboard tips are for keyboards; the remote has its own. */
+html.tv .player-hint, html.tv .search-key { display: none; }
+/* No scrollbars to aim at; rows scroll as focus moves. */
+html.tv .row, html.tv .shelf-track, html.tv .season-row, html.tv .tabs { scrollbar-width: none; scroll-snap-type: none; }
+html.tv .row::-webkit-scrollbar, html.tv .shelf-track::-webkit-scrollbar, html.tv .season-row::-webkit-scrollbar { display: none; }
+html.tv { scroll-behavior: smooth; }
+/* TV browsers that report a full-HD width (Tizen, webOS) draw everything tiny from the sofa:
+   scale the page up. Android TV / Fire TV report ~960 px and already look right. */
+@media (min-width: 1500px) { html.tv { zoom: 1.4; } }
+@media (min-width: 2400px) { html.tv { zoom: 2; } }

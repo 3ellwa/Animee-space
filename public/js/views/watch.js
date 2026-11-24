@@ -7,6 +7,7 @@ import * as push from '../push.js';
 import * as aniList from '../anilist.js';
 import { BRAND, IS_CINEMEE, SIBLING } from '../site.js';
 import { setNowPlaying, clearNowPlaying } from '../nowplaying.js';
+import { isTv, setMedia } from '../tv.js';
 import { FORMAT, STATUS, T, animeHref, app, bindFollow, bindListSelect, card, clock, countPlay, epName, esc, followButton, go, grid, isMovie, listSelect, loadExtras, loadSeasons, mediaPrefsFor, onCleanup, plural, saveMediaPrefs, score, section, toastNote, viewNotFound } from '../app.js';
 
 // ---------- watch ----------
@@ -103,7 +104,7 @@ export async function viewWatch(id, query, alive) {
           <div class="pl-bar">
             <label><input type="checkbox" id="opt-autoplay" ${settings.autoplay ? 'checked' : ''}> Auto next</label>
             ${fillerCount || recapCount ? `<label title="Auto next skips filler and recap episodes"><input type="checkbox" id="opt-skipfiller" ${settings.skipFiller ? 'checked' : ''}> Skip filler</label>` : ''}
-            <label class="anime-only" title="Skips intros and outros where the player knows them (3ellwa server)"><input type="checkbox" id="opt-autoskip" ${settings.autoskip ? 'checked' : ''}> Auto skip intro</label>
+            <label class="anime-only" title="Skips intros and outros where the player knows them (Kaze server)"><input type="checkbox" id="opt-autoskip" ${settings.autoskip ? 'checked' : ''}> Auto skip intro</label>
             <span class="card-meta player-hint keys-hint" tabindex="0" title="Pause, seek and quality are inside the player. Keys: N next, P previous, ← → 10 seconds, W watched, F fullscreen.">⌨ Shortcuts</span>
             <span class="spacer"></span>
             <button class="btn sm wide-btn" id="wide-toggle" type="button" aria-pressed="false">⤢ Wide player</button>
@@ -367,9 +368,11 @@ export async function viewWatch(id, query, alive) {
   // Shortcuts work while focus is on the page. Clicking into the embedded player gives it the
   // keyboard, so they pause until you click back outside it.
   const onKey = (e) => {
-    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.target.closest?.('input, select, textarea, [contenteditable]')) return;
     // ← / → jump 10 seconds (they never change the episode: people press → to skip intros).
+    // On a TV the arrows move between buttons, so they only skip while the player is selected.
+    if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && isTv() && !e.target.closest?.('.player')) return;
     if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
       if (player.seekBy(e.key === 'ArrowRight' ? 10 : -10)) e.preventDefault();
       return;
@@ -388,6 +391,15 @@ export async function viewWatch(id, query, alive) {
   };
   document.addEventListener('keydown', onKey);
   onCleanup(() => document.removeEventListener('keydown', onKey));
+  // The TV remote's play/pause, fast-forward/rewind and channel up/down (tv.js).
+  onCleanup(setMedia({
+    playerBox: $('player').querySelector('.player'),
+    playPause: () => { if (!player.togglePlay()) toastNote('This server can\'t be paused from the remote. 3ellwa and JoJo can.'); },
+    setPaused: (paused) => { if (!player.setPaused(paused)) toastNote('This server can\'t be paused from the remote. 3ellwa and JoJo can.'); },
+    seekBy: (s) => player.seekBy(s),
+    next: () => $('next-ep').click(),
+    prev: () => $('prev-ep').click(),
+  }));
   $('next-ep').onclick = () => idx() < episodes.length - 1 && goTo(episodes[idx() + 1]);
   // ---------- your own subtitles (cinemee, Atlas) ----------
   const SUBS_KEY = 'animee-space:custom-subs';
@@ -538,7 +550,7 @@ export async function viewWatch(id, query, alive) {
       // Embedded players can't be told where to start, so say where you left off.
       // A sticky note (missing episode, server switched) stays until the next episode.
       if (note.dataset.sticky) { /* keep it */ }
-      else if (src.embedUrl && startAt > 15 && !['vidnest', 'tryembed', 'megaplay', 'vidnext', 'vidcore', 'animeembed', 'aniembed'].includes(src.provider)) showNote(`You stopped at <b>${clock(startAt)}</b>. Skip there in the player.`);
+      else if (src.embedUrl && startAt > 15 && !['vidnest', 'tryembed', 'megaplay', 'vidnext', 'vidcore', 'vidfast', 'vidlink', 'animeembed', 'aniembed'].includes(src.provider)) showNote(`You stopped at <b>${clock(startAt)}</b>. Skip there in the player.`);
       else if (note.querySelector('button') === null) showNote('');
     } catch (err) {
       if (!alive() || ep !== current) return;
@@ -631,7 +643,8 @@ export async function viewWatch(id, query, alive) {
       // This show's own sub/dub choice wins over the general setting.
       const pref = store.showCategory(a.id) || prefs.category;
       // The server that last played this show wins over the general preference.
-      const preferredProvider = store.goodServer(a.id, pref) || prefs.provider || 'megaplay';
+      // Nothing picked: the first server in the list (the ad-free ones lead).
+      const preferredProvider = store.goodServer(a.id, pref) || prefs.provider || '';
       // A server that keeps failing on this episode lately is skipped for the first try.
       const s = servers.find((x) => x.id === preferredProvider && x.category === pref && !x.struggling)
         || servers.find((x) => x.category === pref && !x.struggling)
@@ -739,7 +752,7 @@ export async function viewWatch(id, query, alive) {
     if (p.role === 'host') {
       const n = (p.people || []).length - 1;
       if (!player.hasTime() && p.hostSince && Date.now() - p.hostSince > 20000) {
-        return setStatus(`Your server (${serverLabel(server?.id)}) doesn’t share its position, so friends can only follow your episode. For full sync pick 3ellwa, Rem, Ram or Kaze.`, 'warn');
+        return setStatus(`Your server (${serverLabel(server?.id)}) doesn’t share its position, so friends can only follow your episode. For full sync pick 3ellwa, JoJo, Kaze or Rem.`, 'warn');
       }
       return setStatus(n ? `You’re the host. ${n} ${n === 1 ? 'friend follows' : 'friends follow'} your episode, server, position and pause.` : 'You’re the host. Invite friends: they’ll follow your episode, server and position.', 'good');
     }

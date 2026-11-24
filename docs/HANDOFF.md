@@ -76,26 +76,57 @@ docs/CHECKLIST.md               the 15-minute hands-on check on a phone, in Brav
 Names are deliberately neutral; ids stay real in settings, reports, logs and /admin
 (`BUILTIN_PROVIDERS` / `CINEMEE_PROVIDERS` in `providers/registry.js`).
 
-**animee** (tried in this order, preferred server first):
-1. **3ellwa** = MegaPlay (sub/dub). Resumes and auto-skips via MegaPlay commands; fullscreen handshake.
-2. **Rem** = animeembed.com (sub/dub, MAL id; `start`, `autoSkip`, lime `accent`; postMessage `{channel:'animeembed', version:1, event, data}`, commands play/pause/seek; operator may show ads; refuses sandboxing).
-3. **Kaze** = AnimeParadise (sub, direct HLS in our own `<video>`, no ads).
-4. **JoJo** = VidNest (sub/dub, AniList id looked up in the browser).
-5. **Hoshi** = TryEmbed (sub/dub, AniList id; blocks automated browsers, fine for real visitors).
-6. **Ram** = aniembed.se (sub/dub, AniList id; `t`, `lang`; postMessage `{source:'aniembed', version:1, name, data}`, progress every 5 s; commands `{type:'command', name, data}`).
+**Rule (user's, Nov 24):** ad-free servers go first, and on both sites the first is always named **3ellwa** and
+the second **JoJo** (names are swapped with whichever server held them). With no server picked by hand, the
+first in the list plays (`preferred` defaults to '' in the API and `provider` to '' in `store.js`; browsers that
+only had the old 'megaplay' default were reset once via `serverOrderV2`). A server you clicked, or the one that
+last played a show, still wins for that show.
 
-Rem and Ram are checked before the fallback uses them (Rem: 404 for unknown shows; Ram: "Couldn't load the player" for missing episodes), and in the browser a Rem/Ram player that never says "ready" within 25 s counts as failed. Don't rename them Sora/Yuki: aniembed.se has internal servers with those names.
+**animee** (tried in this order):
+1. **3ellwa** = AnimeParadise (sub only, direct HLS in our own `<video>`, no ads; remembers speed/volume per show). Was Kaze.
+2. **JoJo** = aniembed.se (sub/dub, AniList id; `t`, `lang`; postMessage `{source:'aniembed', version:1, name, data}`, progress every 5 s; commands `{type:'command', name, data}`). Sandboxed, no ads; first for dub. Was Ram.
+3. **Kaze** = MegaPlay (sub/dub). Resumes and auto-skips via MegaPlay commands; fullscreen handshake. Was 3ellwa. The auto-skip setting names it.
+4. **Rem** = animeembed.com (sub/dub, MAL id; `start`, `autoSkip`, lime `accent`; postMessage `{channel:'animeembed', version:1, event, data}`, commands play/pause/seek; operator may show ads; refuses sandboxing).
+5. **Ram** = VidNest (sub/dub, AniList id looked up in the browser). Was JoJo.
+6. **Hoshi** = TryEmbed (sub/dub, AniList id; blocks automated browsers, fine for real visitors).
+
+Rem and JoJo (aniembed.se) are checked before the fallback uses them (Rem: 404 for unknown shows; aniembed: "Couldn't load the player" for missing episodes), and in the browser a player from either that never says "ready" within 25 s counts as failed. Don't name anything Sora/Yuki: aniembed.se has internal servers with those names.
 
 **cinemee**:
-1. **Orion** = vidnext.pro (red theme, `startAt`, progress messages, seek; Arabic subtitles). Best one.
-2. **Nova** = VidNest (Arabic subtitles).
-3. **Atlas** = EmbedMaster (`embedmaster.link`, dark skin; accepts `sub_url[]` subtitle files).
-4. **Vega** = vidsrc.to (subtitles in many languages incl. Arabic, in its own menu).
-5. **Lyra** = VidCore (lots of ads, so last).
+1. **3ellwa** = vidnext.pro (red theme, `startAt`, progress messages, seek; Arabic subtitles). Sandboxed, no ads. Was Orion.
+2. **JoJo** = VidCore (same player as VidLink). Sandboxed, no ads; its big centre button is the ad layer, so play from its control bar. Was Lyra.
+3. **Sirius** = VidFast (`vidfast.vc`, the final host of vidfast.pro; `theme=FF3D52`, `startAt`, `PLAYER_EVENT`; ~40 subtitle languages incl. Arabic). Added Nov 24.
+4. **Rigel** = VidLink (`vidlink.pro`, movies/TV only; `primaryColor=FF3D52` without `#`, `startAt`, `PLAYER_EVENT`; Arabic subtitles). Added Nov 24.
+5. **Nova** = VidNest (Arabic subtitles; shows a fake "please confirm" ad dialog).
+6. **Atlas** = EmbedMaster (`embedmaster.link`, dark skin; accepts `sub_url[]` subtitle files). Most ads: one per click.
+7. **Vega** = vidsrc.to (subtitles in many languages incl. Arabic, in its own menu).
+
+**Ad blocking** (`SANDBOXED_HOSTS` in `public/js/player.js`): players that still play inside
+`sandbox="allow-scripts allow-same-origin allow-presentation allow-forms allow-orientation-lock"` get it, so the
+browser silently blocks their ad tabs, pop-ups and redirects: vidnext.pro, vidcore.org and aniembed.se (tested
+Nov 24). Every other host detects the sandbox and refuses to play ("Please disable sandbox" / "Sandbox detected"):
+VidFast, VidLink, VidNest, EmbedMaster, vidsrc.to, TryEmbed, MegaPlay, animeembed.com. Don't try to hide the
+sandbox from them; retest a host before adding it.
+The desktop app blocks ads everywhere (Ghostery). cimanow.cc was looked at and dropped: its servers sit behind an
+ad-shortener token and an encrypted page.
 
 **Tried and dropped:** VidLink for anime (its anime player says "couldn't find this episode" for everything,
 Nov 21; movies work) · CodeSpecters/NexStream (domain-locked API key that expires every 30 days) ·
 AniNeko (dead in October).
+
+## Smart TVs (TV mode)
+
+`public/js/tv.js` (started from `initTv()` in app.js before the first render) + the `html.tv` block at the end of
+style.css. On by UA (`detectTv`), by Settings → Display → TV mode (this browser only), or `?tv=1` / `?tv=0`.
+Arrows = spatial navigation (`pickNext`: things in line first, then nearest row, then best aligned; left/right
+never change rows). Keys (`keyKind`): Back = 461 LG / 10009 Samsung / GoBack / Escape; ⏯ 179/10252 toggles;
+LG Play 415, Pause 19, Stop 413 are explicit; ⏩ 417 / ⏪ 412 = ±30 s; channel 427/428 = next/prev episode.
+The watch page registers `setMedia({ playPause, setPaused, seekBy, next, prev, playerBox })`; in TV mode the
+player box is focusable and the embed iframe has `tabIndex = -1`, so keys always reach us.
+`Player.togglePlay()` / `setPaused()` work for our own `<video>`, Rem, aniembed.se and vidnext (`{action:'play'|'pause'}`).
+Test on a PC: `http://localhost:8787/?tv=1` with the window at 1920×1080, keyboard only.
+**Limit:** the site's JavaScript uses `?.`/`??` (Chromium 80+), so TV browsers older than about 2022
+(LG webOS 6 / Samsung Tizen 6.0 and earlier) won't run it at all. Android TV / Fire TV browsers are current.
 
 ## MegaPlay tricks (learned from hianime.ms, see docs/HIANIME-NOTES.md)
 

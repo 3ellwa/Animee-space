@@ -25,6 +25,19 @@ const IFRAME_HTML = '<iframe class="embed-frame" title="Episode player" ' +
   'allow="autoplay; fullscreen; picture-in-picture; encrypted-media" allowfullscreen webkitallowfullscreen mozallowfullscreen ' +
   'referrerpolicy="strict-origin-when-cross-origin" hidden></iframe>';
 
+// Ad blocking: players on these hosts run in a sandbox without allow-popups or
+// allow-top-navigation, so the browser silently stops their ad tabs, pop-ups and redirects.
+// Only hosts tested to still play sandboxed (Nov 24, 2026): vidnext.pro and vidcore.org
+// (cinemee's 3ellwa and JoJo) and aniembed.se (animee's JoJo). The rest refuse to play in a sandbox ("Please disable
+// sandbox" / "Sandbox detected"): VidFast, VidLink, VidNest, EmbedMaster, vidsrc.to, TryEmbed,
+// MegaPlay and animeembed.com. Retest before adding a host here.
+const SANDBOXED_HOSTS = new Set(['vidnext.pro', 'vidcore.org', 'aniembed.se']);
+const SANDBOX = 'allow-scripts allow-same-origin allow-presentation allow-forms allow-orientation-lock';
+export function sandboxFor(src) {
+  try { return SANDBOXED_HOSTS.has(new URL(src).hostname.replace(/^www\./, '')) ? SANDBOX : ''; }
+  catch { return ''; }
+}
+
 // Phones and tablets (touch as the main pointer).
 const COARSE_POINTER = () => Boolean(window.matchMedia?.('(pointer: coarse)').matches);
 
@@ -55,6 +68,12 @@ export class Player {
     this.upNextEl = root.querySelector('.pl-upnext');
     // Exit button for animee's own fullscreen: fades after 3 s, comes back on mouse move or touch.
     const box = root.querySelector('.player');
+    // TV mode: the player box is one stop for the remote (see tv.js and freshIframe).
+    if (document.documentElement.classList.contains('tv')) {
+      box.tabIndex = 0;
+      box.setAttribute('aria-label', 'Player: OK plays or pauses, left and right skip 10 seconds');
+      this.video.tabIndex = -1;
+    }
     root.querySelector('.pl-exit').onclick = () => document.exitFullscreen?.().catch(() => {});
     this.wake = () => {
       box.classList.remove('fs-idle');
@@ -119,7 +138,13 @@ export class Player {
     const template = document.createElement('template');
     template.innerHTML = IFRAME_HTML;
     const frame = template.content.firstElementChild;
+    // TV mode: the remote stops on the player box (OK = play/pause, ←/→ = seek) instead of
+    // falling into the third-party frame, where our keys can't reach and Back wouldn't work.
+    if (document.documentElement.classList.contains('tv')) frame.tabIndex = -1;
     if (src) {
+      // Before src: the browser applies a sandbox only when the frame navigates.
+      const sandbox = sandboxFor(src);
+      if (sandbox) frame.setAttribute('sandbox', sandbox);
       frame.src = src;
       frame.hidden = false;
       frame.onload = () => this.msg('');
@@ -252,7 +277,7 @@ export class Player {
       this.embedOrigin = data.embedOrigin || new URL(data.embedUrl).origin;
       let embedUrl = data.embedUrl;
       // The start-time parameter each server understands (Rem: start, Ram: t, the rest startAt).
-      const START_PARAM = { vidnest: 'startAt', tryembed: 'startAt', vidnext: 'startAt', vidcore: 'startAt', animeembed: 'start', aniembed: 't' };
+      const START_PARAM = { vidnest: 'startAt', tryembed: 'startAt', vidnext: 'startAt', vidcore: 'startAt', vidfast: 'startAt', vidlink: 'startAt', animeembed: 'start', aniembed: 't' };
       if (START_PARAM[data.provider] && Number.isFinite(Number(startAt)) && startAt > 5) {
         const target = new URL(embedUrl);
         target.searchParams.set(START_PARAM[data.provider], String(Math.floor(startAt)));
@@ -393,6 +418,32 @@ export class Player {
       this.seekTo(seconds);
     }
   }
+  /**
+   * Play or pause from outside (the TV remote's OK / play button). Our own video, Rem and
+   * aniembed.se take it; vidnext gets the same command shape as its seek. Returns false when
+   * this player can't be told.
+   */
+  togglePlay() {
+    const paused = this.iframe.hidden ? this.video.paused : this.embedPaused !== false;
+    return this.setPaused(!paused);
+  }
+  /** Pause (true) or play (false) outright: LG remotes have separate Play and Pause buttons. */
+  setPaused(paused) {
+    if (this.iframe.hidden) {
+      if (!this.video.src && !this.video.currentSrc) return false;
+      if (paused) this.video.pause(); else this.video.play().catch(() => {});
+      return true;
+    }
+    if (this.isRem() || this.isRam()) {
+      this.commandEmbed(paused ? 'pause' : 'play');
+      return true;
+    }
+    if (this.isVidnext()) {
+      try { this.iframe.contentWindow.postMessage({ action: paused ? 'pause' : 'play' }, this.embedOrigin); } catch { return false; }
+      return true;
+    }
+    return false;
+  }
   /** Pause or play: only our own video can be told (embedded players don't take it). */
   partyPause(paused) {
     // Rem and Ram take play/pause commands too.
@@ -525,6 +576,9 @@ export class Player {
       const eventName = String(data.event || state.event || data.name || '').toLowerCase();
       const currentTime = Number(state.currentTime ?? state.current_time ?? state.time);
       const duration = Number(state.duration);
+      // Paused or playing, for the TV remote's play/pause toggle.
+      if (eventName === 'pause' || eventName === 'ended') this.embedPaused = true;
+      else if (eventName === 'play' || eventName === 'timeupdate') this.embedPaused = false;
       if (eventName === 'play' || eventName === 'timeupdate' || eventName === 'seeked' || currentTime > 0) this.markStarted();
       if (Number.isFinite(currentTime) && currentTime >= 0) {
         this.embedTime = currentTime;

@@ -1,3 +1,17 @@
+## Smart TVs and the remote
+
+- **TV mode** (`public/js/tv.js`, `html.tv` in style.css): on by itself in TV browsers (Samsung Tizen, LG webOS, Android TV / Google TV, Fire TV, Hisense VIDAA, Sony, Philips...); Settings → Display → TV mode on any device; `?tv=1` / `?tv=0` to force it.
+- **Remote:** the arrows move to the nearest button, card or field in that direction (rows and the page scroll along; left/right stay on the same line); OK clicks; Back goes back (or leaves full screen / closes the menu; on the home page it's left to the TV). Focus starts on the page's main button or the player.
+- **Player:** the player box is one stop: OK plays/pauses, ←/→ skip 10 s, ↑/↓ leave it. ⏯ toggles; LG's separate Play, Pause and Stop do exactly that; ⏩/⏪ skip 30 s; channel up/down = next/previous episode. Play/pause works on our own video (animee 3ellwa), aniembed.se (animee JoJo), animeembed.com (Rem) and vidnext (cinemee 3ellwa); other servers say so. The remote never falls into a third-party player frame.
+- **Look:** thick lime focus rings, the focused poster grows, no hover trailers, no scrollbars; pages are scaled up 1.4× on TV browsers that report a full-HD width.
+
+## Two more cinemee servers, and fewer ads
+
+- **Sirius** (VidFast) and **Rigel** (VidLink) on cinemee: both play movies and TV by TMDB id, resume where you stopped (`startAt`), report progress, and have Arabic subtitles.
+- **Ad blocking:** the player frame is now sandboxed (no pop-ups, no new tabs, no redirects) for every server that still plays that way: vidnext.pro, VidCore and aniembed.se. The others refuse to play sandboxed, so they're unchanged.
+- **Ad-free servers first, renamed:** the first server is always 3ellwa and the second JoJo, on both sites. animee: 3ellwa (AnimeParadise, was Kaze), JoJo (aniembed.se, was Ram; first for dub), Kaze (MegaPlay, was 3ellwa), Rem, Ram (VidNest, was JoJo), Hoshi. cinemee: 3ellwa (vidnext, was Orion), JoJo (VidCore, was Lyra), Sirius, Rigel, Nova, Atlas, Vega.
+- Nothing picked means the first server in the list now (it used to be MegaPlay); browsers with only the old default were reset once. `API_VERSION` 9 so nobody sees the old names from a saved copy.
+
 ## my space: the desktop app, and my.animee.space
 
 - `desktop/`: an Electron app for Windows showing animee, cinemee and mangee (Ctrl+1/2/3), with Discord presence built in (reads `#now-playing`), Ghostery's ad and tracker blocker, links to other sites opening in your browser, and self-updates from GitHub releases. See `desktop/README.md` for releasing.

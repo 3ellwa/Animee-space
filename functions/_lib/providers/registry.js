@@ -16,12 +16,14 @@ const CATEGORIES = new Set(['sub', 'dub']);
 const BUILTIN_PROVIDERS = [
   // `name` is what visitors see on the server buttons: short neutral names, not the upstream
   // sites. `id` stays the real one, used in saved settings, reports, logs and the admin page.
-  { id: 'megaplay', name: '3ellwa', categories: ['sub', 'dub'] },
+  // Ad-free first (Nov 24, 2026): AnimeParadise plays in our own <video>, aniembed.se runs in a
+  // no-popups sandbox. The first is always called 3ellwa and the second JoJo, on both sites.
+  { id: 'animeparadise', name: '3ellwa', categories: ['sub'] },
+  { id: 'aniembed', name: 'JoJo', categories: ['sub', 'dub'] },
+  { id: 'megaplay', name: 'Kaze', categories: ['sub', 'dub'] },
   { id: 'animeembed', name: 'Rem', categories: ['sub', 'dub'] },
-  { id: 'animeparadise', name: 'Kaze', categories: ['sub'] },
-  { id: 'vidnest', name: 'JoJo', categories: ['sub', 'dub'] },
+  { id: 'vidnest', name: 'Ram', categories: ['sub', 'dub'] },
   { id: 'tryembed', name: 'Hoshi', categories: ['sub', 'dub'] },
-  { id: 'aniembed', name: 'Ram', categories: ['sub', 'dub'] },
 ];
 
 const fail = (status, message) => Object.assign(new Error(message), { status });
@@ -67,16 +69,19 @@ function configuredProviders(env = {}) {
   });
 }
 
-// cinemee (movies and TV) has one server: VidNest, addressed by TMDB id. Neutral name, as on animee.
-// Tried in this order. Orion (vidnext) resumes, reports progress and takes seek commands. Nova
-// (VidNest) next, then Atlas (EmbedMaster). Vega (vidsrc) has subtitles in many languages, Arabic
-// included, in its own menu. Lyra (VidCore) is last: it works but shows a lot of ads.
+// cinemee (movies and TV) servers, all addressed by TMDB id, under neutral names as on animee.
+// Tried in this order. Ad-free first (Nov 24, 2026), both in a no-popups sandbox: 3ellwa
+// (vidnext: resumes, reports progress, takes seek commands; was Orion) and JoJo (VidCore; was
+// Lyra). Then Sirius (VidFast) and Rigel (VidLink): Arabic subtitles, one ad tab on the first
+// click. Nova (VidNest), Atlas (EmbedMaster), Vega (vidsrc: many subtitle languages incl. Arabic).
 const CINEMEE_PROVIDERS = [
-  { id: 'vidnext', name: 'Orion', categories: ['sub'] },
+  { id: 'vidnext', name: '3ellwa', categories: ['sub'] },
+  { id: 'vidcore', name: 'JoJo', categories: ['sub'] },
+  { id: 'vidfast', name: 'Sirius', categories: ['sub'] },
+  { id: 'vidlink', name: 'Rigel', categories: ['sub'] },
   { id: 'vidnest', name: 'Nova', categories: ['sub'] },
   { id: 'embedmaster', name: 'Atlas', categories: ['sub'] },
   { id: 'vidsrc', name: 'Vega', categories: ['sub'] },
-  { id: 'vidcore', name: 'Lyra', categories: ['sub'] },
 ];
 const CINEMEE_IDS = CINEMEE_PROVIDERS.map((p) => p.id);
 
@@ -155,7 +160,8 @@ export async function getFallbackSource(rawId, rawEpisode, rawPreferred, rawCate
   const episode = episodeNumber(rawEpisode);
   const category = String(rawCategory || 'sub').toLowerCase();
   if (!CATEGORIES.has(category)) throw fail(400, 'Invalid playback category.');
-  const preferred = String(rawPreferred || BUILTIN_ID).trim().toLowerCase();
+  // No preference means the list order (ad-free servers first).
+  const preferred = String(rawPreferred || '').trim().toLowerCase();
   // The site is part of the key: an anime and a movie can share the same number.
   const key = `${env.SITE || 'animee'}:${id}:${episode}:${category}:${preferred}`;
   const hit = fallbackCache.get(key);

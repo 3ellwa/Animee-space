@@ -265,7 +265,7 @@ test('MAL details, episode references, and MegaPlay embeds share one stable ID',
   assert.equal(episodeData.episodes[1].number, 2);
   assert.equal(episodeData.episodes[1].isFiller, true);
   const servers = await onRequest(context('episode/20%3A2/servers'));
-  assert.deepEqual((await servers.json()).servers.map(server => server.category), ['sub', 'dub', 'sub', 'dub', 'sub', 'sub', 'dub', 'sub', 'dub', 'sub', 'dub']);
+  assert.deepEqual((await servers.json()).servers.map(server => server.category), ['sub', 'sub', 'dub', 'sub', 'dub', 'sub', 'dub', 'sub', 'dub', 'sub', 'dub']);
   const source = await onRequest(context('episode/20%3A2/sources?category=sub'));
   assert.equal((await source.json()).embedUrl, 'https://megaplay.buzz/stream/mal/20/2/sub');
 });
@@ -297,17 +297,17 @@ test('playback registry returns real provider IDs and routes sources to the sele
   assert.deepEqual(
     servers.servers.map(s => [s.id, s.name, s.category]),
     [
-      ['megaplay', '3ellwa', 'sub'],
-      ['megaplay', '3ellwa', 'dub'],
+      ['animeparadise', '3ellwa', 'sub'],
+      ['aniembed', 'JoJo', 'sub'],
+      ['aniembed', 'JoJo', 'dub'],
+      ['megaplay', 'Kaze', 'sub'],
+      ['megaplay', 'Kaze', 'dub'],
       ['animeembed', 'Rem', 'sub'],
       ['animeembed', 'Rem', 'dub'],
-      ['animeparadise', 'Kaze', 'sub'],
-      ['vidnest', 'JoJo', 'sub'],
-      ['vidnest', 'JoJo', 'dub'],
+      ['vidnest', 'Ram', 'sub'],
+      ['vidnest', 'Ram', 'dub'],
       ['tryembed', 'Hoshi', 'sub'],
       ['tryembed', 'Hoshi', 'dub'],
-      ['aniembed', 'Ram', 'sub'],
-      ['aniembed', 'Ram', 'dub'],
       ['backup-one', 'Backup One', 'sub'],
       ['backup-one', 'Backup One', 'dub'],
       ['backup-two', 'Backup Two', 'sub'],
@@ -349,11 +349,11 @@ test('strict content filtering rejects directly requested mature ratings', async
 
 test('built-in playback providers require no optional backend configuration', async () => {
   const providers = getProviderList({});
-  assert.deepEqual(providers.map(provider => provider.id), ['megaplay', 'animeembed', 'animeparadise', 'vidnest', 'tryembed', 'aniembed']);
+  assert.deepEqual(providers.map(provider => provider.id), ['animeparadise', 'aniembed', 'megaplay', 'animeembed', 'vidnest', 'tryembed']);
   const servers = await getServers('20', 1, {});
   assert.deepEqual(servers.map(server => [server.id, server.category]), [
-    ['megaplay', 'sub'], ['megaplay', 'dub'], ['animeembed', 'sub'], ['animeembed', 'dub'], ['animeparadise', 'sub'],
-    ['vidnest', 'sub'], ['vidnest', 'dub'], ['tryembed', 'sub'], ['tryembed', 'dub'], ['aniembed', 'sub'], ['aniembed', 'dub'],
+    ['animeparadise', 'sub'], ['aniembed', 'sub'], ['aniembed', 'dub'], ['megaplay', 'sub'], ['megaplay', 'dub'],
+    ['animeembed', 'sub'], ['animeembed', 'dub'], ['vidnest', 'sub'], ['vidnest', 'dub'], ['tryembed', 'sub'], ['tryembed', 'dub'],
   ]);
   assert.ok(!providers.some(provider => provider.id === 'anikoto'), 'Anikoto playback uses MegaPlay and is not counted as an independent source');
 });
@@ -576,7 +576,7 @@ test('a hanging provider is cut off by the deadline and reported as 504', async 
     const response = await onRequest(context('episode/62010%3A1/sources?server=animeparadise&category=sub'));
     assert.equal(response.status, 504);
     const { error } = await response.json();
-    assert.match(error, /Kaze/); // the visitor-facing name, never the upstream site
+    assert.match(error, /3ellwa/); // the visitor-facing name, never the upstream site
     assert.doesNotMatch(error, /AnimeParadise/i);
   } finally {
     Object.assign(playbackLimits, saved);
