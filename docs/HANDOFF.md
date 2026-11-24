@@ -130,8 +130,13 @@ breaks under page `zoom`, rounded clipping (`border-radius` + `overflow: hidden`
 fixed effect layers. In TV mode the watch page (`html.watching`) has none of those, OK/Play also goes full
 screen (`enterFullscreen({ quiet: true })`), and focus is pulled back whenever an embedded player grabs it.
 Settings → Display shows "This browser: LG webOS · Chrome NN" (`browserLabel`) for debugging a TV.
-**Limit:** the site's JavaScript uses `?.`/`??` (Chromium 80+), so TV browsers older than about 2022
-(LG webOS 6 / Samsung Tizen 6.0 and earlier) won't run it at all. Android TV / Fire TV browsers are current.
+**Old TV browsers:** LG webOS 22 is Chrome 87, Samsung Tizen 6.5 Chrome 85. The player box used only
+`aspect-ratio` for its height (Chrome 88+), so there it was 0 px tall: sound, no picture (the user's LG, Nov 24).
+An `@supports not (aspect-ratio …)` block now gives it the 56.25% padding box; keep it if the player CSS
+changes. `public/js/compat.js` (imported first by app.js) fills `crypto.randomUUID` (watch party), `AbortSignal.timeout`,
+`Array#at`, `Object.hasOwn`. Check new code against Chrome 85 (caniuse) or add to compat.js.
+**Limit:** the JavaScript uses `?.`/`??` (Chrome 80+), so TVs older than ~2021 (webOS 6 / Tizen 6.0 and earlier)
+won't run it at all. Android TV / Fire TV browsers are current.
 
 ## MegaPlay tricks (learned from hianime.ms, see docs/HIANIME-NOTES.md)
 

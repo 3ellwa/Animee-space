@@ -1,3 +1,8 @@
+## TVs: the picture shows
+
+- **Bug (LG TV):** sound but no picture on every server. The player box took its height only from `aspect-ratio`, which TV browsers on Chrome 87 and older don't know, so it was 0 px tall. Browsers without it now get a 16:9 padding box (`@supports not (aspect-ratio …)` in style.css).
+- `public/js/compat.js`: `crypto.randomUUID` (starting a watch party), `AbortSignal.timeout`, `Array#at`, `Object.hasOwn` for older browsers.
+
 ## Watch party: pausing fixed
 
 - **Bug:** when the host paused, guests on a server that can't be paused from outside kept playing and were seeked back to the pause point every 3 s, so they saw the same second over and over. Now: guests are paused wherever the server allows it (our own player, aniembed.se, animeembed.com and now vidnext, i.e. both sites' 3ellwa), and anyone else is left alone with "X paused: pause your player" until the host plays again.

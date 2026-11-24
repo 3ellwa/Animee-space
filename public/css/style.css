@@ -1173,3 +1173,11 @@ html.tv .watch-grid .player-wrap { transition: none; }
 /* TV: the spotlight's and hero's big blurred backdrops are heavy for a TV's GPU; plain dimmed art instead. */
 html.tv .slide-bg, html.tv .hero-bg { filter: brightness(.45); transform: none; }
 html.tv .slide.on .slide-bg, html.tv .slide.on .slide-poster, html.tv .slide.on .slide-art { animation: none; }
+/* Browsers without aspect-ratio (Chrome < 88: LG webOS 22 TVs and older) gave the player box no
+   height at all: sound, no picture. The classic 16:9 padding box instead; its contents are absolute. */
+@supports not (aspect-ratio: 16 / 9) {
+  .player { height: 0; padding-top: 56.25%; }
+  .player:fullscreen, .player:-webkit-full-screen { height: 100vh; padding-top: 0; }
+  .trailer { height: 56vw; max-height: 480px; }
+  .hover-card iframe, .hover-card > img { height: 180px; }
+}

@@ -1,3 +1,4 @@
+import './compat.js'; // first: fills gaps in older (TV) browsers before anything else runs
 import { api } from './api.js';
 import * as store from './store.js';
 import { Player } from './player.js';
