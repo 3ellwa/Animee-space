@@ -95,8 +95,9 @@ Rem and JoJo (aniembed.se) are checked before the fallback uses them (Rem: 404 f
 **cinemee**:
 1. **3ellwa** = vidnext.pro (red theme, `startAt`, progress messages, seek; Arabic subtitles). Sandboxed, no ads. Was Orion.
 2. **JoJo** = VidCore (same player as VidLink). Sandboxed, no ads; its big centre button is the ad layer, so play from its control bar. Was Lyra.
-3. **Altair** = Vipserver (`vipserver.liiivideo.com`), found through an EgyBest copy (`iegybest.cimawbas.tv`,
-   `EGYBEST_URL` variable when the domain moves). `functions/_lib/providers/egybest.js`: Vipserver is a file host with no
+3. **Altair** = Vipserver (`vipserver.liiivideo.com`), found through sites that host it, tried in order: an EgyBest copy
+   (`iegybest.cimawbas.tv`), then MyCima copies `cima.my-cima.net` and `vid.mycima.cc` (older titles the first lacks);
+   `EGYBEST_URL` (comma-separated) replaces the list. A site that challenges or times out is skipped for 30 min. `functions/_lib/providers/egybest.js`: Vipserver is a file host with no
    catalogue, so the Worker searches the site (`POST /ajax-search.php`, queryString = English, original and Arabic
    TMDB names), matches the film by name + year or the episode by "الموسم <Arabic ordinal> الحلقة <n>" (one-season
    shows have no season word), uses the show list on any episode page when the search doesn't list it, then takes the
@@ -104,7 +105,8 @@ Rem and JoJo (aniembed.se) are checked before the fallback uses them (Rem: 404 f
    frame must send no referrer (`NO_REFERRER_HOSTS`) or it says "Video embed restricted". The site lacks many older
    titles (404, next server). The last ad-free server by the user's choice (Nov 28). If the site starts answering with a
    Cloudflare challenge (`cf-mitigated`), every lookup fails as an outage: find another copy that answers plain fetch;
-   don't try to get past the challenge. my-cima / vid.mycima.cc / e.cimalight.co carry Vipserver too but sit behind that challenge.
+   don't try to get past the challenge. The MyCima copies challenged Node's fetch from home but let the local Worker (workerd) through (Nov 28);
+   e.cimalight.co is the same software but shows no server list.
 4. **Sirius** = VidFast (`vidfast.vc`, the final host of vidfast.pro; `theme=FF3D52`, `startAt`, `PLAYER_EVENT`; ~40 subtitle languages incl. Arabic). Added Nov 24.
 5. **Rigel** = VidLink (`vidlink.pro`, movies/TV only; `primaryColor=FF3D52` without `#`, `startAt`, `PLAYER_EVENT`; Arabic subtitles). Added Nov 24.
 6. **Nova** = VidNest (Arabic subtitles; shows a fake "please confirm" ad dialog).

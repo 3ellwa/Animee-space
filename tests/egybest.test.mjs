@@ -30,7 +30,8 @@ const WATCH = {
 };
 const PLAY = (vid, vip = true) => `<ul class="list_servers">${vip ? `<li class="active" id="server_Vipserver" data-embed="<iframe src='https://vipserver.liiivideo.com/embed-${vid}x.html' frameborder='0'></iframe>"><a><strong>Vipserver</strong></a></li>` : ''}<li id="server_Vidmoly" data-embed="<iframe src='https://vidmoly.net/embed-zzz.html'></iframe>"><a>Vidmoly</a></li></ul>`;
 
-function fake({ challenge = false } = {}) {
+const MYCIMA = egybest.DEFAULT_SITES[1];
+function fake({ challenge = false, walled = [], extra = {} } = {}) {
   const calls = [];
   globalThis.fetch = async (url, init = {}) => {
     const u = new URL(String(url));
@@ -47,12 +48,14 @@ function fake({ challenge = false } = {}) {
       }
       return new Response('{}', { status: 404 });
     }
-    assert.equal(u.origin, SITE);
-    calls.push(u.pathname + u.search);
-    if (challenge) return new Response('Just a moment...', { status: 403, headers: { 'cf-mitigated': 'challenge' } });
+    assert.ok(egybest.DEFAULT_SITES.includes(u.origin), u.origin);
+    calls.push((u.origin === SITE ? '' : u.hostname) + u.pathname + u.search);
+    if (challenge || walled.includes(u.origin)) return new Response('Just a moment...', { status: 403, headers: { 'cf-mitigated': 'challenge' } });
     if (u.pathname === '/ajax-search.php') {
       assert.equal(init.method, 'POST');
-      return new Response(SEARCH[new URLSearchParams(String(init.body)).get('queryString')] ?? '');
+      const q = new URLSearchParams(String(init.body)).get('queryString');
+      if (u.origin !== SITE) return new Response(extra[u.origin]?.[q] ?? '');
+      return new Response(SEARCH[q] ?? '');
     }
     const vid = u.searchParams.get('vid');
     if (u.pathname === '/watch.php') {
@@ -111,14 +114,33 @@ test('a title the site lacks is a 404, so automatic playback moves on to the nex
   assert.equal(auto.fallback, true);
 });
 
-test('a Cloudflare challenge is an outage, not "not found"', async () => {
+test('a title the first site lacks is looked up on the next one', async () => {
+  reset();
+  const calls = fake({ extra: { [MYCIMA]: { 'Breaking Bad': li('mc0000102', 'مسلسل Breaking Bad الموسم الاول الحلقة 2 الثانية مترجم ماي سيما') } } });
+  const src = await getSources('13962', 2, 'egybest', 'sub', env); // S1 E2: not on the EgyBest copy
+  assert.equal(src.embedUrl, 'https://vipserver.liiivideo.com/embed-mc0000102x.html');
+  assert.ok(calls.includes('cima.my-cima.net/play.php?vid=mc0000102'));
+});
+
+test('a site behind a Cloudflare challenge is skipped (for a while), the next one still answers', async () => {
+  reset();
+  const calls = fake({ walled: [SITE], extra: { [MYCIMA]: { Oppenheimer: li('mc0000001', 'مشاهدة فيلم Oppenheimer 2023 مترجم ماي سيما') } } });
+  const src = await getSources('8725851', 1, 'egybest', 'sub', env);
+  assert.equal(src.embedUrl, 'https://vipserver.liiivideo.com/embed-mc0000001x.html');
+  const walledAsked = () => calls.filter((c) => c.startsWith('/')).length; // the EgyBest copy's calls have no host prefix
+  assert.equal(walledAsked(), 1);
+  await assert.rejects(getSources('13962', 2, 'egybest', 'sub', env), { status: 404 }); // another title, same minute
+  assert.equal(walledAsked(), 1, 'the walled site is skipped instead of asked again');
+});
+
+test('when every site shows a challenge it\'s an outage, not "not found"', async () => {
   reset(); fake({ challenge: true });
   await assert.rejects(egybest.getSources('8725851', 1, env), { status: 502 });
 });
 
-test('the site address can be moved with EGYBEST_URL, but only to a plain https address', () => {
-  assert.equal(egybest.siteUrl({ EGYBEST_URL: 'https://egy.example.com/' }), 'https://egy.example.com');
-  assert.equal(egybest.siteUrl({ EGYBEST_URL: 'http://egy.example.com' }), SITE);
-  assert.equal(egybest.siteUrl({ EGYBEST_URL: 'https://user:pw@egy.example.com' }), SITE);
-  assert.equal(egybest.siteUrl({}), SITE);
+test('the site list can be replaced with EGYBEST_URL, but only with plain https addresses', () => {
+  assert.deepEqual(egybest.siteUrls({ EGYBEST_URL: 'https://egy.example.com/, https://b.example.com' }), ['https://egy.example.com', 'https://b.example.com']);
+  assert.deepEqual(egybest.siteUrls({ EGYBEST_URL: 'http://egy.example.com' }), egybest.DEFAULT_SITES);
+  assert.deepEqual(egybest.siteUrls({ EGYBEST_URL: 'https://user:pw@egy.example.com' }), egybest.DEFAULT_SITES);
+  assert.deepEqual(egybest.siteUrls({}), egybest.DEFAULT_SITES);
 });

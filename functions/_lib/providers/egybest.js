@@ -1,5 +1,11 @@
-// cinemee's Altair: Vipserver (vipserver.liiivideo.com), found through an EgyBest copy
-// (iegybest.cimawbas.tv, override with the EGYBEST_URL variable when its domain moves).
+// cinemee's Altair: Vipserver (vipserver.liiivideo.com), found through sites that host it:
+// an EgyBest copy (iegybest.cimawbas.tv) first, then two MyCima copies (cima.my-cima.net,
+// vid.mycima.cc), which have older titles the first lacks. Same site software, same pages.
+// EGYBEST_URL (comma-separated) replaces the list when a domain moves.
+// A site that answers with a Cloudflare challenge or not at all is skipped for 30 minutes; we
+// never try to get past a challenge. (Nov 28, 2026: the MyCima copies challenged Node's fetch()
+// from a home connection but answered the Worker; e.cimalight.co is the same software but shows
+// no server list, so it isn't used.)
 //
 // Vipserver is a file host with no catalogue: each upload has a random code that only the site
 // that uploaded it knows. So: search the site by the title's names (English, original, Arabic),
@@ -11,18 +17,22 @@
 
 import * as tmdb from './tmdb.js';
 
-export const DEFAULT_SITE = 'https://iegybest.cimawbas.tv';
+export const DEFAULT_SITES = ['https://iegybest.cimawbas.tv', 'https://cima.my-cima.net', 'https://vid.mycima.cc'];
+export const DEFAULT_SITE = DEFAULT_SITES[0];
 export const PLAYER_ORIGIN = 'https://vipserver.liiivideo.com';
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36';
 const fail = (status, message) => Object.assign(new Error(message), { status });
 
-export function siteUrl(env = {}) {
-  const raw = String(env.EGYBEST_URL || DEFAULT_SITE).trim().replace(/\/+$/, '');
+const cleanOrigin = (raw) => {
   try {
-    const url = new URL(raw);
-    if (url.protocol === 'https:' && !url.username && !url.password) return url.origin;
-  } catch { /* fall through */ }
-  return DEFAULT_SITE;
+    const url = new URL(String(raw || '').trim());
+    return url.protocol === 'https:' && !url.username && !url.password ? url.origin : null;
+  } catch { return null; }
+};
+/** The sites to look in, in order. */
+export function siteUrls(env = {}) {
+  const own = String(env.EGYBEST_URL || '').split(',').map(cleanOrigin).filter(Boolean);
+  return own.length ? [...new Set(own)] : DEFAULT_SITES;
 }
 
 // ---------- names ----------
@@ -69,7 +79,7 @@ async function get(url, init = {}) {
     response = await fetch(url, {
       ...init,
       headers: { 'User-Agent': UA, Referer: new URL(url).origin + '/', Accept: 'text/html,*/*', ...(init.headers || {}) },
-      signal: AbortSignal.timeout(6000),
+      signal: AbortSignal.timeout(4000),
     });
   } catch (error) {
     throw fail(error?.name === 'TimeoutError' ? 504 : 502, 'Altair did not respond.');
@@ -133,26 +143,49 @@ export async function findVideo(site, { type, names, year, season, episode }) {
   return listed.find((item) => isMatch(parseTitle(item.title)))?.vid || null;
 }
 
-// Found players keep for hours (the codes don't change); misses for an hour.
+// Per site and title: found players keep for hours (the codes don't change), misses for an hour.
+// A site that is down or shows a challenge is skipped for a while.
 const cache = new Map();
+const down = new Map(); // site -> until
 const HIT_MS = 6 * 60 * 60 * 1000;
 const MISS_MS = 60 * 60 * 1000;
-export function resetCache() { cache.clear(); }
+const DOWN_MS = 30 * 60 * 1000;
+// The player gives a server 8 s; stop starting new sites after this much.
+export const limits = { startBeforeMs: 5500 };
+export function resetCache() { cache.clear(); down.clear(); }
 
-export async function getSources(rawId, rawEpisode, env = {}) {
-  const site = siteUrl(env);
-  const target = await tmdb.episodeTarget(rawId, rawEpisode);
+async function lookup(site, rawId, target) {
   const key = `${site}|${target.type}|${target.tmdb}|${target.season || 0}|${target.episode || 0}`;
   const hit = cache.get(key);
-  let embedUrl;
-  if (hit && hit.expires > Date.now()) embedUrl = hit.embedUrl;
-  else {
-    const { names, year } = await tmdb.titleNames(rawId);
-    const vid = await findVideo(site, { type: target.type, names, year, season: target.season, episode: target.episode });
-    embedUrl = vid ? await vipserverFor(site, vid) : null;
-    cache.set(key, { embedUrl, expires: Date.now() + (embedUrl ? HIT_MS : MISS_MS) });
-    if (cache.size > 2000) cache.delete(cache.keys().next().value);
+  if (hit && hit.expires > Date.now()) return hit.embedUrl;
+  const { names, year } = await tmdb.titleNames(rawId);
+  const vid = await findVideo(site, { type: target.type, names, year, season: target.season, episode: target.episode });
+  const embedUrl = vid ? await vipserverFor(site, vid) : null;
+  cache.set(key, { embedUrl, expires: Date.now() + (embedUrl ? HIT_MS : MISS_MS) });
+  if (cache.size > 2000) cache.delete(cache.keys().next().value);
+  return embedUrl;
+}
+
+export async function getSources(rawId, rawEpisode, env = {}) {
+  const target = await tmdb.episodeTarget(rawId, rawEpisode);
+  const started = Date.now();
+  let outages = 0;
+  let tried = 0;
+  for (const site of siteUrls(env)) {
+    if ((down.get(site) || 0) > Date.now()) { outages += 1; continue; }
+    if (tried && Date.now() - started > limits.startBeforeMs) break;
+    tried += 1;
+    try {
+      const embedUrl = await lookup(site, rawId, target);
+      if (embedUrl) return { embedUrl, embedOrigin: PLAYER_ORIGIN, language: 'sub', provider: 'egybest', events: [] };
+    } catch (error) {
+      if (error?.status && error.status < 500) throw error; // a bad title id, not the site
+      down.set(site, Date.now() + DOWN_MS);
+      outages += 1;
+      console.warn(`altair: ${new URL(site).hostname} skipped for 30 min: ${error?.message || error}`);
+    }
   }
-  if (!embedUrl) throw fail(404, target.type === 'movie' ? 'Altair doesn\'t have this film.' : 'Altair doesn\'t have this episode.');
-  return { embedUrl, embedOrigin: PLAYER_ORIGIN, language: 'sub', provider: 'egybest', events: [] };
+  // Only outages and nothing found anywhere: an outage. Otherwise: they don't have it.
+  if (outages && outages === siteUrls(env).length) throw fail(502, 'Altair is unavailable right now.');
+  throw fail(404, target.type === 'movie' ? 'Altair doesn\'t have this film.' : 'Altair doesn\'t have this episode.');
 }

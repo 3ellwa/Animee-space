@@ -1,3 +1,7 @@
+## cinemee: Altair looks in more places
+
+- When the EgyBest copy doesn't have a title, Altair now tries two MyCima copies (cima.my-cima.net, vid.mycima.cc), which have older films such as Interstellar and The Shawshank Redemption. A site that shows a bot check or doesn't answer is skipped for 30 minutes.
+
 ## cinemee: Altair, a third ad-free server
 
 - **Altair** = Vipserver, found through an EgyBest copy (iegybest.cimawbas.tv): no ads inside our sandbox, Arabic subtitles burned in. Third in line, after 3ellwa and JoJo and before the servers with ads. The Worker searches the site by the title's English, original and Arabic names and picks the film (name + year) or the episode (Arabic season words). It only has what that site has, so older titles often fall through to the next server.
