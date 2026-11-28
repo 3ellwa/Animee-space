@@ -1173,6 +1173,8 @@ html.tv .watch-grid .player-wrap { transition: none; }
 /* TV: the spotlight's and hero's big blurred backdrops are heavy for a TV's GPU; plain dimmed art instead. */
 html.tv .slide-bg, html.tv .hero-bg { filter: brightness(.45); transform: none; }
 html.tv .slide.on .slide-bg, html.tv .slide.on .slide-poster, html.tv .slide.on .slide-art { animation: none; }
+/* TV: the spotlight keeps turning under LG's resting pointer (see bindSpotlight), so its bar does too. */
+html.tv .spotlight:hover .dots button.on::after { animation-play-state: running; }
 /* Browsers without aspect-ratio (Chrome < 88: LG webOS 22 TVs and older) gave the player box no
    height at all: sound, no picture. The classic 16:9 padding box instead; its contents are absolute. */
 @supports not (aspect-ratio: 16 / 9) {

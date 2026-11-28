@@ -581,21 +581,28 @@ export function bindSpotlight(alive) {
     slides.forEach((s) => { if (urls[s.dataset.id]) s.dataset.art = urls[s.dataset.id]; });
     warm();
   });
+  const tv = () => document.documentElement.classList.contains('tv');
   const show = (n) => {
+    // TV: focus usually sits on a spotlight button; keep it on the same button of the new slide.
+    const held = [...slides[i].querySelectorAll('.actions a')].indexOf(document.activeElement);
     i = (n + slides.length) % slides.length;
     slides.forEach((s, k) => s.classList.toggle('on', k === i));
     dots.forEach((d, k) => { d.classList.toggle('on', k === i); d.setAttribute('aria-current', k === i); });
+    if (held >= 0) slides[i].querySelectorAll('.actions a')[held]?.focus({ preventScroll: true });
     warm();
   };
   dots.forEach((d, k) => d.onclick = () => { show(k); restart(); });
   let timer = null;
   const restart = () => { clearInterval(timer); timer = setInterval(() => show(i + 1), 7000); };
   restart();
-  root.onmouseenter = () => clearInterval(timer);
+  // Desktop: hovering or tabbing into the spotlight pauses it. On a TV focus starts on "Watch
+  // now" and LG's pointer can rest over it, which used to stop it for good: there it keeps
+  // turning and only waits a fresh 7 s after each key press.
+  root.onmouseenter = () => { if (!tv()) clearInterval(timer); };
   root.onmouseleave = restart;
-  // Keyboard / TV remote: no rotating away under a focused button.
-  root.addEventListener('focusin', () => clearInterval(timer));
+  root.addEventListener('focusin', () => { if (tv()) restart(); else clearInterval(timer); });
   root.addEventListener('focusout', (e) => { if (!root.contains(e.relatedTarget)) restart(); });
+  root.addEventListener('keydown', () => { if (tv()) restart(); });
   // ← on the first button / → on the last one change the slide (the remote has no other way to).
   root.addEventListener('keydown', (e) => {
     if (e.defaultPrevented || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) return;

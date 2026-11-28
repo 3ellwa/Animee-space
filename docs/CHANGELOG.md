@@ -1,3 +1,7 @@
+## TVs: the spotlight turns again
+
+- **Bug (TV):** the home page spotlight never moved on TVs. It pauses while focus is inside it or the mouse is over it; on a TV the remote's focus starts on its "Watch now" and LG's Magic Remote pointer can rest over it (and never "leave"), so it stayed on the first title. In TV mode it now keeps turning, waits a fresh 7 s after each key press, and moves focus to the same button on the next slide. Desktop still pauses on hover.
+
 ## animee: 3ellwa and JoJo swapped
 
 - aniembed.se now leads as **3ellwa** (sub and dub, sandboxed, no ads) and AnimeParadise is second as **JoJo** (sub, our own player). Hand-picked servers are saved by id, so anyone who chose AnimeParadise keeps it.

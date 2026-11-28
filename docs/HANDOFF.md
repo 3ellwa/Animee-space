@@ -141,7 +141,7 @@ Test on a PC: `http://localhost:8787/?tv=1` with the window at 1920×1080, keybo
 breaks under page `zoom`, rounded clipping (`border-radius` + `overflow: hidden`), big shadows, blur filters and
 fixed effect layers. In TV mode the watch page (`html.watching`) has none of those, OK/Play also goes full
 screen (`enterFullscreen({ quiet: true })`), and focus is pulled back whenever an embedded player grabs it.
-Settings → Display shows "This browser: LG webOS · Chrome NN" (`browserLabel`) for debugging a TV.
+Settings → Display shows "This browser: LG webOS · Chrome NN" (`browserLabel`) for debugging a TV. The home spotlight must not pause on focus or hover in TV mode (focus starts on its "Watch now"; LG's pointer never fires mouseleave): `bindSpotlight` keeps turning there, carries focus to the next slide's same button and restarts its 7 s on each key.
 **Old TV browsers:** LG webOS 22 is Chrome 87, Samsung Tizen 6.5 Chrome 85. The player box used only
 `aspect-ratio` for its height (Chrome 88+), so there it was 0 px tall: sound, no picture (the user's LG, Nov 24).
 An `@supports not (aspect-ratio …)` block now gives it the 56.25% padding box; keep it if the player CSS
