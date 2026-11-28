@@ -83,8 +83,8 @@ only had the old 'megaplay' default were reset once via `serverOrderV2`). A serv
 last played a show, still wins for that show.
 
 **animee** (tried in this order):
-1. **3ellwa** = AnimeParadise (sub only, direct HLS in our own `<video>`, no ads; remembers speed/volume per show). Was Kaze.
-2. **JoJo** = aniembed.se (sub/dub, AniList id; `t`, `lang`; postMessage `{source:'aniembed', version:1, name, data}`, progress every 5 s; commands `{type:'command', name, data}`). Sandboxed, no ads; first for dub. Was Ram.
+1. **3ellwa** = aniembed.se (sub/dub, AniList id; `t`, `lang`; postMessage `{source:'aniembed', version:1, name, data}`, progress every 5 s; commands `{type:'command', name, data}`). Sandboxed, no ads. Was JoJo until Nov 28 (user swapped them), Ram before that.
+2. **JoJo** = AnimeParadise (sub only, direct HLS in our own `<video>`, no ads; remembers speed/volume per show). Was 3ellwa until Nov 28, Kaze before that.
 3. **Kaze** = MegaPlay (sub/dub). Resumes and auto-skips via MegaPlay commands; fullscreen handshake. Was 3ellwa. The auto-skip setting names it.
 4. **Rem** = animeembed.com (sub/dub, MAL id; `start`, `autoSkip`, lime `accent`; postMessage `{channel:'animeembed', version:1, event, data}`, commands play/pause/seek; operator may show ads; refuses sandboxing).
 5. **Ram** = VidNest (sub/dub, AniList id looked up in the browser). Was JoJo.

@@ -53,11 +53,13 @@ export async function viewNew(alive) {
 export const NEWS = IS_MANGEE ? [
   ['Nov 25', ['Welcome to mangee: manga from MangaDex, with the same lists, sync and pop-ups', 'Read by scrolling or one page at a time', 'Your exact page is saved', 'Arabic chapters in Settings', 'One account for animee, cinemee and mangee']],
 ] : IS_CINEMEE ? [
+  ['Nov 28', ['New ad-free server: Altair, with Arabic subtitles', 'Smart TVs: the picture stays inside the player box on older TVs']],
   ['Nov 24', ['Rate anything 1-10, and see your ratings in Stats', 'Share your list with a link (Account)', 'Popular on cinemee this week', 'Chat in watch parties', 'Use your own .srt subtitles (CC button, Atlas server)', 'Ad-free servers first: 3ellwa and JoJo', 'Two new servers with Arabic subtitles: Sirius and Rigel', 'Works on smart TVs with the remote (Settings → TV mode)']],
   ['Nov 23', ['Watch party: friends follow your episode and position, with reactions', 'Search finds titles even with typos, and remembers your recent searches', 'Weekly summary pop-ups (Settings)', 'Switch to where you are on your other device', 'My list, History and Stats open offline']],
   ['Nov 22', ['Seasons on TV pages, and season by season in the episode list', 'Hover a poster for its trailer', 'Share a moment: a link that opens at the exact minute', 'Continue on animee, right here', 'Real air times for TV', 'IMDb and Rotten Tomatoes scores', 'Search and remove items in History']],
   ['Nov 21', ['Welcome to cinemee: movies and TV, with the same lists, sync and pop-ups as animee', 'Up next stays in fullscreen', 'Save any title from its poster', 'Hide genres you skip']],
 ] : [
+  ['Nov 28', ['3ellwa and JoJo swapped places: 3ellwa now plays sub and dub', 'Smart TVs: the picture stays inside the player box on older TVs']],
   ['Nov 24', ['Rate anything 1-10, and see your ratings in Stats', 'Share your list with a link (Account)', 'Popular on animee this week', 'Chat in watch parties', '3ellwa remembers speed and volume per show', 'Ad-free servers first: 3ellwa and JoJo (the old Kaze and Ram)', 'Works on smart TVs with the remote (Settings → TV mode)']],
   ['Nov 23', ['Watch party: friends follow your episode and position, with reactions', 'Search handles typos better and remembers your recent searches', 'Weekly summary pop-ups (Settings)', 'Switch to where you are on your other device', 'My list, History and Stats open offline']],
   ['Nov 22', ['Hover a poster for its trailer', 'Share a moment: a link that opens at the exact minute', 'Continue on cinemee, right here', 'Servers that keep failing on an episode are tried last', 'Search and remove items in History, with Undo']],

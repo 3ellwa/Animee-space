@@ -17,10 +17,11 @@ const CATEGORIES = new Set(['sub', 'dub']);
 const BUILTIN_PROVIDERS = [
   // `name` is what visitors see on the server buttons: short neutral names, not the upstream
   // sites. `id` stays the real one, used in saved settings, reports, logs and the admin page.
-  // Ad-free first (Nov 24, 2026): AnimeParadise plays in our own <video>, aniembed.se runs in a
-  // no-popups sandbox. The first is always called 3ellwa and the second JoJo, on both sites.
-  { id: 'animeparadise', name: '3ellwa', categories: ['sub'] },
-  { id: 'aniembed', name: 'JoJo', categories: ['sub', 'dub'] },
+  // Ad-free first (Nov 24, 2026): aniembed.se runs in a no-popups sandbox, AnimeParadise plays in
+  // our own <video>. The first is always called 3ellwa and the second JoJo, on both sites.
+  // Nov 28: the user swapped them on animee, so aniembed (sub and dub) leads.
+  { id: 'aniembed', name: '3ellwa', categories: ['sub', 'dub'] },
+  { id: 'animeparadise', name: 'JoJo', categories: ['sub'] },
   { id: 'megaplay', name: 'Kaze', categories: ['sub', 'dub'] },
   { id: 'animeembed', name: 'Rem', categories: ['sub', 'dub'] },
   { id: 'vidnest', name: 'Ram', categories: ['sub', 'dub'] },

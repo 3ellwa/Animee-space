@@ -1,3 +1,7 @@
+## animee: 3ellwa and JoJo swapped
+
+- aniembed.se now leads as **3ellwa** (sub and dub, sandboxed, no ads) and AnimeParadise is second as **JoJo** (sub, our own player). Hand-picked servers are saved by id, so anyone who chose AnimeParadise keeps it.
+
 ## cinemee: Altair looks in more places
 
 - When the EgyBest copy doesn't have a title, Altair now tries two MyCima copies (cima.my-cima.net, vid.mycima.cc), which have older films such as Interstellar and The Shawshank Redemption. A site that shows a bot check or doesn't answer is skipped for 30 minutes.
