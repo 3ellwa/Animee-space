@@ -8,6 +8,7 @@ import * as tryembed from './tryembed.js';
 import * as animeembed from './animeembed.js';
 import * as aniembed from './aniembed.js';
 import * as tmdb from './tmdb.js';
+import * as egybest from './egybest.js';
 import { demotedServers } from '../ranking.js';
 
 const BUILTIN_ID = 'megaplay';
@@ -72,11 +73,14 @@ function configuredProviders(env = {}) {
 // cinemee (movies and TV) servers, all addressed by TMDB id, under neutral names as on animee.
 // Tried in this order. Ad-free first (Nov 24, 2026), both in a no-popups sandbox: 3ellwa
 // (vidnext: resumes, reports progress, takes seek commands; was Orion) and JoJo (VidCore; was
-// Lyra). Then Sirius (VidFast) and Rigel (VidLink): Arabic subtitles, one ad tab on the first
+// Lyra). Then Altair (Vipserver, found through an EgyBest copy: Arabic subtitles burned in, no
+// ads in the sandbox; the last ad-free one since it only has what that site has, user's call
+// Nov 28, 2026). Then Sirius (VidFast) and Rigel (VidLink): Arabic subtitles, one ad tab on the first
 // click. Nova (VidNest), Atlas (EmbedMaster), Vega (vidsrc: many subtitle languages incl. Arabic).
 const CINEMEE_PROVIDERS = [
   { id: 'vidnext', name: '3ellwa', categories: ['sub'] },
   { id: 'vidcore', name: 'JoJo', categories: ['sub'] },
+  { id: 'egybest', name: 'Altair', categories: ['sub'] },
   { id: 'vidfast', name: 'Sirius', categories: ['sub'] },
   { id: 'vidlink', name: 'Rigel', categories: ['sub'] },
   { id: 'vidnest', name: 'Nova', categories: ['sub'] },
@@ -253,6 +257,7 @@ export async function getSources(rawId, rawEpisode, rawServer, rawCategory, env 
 
   if (env.SITE === 'cinemee') {
     if (!CINEMEE_IDS.includes(server)) throw fail(404, 'That playback server is not configured.');
+    if (server === 'egybest') return egybest.getSources(id, episode, env);
     return tmdb.getSources(id, episode, server);
   }
   if (server === 'megaplay') return tenrai.getSources(id, episode, category);

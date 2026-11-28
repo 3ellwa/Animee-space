@@ -95,16 +95,26 @@ Rem and JoJo (aniembed.se) are checked before the fallback uses them (Rem: 404 f
 **cinemee**:
 1. **3ellwa** = vidnext.pro (red theme, `startAt`, progress messages, seek; Arabic subtitles). Sandboxed, no ads. Was Orion.
 2. **JoJo** = VidCore (same player as VidLink). Sandboxed, no ads; its big centre button is the ad layer, so play from its control bar. Was Lyra.
-3. **Sirius** = VidFast (`vidfast.vc`, the final host of vidfast.pro; `theme=FF3D52`, `startAt`, `PLAYER_EVENT`; ~40 subtitle languages incl. Arabic). Added Nov 24.
-4. **Rigel** = VidLink (`vidlink.pro`, movies/TV only; `primaryColor=FF3D52` without `#`, `startAt`, `PLAYER_EVENT`; Arabic subtitles). Added Nov 24.
-5. **Nova** = VidNest (Arabic subtitles; shows a fake "please confirm" ad dialog).
-6. **Atlas** = EmbedMaster (`embedmaster.link`, dark skin; accepts `sub_url[]` subtitle files). Most ads: one per click.
-7. **Vega** = vidsrc.to (subtitles in many languages incl. Arabic, in its own menu).
+3. **Altair** = Vipserver (`vipserver.liiivideo.com`), found through an EgyBest copy (`iegybest.cimawbas.tv`,
+   `EGYBEST_URL` variable when the domain moves). `functions/_lib/providers/egybest.js`: Vipserver is a file host with no
+   catalogue, so the Worker searches the site (`POST /ajax-search.php`, queryString = English, original and Arabic
+   TMDB names), matches the film by name + year or the episode by "الموسم <Arabic ordinal> الحلقة <n>" (one-season
+   shows have no season word), uses the show list on any episode page when the search doesn't list it, then takes the
+   Vipserver frame from `play.php`. Players cached 6 h, misses 1 h. Sandboxed, no ads, Arabic subtitles burned in; the
+   frame must send no referrer (`NO_REFERRER_HOSTS`) or it says "Video embed restricted". The site lacks many older
+   titles (404, next server). The last ad-free server by the user's choice (Nov 28). If the site starts answering with a
+   Cloudflare challenge (`cf-mitigated`), every lookup fails as an outage: find another copy that answers plain fetch;
+   don't try to get past the challenge. my-cima / vid.mycima.cc / e.cimalight.co carry Vipserver too but sit behind that challenge.
+4. **Sirius** = VidFast (`vidfast.vc`, the final host of vidfast.pro; `theme=FF3D52`, `startAt`, `PLAYER_EVENT`; ~40 subtitle languages incl. Arabic). Added Nov 24.
+5. **Rigel** = VidLink (`vidlink.pro`, movies/TV only; `primaryColor=FF3D52` without `#`, `startAt`, `PLAYER_EVENT`; Arabic subtitles). Added Nov 24.
+6. **Nova** = VidNest (Arabic subtitles; shows a fake "please confirm" ad dialog).
+7. **Atlas** = EmbedMaster (`embedmaster.link`, dark skin; accepts `sub_url[]` subtitle files). Most ads: one per click.
+8. **Vega** = vidsrc.to (subtitles in many languages incl. Arabic, in its own menu).
 
 **Ad blocking** (`SANDBOXED_HOSTS` in `public/js/player.js`): players that still play inside
 `sandbox="allow-scripts allow-same-origin allow-presentation allow-forms allow-orientation-lock"` get it, so the
 browser silently blocks their ad tabs, pop-ups and redirects: vidnext.pro, vidcore.org and aniembed.se (tested
-Nov 24). Every other host detects the sandbox and refuses to play ("Please disable sandbox" / "Sandbox detected"):
+Nov 24), vipserver.liiivideo.com (Nov 28). Every other host detects the sandbox and refuses to play ("Please disable sandbox" / "Sandbox detected"):
 VidFast, VidLink, VidNest, EmbedMaster, vidsrc.to, TryEmbed, MegaPlay, animeembed.com. Don't try to hide the
 sandbox from them; retest a host before adding it.
 The desktop app blocks ads everywhere (Ghostery). cimanow.cc was looked at and dropped: its servers sit behind an
@@ -134,7 +144,7 @@ Settings → Display shows "This browser: LG webOS · Chrome NN" (`browserLabel`
 `aspect-ratio` for its height (Chrome 88+), so there it was 0 px tall: sound, no picture (the user's LG, Nov 24).
 An `@supports not (aspect-ratio …)` block now gives it the 56.25% padding box; keep it if the player CSS
 changes. `public/js/compat.js` (imported first by app.js) fills `crypto.randomUUID` (watch party), `AbortSignal.timeout`,
-`Array#at`, `Object.hasOwn`. Check new code against Chrome 85 (caniuse) or add to compat.js.
+`Array#at`, `Object.hasOwn`. Don't use `inset` in CSS (Chrome 87+): on older TVs the picture fell below the player box; write top/right/bottom/left. Check new code against Chrome 85 (caniuse) or add to compat.js.
 **Limit:** the JavaScript uses `?.`/`??` (Chrome 80+), so TVs older than ~2021 (webOS 6 / Tizen 6.0 and earlier)
 won't run it at all. Android TV / Fire TV browsers are current.
 

@@ -1,7 +1,13 @@
+## cinemee: Altair, a third ad-free server
+
+- **Altair** = Vipserver, found through an EgyBest copy (iegybest.cimawbas.tv): no ads inside our sandbox, Arabic subtitles burned in. Third in line, after 3ellwa and JoJo and before the servers with ads. The Worker searches the site by the title's English, original and Arabic names and picks the film (name + year) or the episode (Arabic season words). It only has what that site has, so older titles often fall through to the next server.
+- Its frame sends no referrer (Vipserver refuses other sites otherwise).
+
 ## TVs: the picture shows
 
 - **Bug (LG TV):** sound but no picture on every server. The player box took its height only from `aspect-ratio`, which TV browsers on Chrome 87 and older don't know, so it was 0 px tall. Browsers without it now get a 16:9 padding box (`@supports not (aspect-ratio …)` in style.css).
 - On the user's LG the picture still only shows full screen (black on the page), so in TV mode: the remote lands on the player when an episode opens, a "Press OK to watch full screen" label sits on it, and the first OK goes full screen and keeps it playing (later OKs play/pause). Full screen straight from the Watch button was tried, but browsers only allow it within ~1 s of a button press and the episode loads later; it's still attempted (`pressedRecently()` in tv.js).
+- **Bug (TV):** the picture showed below the player box, half over the server list. The video/embed were placed with `inset: 0`, which TV browsers older than Chrome 87 ignore, so they dropped under the 16:9 padding box. style.css now uses top/right/bottom/left everywhere instead of `inset`.
 - `public/js/compat.js`: `crypto.randomUUID` (starting a watch party), `AbortSignal.timeout`, `Array#at`, `Object.hasOwn` for older browsers.
 
 ## Watch party: pausing fixed

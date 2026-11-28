@@ -31,7 +31,15 @@ const IFRAME_HTML = '<iframe class="embed-frame" title="Episode player" ' +
 // (cinemee's 3ellwa and JoJo) and aniembed.se (animee's JoJo). The rest refuse to play in a sandbox ("Please disable
 // sandbox" / "Sandbox detected"): VidFast, VidLink, VidNest, EmbedMaster, vidsrc.to, TryEmbed,
 // MegaPlay and animeembed.com. Retest before adding a host here.
-const SANDBOXED_HOSTS = new Set(['vidnext.pro', 'vidcore.org', 'aniembed.se']);
+// vipserver.liiivideo.com (cinemee's Altair) added Nov 28, 2026: plays sandboxed, no ads.
+const SANDBOXED_HOSTS = new Set(['vidnext.pro', 'vidcore.org', 'aniembed.se', 'vipserver.liiivideo.com']);
+// Hosts that refuse to play when they see where they're embedded ("Video embed restricted for
+// this domain"): their frames send no referrer.
+const NO_REFERRER_HOSTS = new Set(['vipserver.liiivideo.com']);
+export function referrerPolicyFor(src) {
+  try { return NO_REFERRER_HOSTS.has(new URL(src).hostname.replace(/^www\./, '')) ? 'no-referrer' : ''; }
+  catch { return ''; }
+}
 const SANDBOX = 'allow-scripts allow-same-origin allow-presentation allow-forms allow-orientation-lock';
 export function sandboxFor(src) {
   try { return SANDBOXED_HOSTS.has(new URL(src).hostname.replace(/^www\./, '')) ? SANDBOX : ''; }
@@ -145,6 +153,8 @@ export class Player {
       // Before src: the browser applies a sandbox only when the frame navigates.
       const sandbox = sandboxFor(src);
       if (sandbox) frame.setAttribute('sandbox', sandbox);
+      const referrer = referrerPolicyFor(src);
+      if (referrer) frame.setAttribute('referrerpolicy', referrer);
       frame.src = src;
       frame.hidden = false;
       frame.onload = () => this.msg('');

@@ -509,5 +509,28 @@ export async function getSources(rawId, rawEpisode, server = 'vidnest') {
   return { embedUrl, embedOrigin: player.base, language: 'sub', provider: PLAYERS[server] ? server : 'vidnest', events: [] };
 }
 
+/** The names a title goes by (English, original, Arabic) and its year: what Arab sites list it under. */
+const namesCache = new Map();
+export async function titleNames(rawId) {
+  const { type, tmdb } = decodeId(rawId);
+  const key = type + tmdb;
+  const hit = namesCache.get(key);
+  if (hit && hit.expires > Date.now()) return hit.value;
+  const pending = (async () => {
+    const { raw } = await details(rawId);
+    const movie = type === 'movie';
+    let arabic = null;
+    try {
+      const ar = await request(`/${type}/${tmdb}`, { language: 'ar-SA' });
+      arabic = (movie ? ar.title : ar.name) || null;
+    } catch { /* the English names still work */ }
+    const names = [movie ? raw.title : raw.name, movie ? raw.original_title : raw.original_name, arabic];
+    return { type, names: [...new Set(names.filter(Boolean))], year: year(movie ? raw.release_date : raw.first_air_date) };
+  })();
+  namesCache.set(key, { value: pending, expires: Date.now() + 6 * 60 * 60 * 1000 });
+  if (namesCache.size > 500) namesCache.delete(namesCache.keys().next().value);
+  try { return await pending; } catch (error) { namesCache.delete(key); throw error; }
+}
+
 /** Test hook: forget cached details and episode lists. */
-export function resetCache() { detailCache.clear(); episodeCache.clear(); }
+export function resetCache() { detailCache.clear(); episodeCache.clear(); namesCache.clear(); }

@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { Player, sandboxFor } from '../public/js/player.js';
+import { Player, sandboxFor, referrerPolicyFor } from '../public/js/player.js';
 
 test('only players that still play sandboxed get the no-popups sandbox', () => {
-  for (const src of ['https://vidnext.pro/movie/1', 'https://vidcore.org/embed/movie/1', 'https://aniembed.se/e/1/1']) {
+  for (const src of ['https://vidnext.pro/movie/1', 'https://vidcore.org/embed/movie/1', 'https://aniembed.se/e/1/1', 'https://vipserver.liiivideo.com/embed-abc123.html']) {
     const sandbox = sandboxFor(src);
     assert.match(sandbox, /allow-scripts/);
     assert.doesNotMatch(sandbox, /allow-popups|allow-top-navigation/);
@@ -11,6 +11,11 @@ test('only players that still play sandboxed get the no-popups sandbox', () => {
   for (const src of ['https://vidfast.vc/movie/1', 'https://vidlink.pro/movie/1', 'https://megaplay.buzz/x', 'https://evil.vidnext.pro.example/x', 'not a url']) {
     assert.equal(sandboxFor(src), '', src);
   }
+});
+
+test('Altair (Vipserver) frames send no referrer, others keep the default', () => {
+  assert.equal(referrerPolicyFor('https://vipserver.liiivideo.com/embed-abc123.html'), 'no-referrer');
+  for (const src of ['https://vidnext.pro/movie/1', 'https://vipserver.liiivideo.com.evil.example/x', 'not a url']) assert.equal(referrerPolicyFor(src), '', src);
 });
 
 function fakePlayer() {

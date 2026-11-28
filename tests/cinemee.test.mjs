@@ -108,11 +108,11 @@ test('a TV show counts only aired episodes and numbers them straight through', a
   assert.deepEqual(episodes.map((e) => [e.number, e.label]), [[1, 'S1 · E1'], [2, 'S1 · E2'], [3, 'S1 · E3'], [4, 'S2 · E1']]);
 });
 
-test('cinemee tries the ad-free 3ellwa and JoJo first, then Sirius, Rigel, Nova, Atlas and Vega, by TMDB id and season/episode', async () => {
+test('cinemee tries the ad-free 3ellwa, JoJo and Altair first, then Sirius, Rigel, Nova, Atlas and Vega, by TMDB id and season/episode', async () => {
   tmdb.resetCache();
   fakeTmdb();
   const servers = await (await onRequest(context('episode/13992%3A4/servers'))).json();
-  assert.deepEqual(servers.servers.map((s) => [s.id, s.name]), [['vidnext', '3ellwa'], ['vidcore', 'JoJo'], ['vidfast', 'Sirius'], ['vidlink', 'Rigel'], ['vidnest', 'Nova'], ['embedmaster', 'Atlas'], ['vidsrc', 'Vega']]);
+  assert.deepEqual(servers.servers.map((s) => [s.id, s.name]), [['vidnext', '3ellwa'], ['vidcore', 'JoJo'], ['egybest', 'Altair'], ['vidfast', 'Sirius'], ['vidlink', 'Rigel'], ['vidnest', 'Nova'], ['embedmaster', 'Atlas'], ['vidsrc', 'Vega']]);
   const auto = await (await onRequest(context('episode/5501%3A1/sources?server=auto&category=sub'))).json();
   assert.equal(auto.provider, 'vidnext', 'with no preference the first (ad-free) server plays');
   const sirius = await (await onRequest(context('episode/13992%3A4/sources?server=vidfast&category=sub'))).json();
